@@ -1,0 +1,29 @@
+# Integración continua del proyecto nuevo (raíz). No incluye legacy/ (módulo aparte).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Compilar (CGO deshabilitado, binario estático)
+        env:
+          CGO_ENABLED: '0'
+        run: go build ./...
+
+      - name: Analizar (go vet)
+        run: go vet ./...
+
+      - name: Pruebas
+        run: go test ./...

@@ -1,0 +1,32 @@
+# Binarios
+/kandel
+*.exe
+/cmd/kandel/kandel
+
+# Base de datos local
+*.db
+*.db-wal
+*.db-shm
+
+# Exportaciones
+kandel-export.json
+
+# Cobertura / perfiles de Go
+*.out
+coverage.*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+legacy/
+BITACORA.md
+direccion_futura_embeddings.md
+PLAN-REESCRITURA.md
