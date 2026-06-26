@@ -6,7 +6,7 @@ import (
 	"github.com/javierv-dev/kandel/internal/domain"
 )
 
-// RecentQuery filtra una lectura directa de observaciones recientes. Es el camino de
+// RecentQuery filtra una lectura directa de memorias recientes. Es el camino de
 // recuperación del usuario (navegación): no depende del embedder.
 type RecentQuery struct {
 	Project string
@@ -18,41 +18,41 @@ type RecentQuery struct {
 // y se rankea por cercanía; los filtros acotan el universo antes de rankear.
 type SearchQuery struct {
 	Query   string
-	Type    domain.ObservationType // vacío = cualquier tipo
+	Type    domain.MemoryType // vacío = cualquier tipo
 	Project string
 	Scope   domain.Scope // vacío = sin filtrar por alcance
 	Limit   int
 }
 
-// ObservationRepo persiste y recupera observaciones. Interfaz cohesiva (no un God Object):
-// solo lo que toca a la entidad observación. La búsqueda semántica vive en VectorIndex; aquí
+// MemoryRepo persiste y recupera memorias. Interfaz cohesiva (no un God Object):
+// solo lo que toca a la entidad memoria. La búsqueda semántica vive en VectorIndex; aquí
 // Search recibe ya los vecinos resueltos y los hidrata a entidades completas.
-type ObservationRepo interface {
-	// Add inserta una observación nueva y devuelve su id local.
-	Add(ctx context.Context, o domain.Observation) (int64, error)
-	// Get recupera una observación por su id local; nil si no existe.
-	Get(ctx context.Context, id int64) (*domain.Observation, error)
+type MemoryRepo interface {
+	// Add inserta una memoria nueva y devuelve su id local.
+	Add(ctx context.Context, o domain.Memory) (int64, error)
+	// Get recupera una memoria por su id local; nil si no existe.
+	Get(ctx context.Context, id int64) (*domain.Memory, error)
 	// GetBySyncID recupera por identidad estable de sync.
-	GetBySyncID(ctx context.Context, syncID string) (*domain.Observation, error)
-	// Update reemplaza los campos editables de una observación y devuelve el estado final.
-	Update(ctx context.Context, id int64, o domain.Observation) (*domain.Observation, error)
-	// SoftDelete marca la observación como borrada sin quitarla (DeletedAt).
+	GetBySyncID(ctx context.Context, syncID string) (*domain.Memory, error)
+	// Update reemplaza los campos editables de una memoria y devuelve el estado final.
+	Update(ctx context.Context, id int64, o domain.Memory) (*domain.Memory, error)
+	// SoftDelete marca la memoria como borrada sin quitarla (DeletedAt).
 	SoftDelete(ctx context.Context, id int64) error
-	// HardDelete elimina la observación y sus datos asociados (incluido su vector).
+	// HardDelete elimina la memoria y sus datos asociados (incluido su vector).
 	HardDelete(ctx context.Context, id int64) error
-	// Recent lista observaciones por recencia para navegación del usuario.
-	Recent(ctx context.Context, q RecentQuery) ([]domain.Observation, error)
+	// Recent lista memorias por recencia para navegación del usuario.
+	Recent(ctx context.Context, q RecentQuery) ([]domain.Memory, error)
 	// Search hidrata a SearchResult los vecinos devueltos por el VectorIndex, aplicando los
 	// filtros de q (tipo/proyecto/alcance) y respetando el orden de cercanía.
 	Search(ctx context.Context, q SearchQuery, neighbors []Neighbor) ([]domain.SearchResult, error)
-	// FindByHash busca una observación viva con el mismo hash normalizado (dedupe exacto).
-	FindByHash(ctx context.Context, project string, scope domain.Scope, hash string) (*domain.Observation, error)
-	// LatestByTopicKey devuelve la observación viva más reciente de un mismo tema.
-	LatestByTopicKey(ctx context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Observation, error)
-	// SetPinned fija o desfija una observación (estado local, no se sincroniza).
+	// FindByHash busca una memoria viva con el mismo hash normalizado (dedupe exacto).
+	FindByHash(ctx context.Context, project string, scope domain.Scope, hash string) (*domain.Memory, error)
+	// LatestByTopicKey devuelve la memoria viva más reciente de un mismo tema.
+	LatestByTopicKey(ctx context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Memory, error)
+	// SetPinned fija o desfija una memoria (estado local, no se sincroniza).
 	SetPinned(ctx context.Context, id int64, pinned bool) error
-	// NeedingReview lista observaciones cuya fecha de revisión ya venció.
-	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Observation, error)
+	// NeedingReview lista memorias cuya fecha de revisión ya venció.
+	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 
 // SessionRepo persiste y recupera sesiones.
@@ -86,11 +86,11 @@ type PromptRepo interface {
 // RelationRepo persiste y recupera relaciones/juicios entre memorias (detección de conflictos).
 type RelationRepo interface {
 	// Insert crea una relación (típicamente pending) y devuelve su id local.
-	Insert(ctx context.Context, r domain.Relation) (int64, error)
+	Insert(ctx context.Context, r domain.MemoryRelation) (int64, error)
 	// Get recupera una relación por id; nil si no existe.
-	Get(ctx context.Context, id int64) (*domain.Relation, error)
+	Get(ctx context.Context, id int64) (*domain.MemoryRelation, error)
 	// Judge aplica el veredicto del LLM a una relación pendiente.
 	Judge(ctx context.Context, id int64, v domain.Verdict) error
 	// ListByStatus lista relaciones por estado de juicio.
-	ListByStatus(ctx context.Context, status domain.JudgmentStatus, limit int) ([]domain.Relation, error)
+	ListByStatus(ctx context.Context, status domain.JudgmentStatus, limit int) ([]domain.MemoryRelation, error)
 }

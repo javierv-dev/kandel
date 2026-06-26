@@ -5,22 +5,22 @@ import (
 	"time"
 )
 
-// ObservationType clasifica una memoria curada. El tipo influye en el decaimiento
+// MemoryType clasifica una memoria curada. El tipo influye en el decaimiento
 // (cada cuánto la memoria pide revisión).
-type ObservationType string
+type MemoryType string
 
 const (
-	TypeDecision     ObservationType = "decision"
-	TypeArchitecture ObservationType = "architecture"
-	TypeBugfix       ObservationType = "bugfix"
-	TypePattern      ObservationType = "pattern"
-	TypeConfig       ObservationType = "config"
-	TypeDiscovery    ObservationType = "discovery"
-	TypeLearning     ObservationType = "learning"
+	TypeDecision     MemoryType = "decision"
+	TypeArchitecture MemoryType = "architecture"
+	TypeBugfix       MemoryType = "bugfix"
+	TypePattern      MemoryType = "pattern"
+	TypeConfig       MemoryType = "config"
+	TypeDiscovery    MemoryType = "discovery"
+	TypeLearning     MemoryType = "learning"
 )
 
 // Valid indica si el tipo es uno de los reconocidos.
-func (t ObservationType) Valid() bool {
+func (t MemoryType) Valid() bool {
 	switch t {
 	case TypeDecision, TypeArchitecture, TypeBugfix,
 		TypePattern, TypeConfig, TypeDiscovery, TypeLearning:
@@ -47,13 +47,13 @@ const (
 // Nota: el proyecto viejo definía el decaimiento sobre tipos "decision/policy/preference",
 // pero solo "decision" coincide con los tipos reales. Aquí se porta ese único caso fiable;
 // el resto de la política de decaimiento queda pendiente de confirmar (ver BITACORA).
-var reviewMonthsByType = map[ObservationType]int{
+var reviewMonthsByType = map[MemoryType]int{
 	TypeDecision: 6,
 }
 
 // ReviewAfterFor calcula la fecha de revisión para un tipo dado a partir de un instante.
 // Devuelve el tiempo cero si el tipo no decae.
-func ReviewAfterFor(t ObservationType, from time.Time) time.Time {
+func ReviewAfterFor(t MemoryType, from time.Time) time.Time {
 	months, ok := reviewMonthsByType[t]
 	if !ok {
 		return time.Time{}
@@ -61,14 +61,14 @@ func ReviewAfterFor(t ObservationType, from time.Time) time.Time {
 	return from.AddDate(0, months, 0)
 }
 
-// Observation es la unidad central de conocimiento: una memoria curada que sobrevive entre
+// Memory es la unidad central de conocimiento: una memoria curada que sobrevive entre
 // sesiones y se recupera después.
-type Observation struct {
+type Memory struct {
 	ID        int64
 	SyncID    string // identidad estable entre máquinas (para sync)
 	SessionID string
 	Project   string
-	Type      ObservationType
+	Type      MemoryType
 	Scope     Scope
 	Title     string
 	Content   string
@@ -92,7 +92,7 @@ type Observation struct {
 // Sin fecha de revisión, o mientras la fecha no haya quedado en el pasado, la memoria está
 // activa. Solo pide revisión cuando review_after ya pasó (estrictamente antes de "now"),
 // coherente con su nombre: la revisión llega *tras* esa fecha.
-func (o Observation) State(now time.Time) LifecycleState {
+func (o Memory) State(now time.Time) LifecycleState {
 	if o.ReviewAfter.IsZero() || !o.ReviewAfter.Before(now) {
 		return StateActive
 	}
@@ -100,7 +100,7 @@ func (o Observation) State(now time.Time) LifecycleState {
 }
 
 // IsDeleted indica si la memoria fue borrada (soft delete).
-func (o Observation) IsDeleted() bool {
+func (o Memory) IsDeleted() bool {
 	return o.DeletedAt != nil
 }
 
@@ -108,7 +108,7 @@ func (o Observation) IsDeleted() bool {
 // del contenido es una convención que se cuida en la capa de servicio, no aquí: el dominio
 // solo exige título y contenido no vacíos, tipo y alcance válidos, y topic_key bien formado
 // cuando está presente.
-func (o Observation) Validate() error {
+func (o Memory) Validate() error {
 	if strings.TrimSpace(o.Title) == "" {
 		return ErrEmptyTitle
 	}

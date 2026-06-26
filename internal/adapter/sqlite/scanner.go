@@ -49,19 +49,19 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-// observationColumns es la lista de columnas, en orden, que espera scanObservation. Se usa en
-// todas las consultas de lectura de observaciones para que columna y destino no se desalineen.
+// memoryColumns es la lista de columnas, en orden, que espera scanMemory. Se usa en
+// todas las consultas de lectura de memorias para que columna y destino no se desalineen.
 // Las columnas anulables se normalizan con ifnull para escanear a string sin sql.Null*.
-const observationColumns = `id, ifnull(sync_id, ''), session_id, type, title, content,
+const memoryColumns = `id, ifnull(sync_id, ''), session_id, type, title, content,
 	ifnull(tool_name, ''), ifnull(project, ''), scope, ifnull(topic_key, ''),
 	ifnull(normalized_hash, ''), revision_count, duplicate_count, pinned,
 	created_at, updated_at, last_seen_at, review_after, deleted_at`
 
-// scanObservation escanea una fila al modelo de dominio. Centraliza la conversión de tipos
+// scanMemory escanea una fila al modelo de dominio. Centraliza la conversión de tipos
 // (TEXT→time.Time, INTEGER→bool, columnas anulables) en un único sitio.
-func scanObservation(sc rowScanner) (domain.Observation, error) {
+func scanMemory(sc rowScanner) (domain.Memory, error) {
 	var (
-		o                                 domain.Observation
+		o                                 domain.Memory
 		typ, scope                        string
 		toolName, project, topicKey, hash string
 		pinned                            int
@@ -74,10 +74,10 @@ func scanObservation(sc rowScanner) (domain.Observation, error) {
 		&o.RevisionCount, &o.DuplicateCount, &pinned,
 		&createdAt, &updatedAt, &lastSeen, &reviewAfter, &deletedAt,
 	); err != nil {
-		return domain.Observation{}, err
+		return domain.Memory{}, err
 	}
 
-	o.Type = domain.ObservationType(typ)
+	o.Type = domain.MemoryType(typ)
 	o.Scope = domain.Scope(scope)
 	o.ToolName = toolName
 	o.Project = project
@@ -87,37 +87,37 @@ func scanObservation(sc rowScanner) (domain.Observation, error) {
 
 	var err error
 	if o.CreatedAt, err = parseTime(createdAt); err != nil {
-		return domain.Observation{}, err
+		return domain.Memory{}, err
 	}
 	if o.UpdatedAt, err = parseTime(updatedAt); err != nil {
-		return domain.Observation{}, err
+		return domain.Memory{}, err
 	}
 	if lastSeen.Valid {
 		if o.LastSeenAt, err = parseTime(lastSeen.String); err != nil {
-			return domain.Observation{}, err
+			return domain.Memory{}, err
 		}
 	}
 	if reviewAfter.Valid {
 		if o.ReviewAfter, err = parseTime(reviewAfter.String); err != nil {
-			return domain.Observation{}, err
+			return domain.Memory{}, err
 		}
 	}
 	if deletedAt.Valid {
 		t, err := parseTime(deletedAt.String)
 		if err != nil {
-			return domain.Observation{}, err
+			return domain.Memory{}, err
 		}
 		o.DeletedAt = &t
 	}
 	return o, nil
 }
 
-// scanObservations escanea todas las filas de un *sql.Rows a observaciones de dominio.
-func scanObservations(rows *sql.Rows) ([]domain.Observation, error) {
+// scanMemories escanea todas las filas de un *sql.Rows a memorias de dominio.
+func scanMemories(rows *sql.Rows) ([]domain.Memory, error) {
 	defer rows.Close()
-	var out []domain.Observation
+	var out []domain.Memory
 	for rows.Next() {
-		o, err := scanObservation(rows)
+		o, err := scanMemory(rows)
 		if err != nil {
 			return nil, err
 		}

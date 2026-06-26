@@ -11,25 +11,25 @@ import (
 // revisión por decaimiento. El fijado (pin) es estado LOCAL: no se sincroniza, por eso aquí no
 // hay encolado de mutaciones ni transacción.
 type LifecycleService struct {
-	obs ports.ObservationRepo
+	memories ports.MemoryRepo
 }
 
 // NewLifecycleService construye el servicio con sus dependencias inyectadas.
-func NewLifecycleService(obs ports.ObservationRepo) *LifecycleService {
-	return &LifecycleService{obs: obs}
+func NewLifecycleService(memories ports.MemoryRepo) *LifecycleService {
+	return &LifecycleService{memories: memories}
 }
 
 // Pin fija una memoria arriba en el contexto.
 func (l *LifecycleService) Pin(ctx context.Context, id int64) error {
-	return l.obs.SetPinned(ctx, id, true)
+	return l.memories.SetPinned(ctx, id, true)
 }
 
 // Unpin desfija una memoria.
 func (l *LifecycleService) Unpin(ctx context.Context, id int64) error {
-	return l.obs.SetPinned(ctx, id, false)
+	return l.memories.SetPinned(ctx, id, false)
 }
 
 // NeedingReview lista las memorias del proyecto cuya fecha de revisión ya venció (decaimiento).
-func (l *LifecycleService) NeedingReview(ctx context.Context, project string, limit int) ([]domain.Observation, error) {
-	return l.obs.NeedingReview(ctx, normalizeProject(project), limit)
+func (l *LifecycleService) NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error) {
+	return l.memories.NeedingReview(ctx, normalizeProject(project), limit)
 }

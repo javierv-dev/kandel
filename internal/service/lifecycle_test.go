@@ -13,7 +13,7 @@ func TestLifecyclePinUnpin(t *testing.T) {
 	svc := NewLifecycleService(obs)
 	ctx := context.Background()
 
-	id, _ := obs.Add(ctx, domain.Observation{Project: "proj", Title: "t", Content: "c"})
+	id, _ := obs.Add(ctx, domain.Memory{Project: "proj", Title: "t", Content: "c"})
 
 	if err := svc.Pin(ctx, id); err != nil {
 		t.Fatalf("Pin: %v", err)
@@ -34,11 +34,11 @@ func TestLifecycleNeedingReview(t *testing.T) {
 	svc := NewLifecycleService(obs)
 	ctx := context.Background()
 
-	_, _ = obs.Add(ctx, domain.Observation{Project: "proj", Title: "vencida", Content: "c",
+	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "vencida", Content: "c",
 		ReviewAfter: time.Now().UTC().Add(-time.Hour)})
-	_, _ = obs.Add(ctx, domain.Observation{Project: "proj", Title: "futura", Content: "c",
+	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "futura", Content: "c",
 		ReviewAfter: time.Now().UTC().Add(time.Hour)})
-	_, _ = obs.Add(ctx, domain.Observation{Project: "proj", Title: "sin decay", Content: "c"})
+	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "sin decay", Content: "c"})
 
 	got, err := svc.NeedingReview(ctx, "Proj", 10)
 	if err != nil {

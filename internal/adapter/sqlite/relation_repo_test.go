@@ -7,8 +7,8 @@ import (
 	"github.com/javierv-dev/kandel/internal/domain"
 )
 
-func sampleRelation() domain.Relation {
-	return domain.Relation{
+func sampleRelation() domain.MemoryRelation {
+	return domain.MemoryRelation{
 		SyncID:    "rel-1",
 		SourceID:  "obs-a",
 		TargetID:  "obs-b",

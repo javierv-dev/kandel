@@ -37,18 +37,18 @@ func TestSaveCreatesNew(t *testing.T) {
 	if res.Outcome != SaveCreated {
 		t.Errorf("outcome esperado created, fue %v", res.Outcome)
 	}
-	if res.Observation.Project != "proj" {
-		t.Errorf("el proyecto debe normalizarse a minúsculas, fue %q", res.Observation.Project)
+	if res.Memory.Project != "proj" {
+		t.Errorf("el proyecto debe normalizarse a minúsculas, fue %q", res.Memory.Project)
 	}
-	if res.Observation.SyncID == "" {
+	if res.Memory.SyncID == "" {
 		t.Error("una memoria nueva debe recibir sync_id")
 	}
 	// decisión decae a 6 meses.
-	if !res.Observation.ReviewAfter.Equal(clockNow.AddDate(0, 6, 0)) {
-		t.Errorf("review_after de decision debe ser +6 meses, fue %v", res.Observation.ReviewAfter)
+	if !res.Memory.ReviewAfter.Equal(clockNow.AddDate(0, 6, 0)) {
+		t.Errorf("review_after de decision debe ser +6 meses, fue %v", res.Memory.ReviewAfter)
 	}
 	if len(obs.items) != 1 {
-		t.Errorf("debe haber 1 observación, hay %d", len(obs.items))
+		t.Errorf("debe haber 1 memoria, hay %d", len(obs.items))
 	}
 	if len(sync.enqueued) != 1 || sync.enqueued[0].Op != domain.SyncOpUpsert {
 		t.Errorf("debe encolarse 1 upsert, fue %+v", sync.enqueued)
@@ -71,8 +71,8 @@ func TestSaveDuplicateWithinWindow(t *testing.T) {
 	if len(obs.items) != 1 {
 		t.Errorf("un duplicado no debe crear fila nueva, hay %d", len(obs.items))
 	}
-	if res.Observation.DuplicateCount != 2 {
-		t.Errorf("duplicate_count debe ser 2, fue %d", res.Observation.DuplicateCount)
+	if res.Memory.DuplicateCount != 2 {
+		t.Errorf("duplicate_count debe ser 2, fue %d", res.Memory.DuplicateCount)
 	}
 	if len(sync.enqueued) != 2 {
 		t.Errorf("cada Save encola una mutación, hubo %d", len(sync.enqueued))
@@ -99,7 +99,7 @@ func TestSaveDuplicateOutsideWindowCreatesNew(t *testing.T) {
 		t.Errorf("fuera de la ventana debe crear nueva, fue %v", res.Outcome)
 	}
 	if len(obs.items) != 2 {
-		t.Errorf("debe haber 2 observaciones, hay %d", len(obs.items))
+		t.Errorf("debe haber 2 memorias, hay %d", len(obs.items))
 	}
 }
 
@@ -127,11 +127,11 @@ func TestSaveMergesByTopicKey(t *testing.T) {
 	if len(obs.items) != 1 {
 		t.Errorf("la fusión no crea fila nueva, hay %d", len(obs.items))
 	}
-	if res.Observation.RevisionCount != 2 {
-		t.Errorf("revision_count debe ser 2, fue %d", res.Observation.RevisionCount)
+	if res.Memory.RevisionCount != 2 {
+		t.Errorf("revision_count debe ser 2, fue %d", res.Memory.RevisionCount)
 	}
-	if res.Observation.Content != "versión revisada" {
-		t.Errorf("el contenido debe actualizarse, fue %q", res.Observation.Content)
+	if res.Memory.Content != "versión revisada" {
+		t.Errorf("el contenido debe actualizarse, fue %q", res.Memory.Content)
 	}
 	if len(sync.enqueued) != 2 {
 		t.Errorf("cada Save encola una mutación, hubo %d", len(sync.enqueued))
@@ -179,14 +179,14 @@ func TestUpdateAppliesPartialChanges(t *testing.T) {
 
 	newTitle := "Título nuevo"
 	newContent := "contenido nuevo"
-	updated, err := svc.Update(ctx, res.Observation.ID, UpdateInput{Title: &newTitle, Content: &newContent})
+	updated, err := svc.Update(ctx, res.Memory.ID, UpdateInput{Title: &newTitle, Content: &newContent})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	if updated.Title != newTitle || updated.Content != newContent {
 		t.Errorf("los cambios no se aplicaron: %+v", updated)
 	}
-	if updated.NormalizedHash == res.Observation.NormalizedHash {
+	if updated.NormalizedHash == res.Memory.NormalizedHash {
 		t.Error("al cambiar el contenido el hash debe recalcularse")
 	}
 	// Save + Update encolan una mutación cada uno.
@@ -208,10 +208,10 @@ func TestDeleteSoftAndEnqueue(t *testing.T) {
 	ctx := context.Background()
 	res, _ := svc.Save(ctx, baseSaveInput())
 
-	if err := svc.Delete(ctx, res.Observation.ID, false); err != nil {
+	if err := svc.Delete(ctx, res.Memory.ID, false); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	got, _ := obs.Get(ctx, res.Observation.ID)
+	got, _ := obs.Get(ctx, res.Memory.ID)
 	if got != nil {
 		t.Error("tras soft-delete la memoria no debe recuperarse")
 	}

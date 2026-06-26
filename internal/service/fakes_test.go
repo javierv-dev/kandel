@@ -45,24 +45,24 @@ func (f *fakeSync) AcquireLease(context.Context, string, string, time.Duration) 
 }
 func (f *fakeSync) ReleaseLease(context.Context, string, string) error { return nil }
 
-// fakeObs es un ObservationRepo en memoria.
+// fakeObs es un MemoryRepo en memoria.
 type fakeObs struct {
-	items  map[int64]domain.Observation
+	items  map[int64]domain.Memory
 	nextID int64
 }
 
 func newFakeObs() *fakeObs {
-	return &fakeObs{items: map[int64]domain.Observation{}}
+	return &fakeObs{items: map[int64]domain.Memory{}}
 }
 
-func (f *fakeObs) Add(_ context.Context, o domain.Observation) (int64, error) {
+func (f *fakeObs) Add(_ context.Context, o domain.Memory) (int64, error) {
 	f.nextID++
 	o.ID = f.nextID
 	f.items[o.ID] = o
 	return o.ID, nil
 }
 
-func (f *fakeObs) Get(_ context.Context, id int64) (*domain.Observation, error) {
+func (f *fakeObs) Get(_ context.Context, id int64) (*domain.Memory, error) {
 	o, ok := f.items[id]
 	if !ok || o.IsDeleted() {
 		return nil, nil
@@ -71,7 +71,7 @@ func (f *fakeObs) Get(_ context.Context, id int64) (*domain.Observation, error) 
 	return &c, nil
 }
 
-func (f *fakeObs) GetBySyncID(_ context.Context, syncID string) (*domain.Observation, error) {
+func (f *fakeObs) GetBySyncID(_ context.Context, syncID string) (*domain.Memory, error) {
 	for _, o := range f.items {
 		if o.SyncID == syncID && !o.IsDeleted() {
 			c := o
@@ -81,7 +81,7 @@ func (f *fakeObs) GetBySyncID(_ context.Context, syncID string) (*domain.Observa
 	return nil, nil
 }
 
-func (f *fakeObs) Update(_ context.Context, id int64, o domain.Observation) (*domain.Observation, error) {
+func (f *fakeObs) Update(_ context.Context, id int64, o domain.Memory) (*domain.Memory, error) {
 	if _, ok := f.items[id]; !ok {
 		return nil, nil
 	}
@@ -107,8 +107,8 @@ func (f *fakeObs) HardDelete(_ context.Context, id int64) error {
 	return nil
 }
 
-func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Observation, error) {
-	var out []domain.Observation
+func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
+	var out []domain.Memory
 	for _, o := range f.items {
 		if o.IsDeleted() {
 			continue
@@ -129,8 +129,8 @@ func (f *fakeObs) Search(context.Context, ports.SearchQuery, []ports.Neighbor) (
 	return nil, nil
 }
 
-func (f *fakeObs) FindByHash(_ context.Context, project string, scope domain.Scope, hash string) (*domain.Observation, error) {
-	var best *domain.Observation
+func (f *fakeObs) FindByHash(_ context.Context, project string, scope domain.Scope, hash string) (*domain.Memory, error) {
+	var best *domain.Memory
 	for _, o := range f.items {
 		if o.IsDeleted() || o.NormalizedHash != hash || o.Project != project || o.Scope != scope {
 			continue
@@ -143,8 +143,8 @@ func (f *fakeObs) FindByHash(_ context.Context, project string, scope domain.Sco
 	return best, nil
 }
 
-func (f *fakeObs) LatestByTopicKey(_ context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Observation, error) {
-	var best *domain.Observation
+func (f *fakeObs) LatestByTopicKey(_ context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Memory, error) {
+	var best *domain.Memory
 	for _, o := range f.items {
 		if o.IsDeleted() || o.TopicKey != key || o.Project != project || o.Scope != scope {
 			continue
@@ -167,9 +167,9 @@ func (f *fakeObs) SetPinned(_ context.Context, id int64, pinned bool) error {
 	return nil
 }
 
-func (f *fakeObs) NeedingReview(_ context.Context, project string, limit int) ([]domain.Observation, error) {
+func (f *fakeObs) NeedingReview(_ context.Context, project string, limit int) ([]domain.Memory, error) {
 	now := time.Now().UTC()
-	var out []domain.Observation
+	var out []domain.Memory
 	for _, o := range f.items {
 		if o.IsDeleted() || (project != "" && o.Project != project) {
 			continue
@@ -245,9 +245,9 @@ func (f *fakeSessions) MostRecentActive(_ context.Context, project string) (stri
 
 // Aserciones de que los fakes cumplen los contratos de ports.
 var (
-	_ ports.Clock           = fixedClock{}
-	_ ports.UnitOfWork      = passthroughUoW{}
-	_ ports.SyncRepo        = (*fakeSync)(nil)
-	_ ports.ObservationRepo = (*fakeObs)(nil)
-	_ ports.SessionRepo     = (*fakeSessions)(nil)
+	_ ports.Clock       = fixedClock{}
+	_ ports.UnitOfWork  = passthroughUoW{}
+	_ ports.SyncRepo    = (*fakeSync)(nil)
+	_ ports.MemoryRepo  = (*fakeObs)(nil)
+	_ ports.SessionRepo = (*fakeSessions)(nil)
 )

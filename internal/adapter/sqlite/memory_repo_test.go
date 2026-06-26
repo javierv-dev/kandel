@@ -29,7 +29,7 @@ func newTestDB(t *testing.T) *DB {
 	return db
 }
 
-// seedSession inserta una sesión para satisfacer la clave foránea de observations.
+// seedSession inserta una sesión para satisfacer la clave foránea de memories.
 func seedSession(t *testing.T, db *DB, id string) {
 	t.Helper()
 	_, err := db.sql.Exec(
@@ -41,9 +41,9 @@ func seedSession(t *testing.T, db *DB, id string) {
 	}
 }
 
-// sampleObservation construye una observación válida con valores por defecto razonables.
-func sampleObservation() domain.Observation {
-	return domain.Observation{
+// sampleMemory construye una memoria válida con valores por defecto razonables.
+func sampleMemory() domain.Memory {
+	return domain.Memory{
 		SyncID:         "obs-1",
 		SessionID:      "s1",
 		Project:        "proj",
@@ -62,10 +62,10 @@ func sampleObservation() domain.Observation {
 func TestAddAndGet(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	in := sampleObservation()
+	in := sampleMemory()
 	in.ToolName = "claude"
 	in.TopicKey = domain.TopicKey("architecture/auth")
 	in.LastSeenAt = baseTime
@@ -84,7 +84,7 @@ func TestAddAndGet(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 	if got == nil {
-		t.Fatal("Get devolvió nil para una observación existente")
+		t.Fatal("Get devolvió nil para una memoria existente")
 	}
 	if got.Title != in.Title || got.Content != in.Content {
 		t.Errorf("título/contenido no coinciden: %q / %q", got.Title, got.Content)
@@ -99,13 +99,13 @@ func TestAddAndGet(t *testing.T) {
 		t.Errorf("timestamps no coinciden: created=%v review=%v", got.CreatedAt, got.ReviewAfter)
 	}
 	if got.DeletedAt != nil {
-		t.Errorf("observación recién creada no debe estar borrada")
+		t.Errorf("memoria recién creada no debe estar borrada")
 	}
 }
 
 func TestGetMissing(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	got, err := repo.Get(context.Background(), 999)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -115,13 +115,13 @@ func TestGetMissing(t *testing.T) {
 	}
 }
 
-func TestSoftDeleteHidesObservation(t *testing.T) {
+func TestSoftDeleteHidesMemory(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	id, err := repo.Add(ctx, sampleObservation())
+	id, err := repo.Add(ctx, sampleMemory())
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -133,17 +133,17 @@ func TestSoftDeleteHidesObservation(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 	if got != nil {
-		t.Errorf("una observación con soft-delete no debe recuperarse, fue %+v", got)
+		t.Errorf("una memoria con soft-delete no debe recuperarse, fue %+v", got)
 	}
 }
 
 func TestFindByHash(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	in := sampleObservation()
+	in := sampleMemory()
 	in.NormalizedHash = "abc"
 	if _, err := repo.Add(ctx, in); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -154,7 +154,7 @@ func TestFindByHash(t *testing.T) {
 		t.Fatalf("FindByHash: %v", err)
 	}
 	if got == nil {
-		t.Fatal("FindByHash debió encontrar la observación")
+		t.Fatal("FindByHash debió encontrar la memoria")
 	}
 
 	miss, err := repo.FindByHash(ctx, "proj", domain.ScopeProject, "otro")
@@ -169,10 +169,10 @@ func TestFindByHash(t *testing.T) {
 func TestLatestByTopicKey(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	older := sampleObservation()
+	older := sampleMemory()
 	older.TopicKey = domain.TopicKey("config")
 	older.Content = "vieja"
 	older.UpdatedAt = baseTime
@@ -180,7 +180,7 @@ func TestLatestByTopicKey(t *testing.T) {
 		t.Fatalf("Add older: %v", err)
 	}
 
-	newer := sampleObservation()
+	newer := sampleMemory()
 	newer.SyncID = "obs-2"
 	newer.TopicKey = domain.TopicKey("config")
 	newer.Content = "nueva"
@@ -201,24 +201,24 @@ func TestLatestByTopicKey(t *testing.T) {
 func TestRecentOrderingAndFilters(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	first := sampleObservation()
+	first := sampleMemory()
 	first.Content = "primera"
 	first.CreatedAt = baseTime
 	if _, err := repo.Add(ctx, first); err != nil {
 		t.Fatalf("Add first: %v", err)
 	}
-	second := sampleObservation()
+	second := sampleMemory()
 	second.SyncID = "obs-2"
 	second.Content = "segunda"
 	second.CreatedAt = baseTime.Add(time.Hour)
 	if _, err := repo.Add(ctx, second); err != nil {
 		t.Fatalf("Add second: %v", err)
 	}
-	// Una observación de otro proyecto que el filtro debe excluir.
-	other := sampleObservation()
+	// Una memoria de otro proyecto que el filtro debe excluir.
+	other := sampleMemory()
 	other.SyncID = "obs-3"
 	other.Project = "otro"
 	if _, err := repo.Add(ctx, other); err != nil {
@@ -230,7 +230,7 @@ func TestRecentOrderingAndFilters(t *testing.T) {
 		t.Fatalf("Recent: %v", err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("esperaba 2 observaciones de 'proj', obtuve %d", len(got))
+		t.Fatalf("esperaba 2 memorias de 'proj', obtuve %d", len(got))
 	}
 	if got[0].Content != "segunda" {
 		t.Errorf("la más reciente debe ir primero, fue %q", got[0].Content)
@@ -240,21 +240,21 @@ func TestRecentOrderingAndFilters(t *testing.T) {
 func TestSearchPreservesNeighborOrderAndScore(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	a := sampleObservation()
+	a := sampleMemory()
 	a.Content = "a"
 	idA, _ := repo.Add(ctx, a)
-	b := sampleObservation()
+	b := sampleMemory()
 	b.SyncID = "obs-2"
 	b.Content = "b"
 	idB, _ := repo.Add(ctx, b)
 
 	// Vecinos en orden de cercanía: B primero (score mayor), luego A.
 	neighbors := []ports.Neighbor{
-		{ObservationID: idB, Score: 0.9},
-		{ObservationID: idA, Score: 0.5},
+		{MemoryID: idB, Score: 0.9},
+		{MemoryID: idA, Score: 0.5},
 	}
 	got, err := repo.Search(ctx, ports.SearchQuery{Limit: 10}, neighbors)
 	if err != nil {
@@ -273,7 +273,7 @@ func TestSearchPreservesNeighborOrderAndScore(t *testing.T) {
 
 func TestSearchEmptyNeighbors(t *testing.T) {
 	db := newTestDB(t)
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	got, err := repo.Search(context.Background(), ports.SearchQuery{}, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
@@ -286,32 +286,32 @@ func TestSearchEmptyNeighbors(t *testing.T) {
 func TestSetPinned(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	id, _ := repo.Add(ctx, sampleObservation())
+	id, _ := repo.Add(ctx, sampleMemory())
 	if err := repo.SetPinned(ctx, id, true); err != nil {
 		t.Fatalf("SetPinned: %v", err)
 	}
 	got, _ := repo.Get(ctx, id)
 	if got == nil || !got.Pinned {
-		t.Errorf("la observación debió quedar fijada, fue %+v", got)
+		t.Errorf("la memoria debió quedar fijada, fue %+v", got)
 	}
 }
 
 func TestNeedingReview(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	due := sampleObservation()
+	due := sampleMemory()
 	due.Content = "vencida"
 	due.ReviewAfter = time.Now().UTC().Add(-time.Hour)
 	if _, err := repo.Add(ctx, due); err != nil {
 		t.Fatalf("Add due: %v", err)
 	}
-	future := sampleObservation()
+	future := sampleMemory()
 	future.SyncID = "obs-2"
 	future.Content = "futura"
 	future.ReviewAfter = time.Now().UTC().Add(time.Hour)
@@ -331,14 +331,14 @@ func TestNeedingReview(t *testing.T) {
 func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
-	repo := NewObservationRepo(db)
+	repo := NewMemoryRepo(db)
 	uow := NewUnitOfWork(db)
 	ctx := context.Background()
 
 	// El repo es tx-aware vía context: llamado con el ctx que da uow.Do, escribe en la
 	// transacción, así que commit/rollback afectan de verdad a lo insertado.
 	addInTx := func(ctx context.Context, syncID string) error {
-		o := sampleObservation()
+		o := sampleMemory()
 		o.SyncID = syncID
 		_, err := repo.Add(ctx, o)
 		return err
@@ -350,7 +350,7 @@ func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 	}
 	got, _ := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
 	if len(got) != 1 {
-		t.Fatalf("tras commit esperaba 1 observación, obtuve %d", len(got))
+		t.Fatalf("tras commit esperaba 1 memoria, obtuve %d", len(got))
 	}
 
 	// Rollback: un error dentro de Do no debe dejar rastro.
@@ -365,6 +365,6 @@ func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 	}
 	got, _ = repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
 	if len(got) != 1 {
-		t.Errorf("tras rollback debe seguir habiendo 1 observación, obtuve %d", len(got))
+		t.Errorf("tras rollback debe seguir habiendo 1 memoria, obtuve %d", len(got))
 	}
 }

@@ -30,7 +30,7 @@ const (
 type SaveInput struct {
 	SessionID string
 	Project   string
-	Type      domain.ObservationType
+	Type      domain.MemoryType
 	Scope     domain.Scope
 	Title     string
 	Content   string
@@ -40,23 +40,23 @@ type SaveInput struct {
 
 // SaveResult es el resultado de Save: la memoria resultante y qué ocurrió.
 type SaveResult struct {
-	Observation domain.Observation
-	Outcome     SaveOutcome
+	Memory  domain.Memory
+	Outcome SaveOutcome
 }
 
 // UpdateInput son los campos editables de una memoria; los nil no se tocan.
 type UpdateInput struct {
-	Type     *domain.ObservationType
+	Type     *domain.MemoryType
 	Title    *string
 	Content  *string
 	Scope    *domain.Scope
 	TopicKey *string
 }
 
-// MemoryService implementa los casos de uso sobre memorias (observaciones). Aquí vive la lógica
-// de dedupe exacto, fusión por tema y decaimiento, fuera del SQL y testeable con repos fake.
+// MemoryService implementa los casos de uso sobre memorias. Aquí vive la lógica de dedupe
+// exacto, fusión por tema y decaimiento, fuera del SQL y testeable con repos fake.
 type MemoryService struct {
-	obs          ports.ObservationRepo
+	memories     ports.MemoryRepo
 	sync         ports.SyncRepo
 	uow          ports.UnitOfWork
 	clock        ports.Clock
@@ -64,9 +64,9 @@ type MemoryService struct {
 }
 
 // NewMemoryService construye el servicio con sus dependencias inyectadas.
-func NewMemoryService(obs ports.ObservationRepo, sync ports.SyncRepo, uow ports.UnitOfWork, clock ports.Clock) *MemoryService {
+func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.UnitOfWork, clock ports.Clock) *MemoryService {
 	return &MemoryService{
-		obs:          obs,
+		memories:     memories,
 		sync:         sync,
 		uow:          uow,
 		clock:        clock,
@@ -107,7 +107,7 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 	content := strings.TrimSpace(in.Content)
 	hash := hashContent(content)
 
-	candidate := domain.Observation{
+	candidate := domain.Memory{
 		SessionID:      in.SessionID,
 		Project:        project,
 		Type:           in.Type,
@@ -131,7 +131,7 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 	err := m.uow.Do(ctx, func(ctx context.Context) error {
 		// 1. Fusión por tema.
 		if !topic.IsZero() {
-			existing, err := m.obs.LatestByTopicKey(ctx, project, scope, topic)
+			existing, err := m.memories.LatestByTopicKey(ctx, project, scope, topic)
 			if err != nil {
 				return err
 			}
@@ -144,17 +144,17 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 				existing.RevisionCount++
 				existing.UpdatedAt = now
 				existing.LastSeenAt = now
-				updated, err := m.obs.Update(ctx, existing.ID, *existing)
+				updated, err := m.memories.Update(ctx, existing.ID, *existing)
 				if err != nil {
 					return err
 				}
-				result = SaveResult{Observation: *updated, Outcome: SaveMerged}
+				result = SaveResult{Memory: *updated, Outcome: SaveMerged}
 				return m.enqueueUpsert(ctx, *updated)
 			}
 		}
 
 		// 2. Dedupe exacto dentro de la ventana.
-		dup, err := m.obs.FindByHash(ctx, project, scope, hash)
+		dup, err := m.memories.FindByHash(ctx, project, scope, hash)
 		if err != nil {
 			return err
 		}
@@ -162,23 +162,23 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 			dup.DuplicateCount++
 			dup.LastSeenAt = now
 			dup.UpdatedAt = now
-			updated, err := m.obs.Update(ctx, dup.ID, *dup)
+			updated, err := m.memories.Update(ctx, dup.ID, *dup)
 			if err != nil {
 				return err
 			}
-			result = SaveResult{Observation: *updated, Outcome: SaveDuplicate}
+			result = SaveResult{Memory: *updated, Outcome: SaveDuplicate}
 			return m.enqueueUpsert(ctx, *updated)
 		}
 
 		// 3. Memoria nueva.
 		candidate.SyncID = newSyncID("obs")
 		candidate.ReviewAfter = domain.ReviewAfterFor(in.Type, now)
-		id, err := m.obs.Add(ctx, candidate)
+		id, err := m.memories.Add(ctx, candidate)
 		if err != nil {
 			return err
 		}
 		candidate.ID = id
-		result = SaveResult{Observation: candidate, Outcome: SaveCreated}
+		result = SaveResult{Memory: candidate, Outcome: SaveCreated}
 		return m.enqueueUpsert(ctx, candidate)
 	})
 	if err != nil {
@@ -188,22 +188,22 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 }
 
 // Get recupera una memoria por id.
-func (m *MemoryService) Get(ctx context.Context, id int64) (*domain.Observation, error) {
-	return m.obs.Get(ctx, id)
+func (m *MemoryService) Get(ctx context.Context, id int64) (*domain.Memory, error) {
+	return m.memories.Get(ctx, id)
 }
 
 // Recent lista memorias recientes (navegación del usuario).
-func (m *MemoryService) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Observation, error) {
-	return m.obs.Recent(ctx, q)
+func (m *MemoryService) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
+	return m.memories.Recent(ctx, q)
 }
 
 // Update aplica cambios parciales a una memoria viva y reencola su mutación. Si cambia el
 // contenido, recalcula el hash. Devuelve domain.ErrNotFound si la memoria no existe.
-func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (domain.Observation, error) {
+func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (domain.Memory, error) {
 	now := m.clock.Now().UTC()
-	var result domain.Observation
+	var result domain.Memory
 	err := m.uow.Do(ctx, func(ctx context.Context) error {
-		o, err := m.obs.Get(ctx, id)
+		o, err := m.memories.Get(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -238,7 +238,7 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		if err := o.Validate(); err != nil {
 			return err
 		}
-		updated, err := m.obs.Update(ctx, id, *o)
+		updated, err := m.memories.Update(ctx, id, *o)
 		if err != nil {
 			return err
 		}
@@ -249,7 +249,7 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		return m.enqueueUpsert(ctx, *updated)
 	})
 	if err != nil {
-		return domain.Observation{}, err
+		return domain.Memory{}, err
 	}
 	return result, nil
 }
@@ -257,7 +257,7 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 // Delete borra una memoria (soft por defecto, hard si se pide) y encola la mutación de borrado.
 func (m *MemoryService) Delete(ctx context.Context, id int64, hard bool) error {
 	return m.uow.Do(ctx, func(ctx context.Context) error {
-		o, err := m.obs.Get(ctx, id)
+		o, err := m.memories.Get(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -265,9 +265,9 @@ func (m *MemoryService) Delete(ctx context.Context, id int64, hard bool) error {
 			return domain.ErrNotFound
 		}
 		if hard {
-			err = m.obs.HardDelete(ctx, id)
+			err = m.memories.HardDelete(ctx, id)
 		} else {
-			err = m.obs.SoftDelete(ctx, id)
+			err = m.memories.SoftDelete(ctx, id)
 		}
 		if err != nil {
 			return err
@@ -276,20 +276,20 @@ func (m *MemoryService) Delete(ctx context.Context, id int64, hard bool) error {
 	})
 }
 
-// enqueueUpsert encola una mutación de alta/actualización para una observación.
-func (m *MemoryService) enqueueUpsert(ctx context.Context, o domain.Observation) error {
+// enqueueUpsert encola una mutación de alta/actualización para una memoria.
+func (m *MemoryService) enqueueUpsert(ctx context.Context, o domain.Memory) error {
 	return m.enqueue(ctx, o, domain.SyncOpUpsert)
 }
 
-// enqueue construye y encola la mutación de sync de una observación.
-func (m *MemoryService) enqueue(ctx context.Context, o domain.Observation, op domain.SyncOp) error {
+// enqueue construye y encola la mutación de sync de una memoria.
+func (m *MemoryService) enqueue(ctx context.Context, o domain.Memory, op domain.SyncOp) error {
 	payload, err := json.Marshal(o)
 	if err != nil {
 		return err
 	}
 	return m.sync.EnqueueMutation(ctx, domain.SyncMutation{
 		TargetKey:  defaultSyncTarget,
-		Entity:     domain.SyncEntityObservation,
+		Entity:     domain.SyncEntityMemory,
 		EntityKey:  o.SyncID,
 		Op:         op,
 		Payload:    payload,

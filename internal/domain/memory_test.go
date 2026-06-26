@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-func baseObservation() Observation {
-	return Observation{
+func baseMemory() Memory {
+	return Memory{
 		Title:   "Usamos Clean Architecture",
 		Content: "What: capas. Why: testeable. Where: internal/.",
 		Type:    TypeDecision,
@@ -15,7 +15,7 @@ func baseObservation() Observation {
 	}
 }
 
-func TestObservationState(t *testing.T) {
+func TestMemoryState(t *testing.T) {
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name        string
@@ -29,7 +29,7 @@ func TestObservationState(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			o := baseObservation()
+			o := baseMemory()
 			o.ReviewAfter = tc.reviewAfter
 			if got := o.State(now); got != tc.want {
 				t.Fatalf("State = %q, se esperaba %q", got, tc.want)
@@ -53,23 +53,23 @@ func TestReviewAfterFor(t *testing.T) {
 	}
 }
 
-func TestObservationValidate(t *testing.T) {
+func TestMemoryValidate(t *testing.T) {
 	tests := []struct {
 		name    string
-		mutate  func(*Observation)
+		mutate  func(*Memory)
 		wantErr error
 	}{
-		{"válida", func(*Observation) {}, nil},
-		{"título vacío", func(o *Observation) { o.Title = "  " }, ErrEmptyTitle},
-		{"contenido vacío", func(o *Observation) { o.Content = "" }, ErrEmptyContent},
-		{"tipo inválido", func(o *Observation) { o.Type = "otro" }, ErrInvalidType},
-		{"scope inválido", func(o *Observation) { o.Scope = "equipo" }, ErrInvalidScope},
-		{"topic_key válido", func(o *Observation) { o.TopicKey = "architecture/auth" }, nil},
-		{"topic_key inválido", func(o *Observation) { o.TopicKey = "MAL/Formato" }, ErrInvalidTopicKey},
+		{"válida", func(*Memory) {}, nil},
+		{"título vacío", func(o *Memory) { o.Title = "  " }, ErrEmptyTitle},
+		{"contenido vacío", func(o *Memory) { o.Content = "" }, ErrEmptyContent},
+		{"tipo inválido", func(o *Memory) { o.Type = "otro" }, ErrInvalidType},
+		{"scope inválido", func(o *Memory) { o.Scope = "equipo" }, ErrInvalidScope},
+		{"topic_key válido", func(o *Memory) { o.TopicKey = "architecture/auth" }, nil},
+		{"topic_key inválido", func(o *Memory) { o.TopicKey = "MAL/Formato" }, ErrInvalidTopicKey},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			o := baseObservation()
+			o := baseMemory()
 			tc.mutate(&o)
 			err := o.Validate()
 			if !errors.Is(err, tc.wantErr) {
@@ -79,14 +79,14 @@ func TestObservationValidate(t *testing.T) {
 	}
 }
 
-func TestObservationIsDeleted(t *testing.T) {
-	o := baseObservation()
+func TestMemoryIsDeleted(t *testing.T) {
+	o := baseMemory()
 	if o.IsDeleted() {
-		t.Error("una observación sin DeletedAt no está borrada")
+		t.Error("una memoria sin DeletedAt no está borrada")
 	}
 	ts := time.Now()
 	o.DeletedAt = &ts
 	if !o.IsDeleted() {
-		t.Error("una observación con DeletedAt está borrada")
+		t.Error("una memoria con DeletedAt está borrada")
 	}
 }

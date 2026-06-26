@@ -11,7 +11,7 @@ import (
 func sampleMutation(entityKey string) domain.SyncMutation {
 	return domain.SyncMutation{
 		TargetKey:  "remote",
-		Entity:     domain.SyncEntityObservation,
+		Entity:     domain.SyncEntityMemory,
 		EntityKey:  entityKey,
 		Op:         domain.SyncOpUpsert,
 		Payload:    []byte(`{"sync_id":"` + entityKey + `"}`),
@@ -54,7 +54,7 @@ func TestSyncEnqueueAndListPending(t *testing.T) {
 	if string(pending[0].Payload) != `{"sync_id":"obs-1"}` {
 		t.Errorf("payload no coincide: %s", pending[0].Payload)
 	}
-	if pending[0].Entity != domain.SyncEntityObservation || pending[0].Op != domain.SyncOpUpsert {
+	if pending[0].Entity != domain.SyncEntityMemory || pending[0].Op != domain.SyncOpUpsert {
 		t.Errorf("entity/op no coinciden: %+v", pending[0])
 	}
 	if pending[0].AckedAt != nil {

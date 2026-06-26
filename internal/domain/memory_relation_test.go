@@ -2,8 +2,8 @@ package domain
 
 import "testing"
 
-func TestRelationKindValid(t *testing.T) {
-	valid := []RelationKind{
+func TestRelationTypeValid(t *testing.T) {
+	valid := []RelationType{
 		RelationPending, RelationRelated, RelationCompatible, RelationScoped,
 		RelationConflictsWith, RelationSupersedes, RelationNotConflict,
 	}
@@ -12,7 +12,7 @@ func TestRelationKindValid(t *testing.T) {
 			t.Errorf("%q debería ser válido", k)
 		}
 	}
-	if RelationKind("inventado").Valid() {
+	if RelationType("inventado").Valid() {
 		t.Error("\"inventado\" no debería ser válido")
 	}
 }
@@ -34,7 +34,7 @@ func TestJudgmentStatusValid(t *testing.T) {
 func TestRelationIsConflict(t *testing.T) {
 	tests := []struct {
 		name   string
-		kind   RelationKind
+		kind   RelationType
 		status JudgmentStatus
 		want   bool
 	}{
@@ -45,7 +45,7 @@ func TestRelationIsConflict(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			r := Relation{Kind: tc.kind, Status: tc.status}
+			r := MemoryRelation{Kind: tc.kind, Status: tc.status}
 			if got := r.IsConflict(); got != tc.want {
 				t.Fatalf("IsConflict = %v, se esperaba %v", got, tc.want)
 			}

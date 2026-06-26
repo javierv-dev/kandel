@@ -12,27 +12,27 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// ObservationRepo implementa ports.ObservationRepo sobre SQLite. Es persistencia pura: no
+// MemoryRepo implementa ports.MemoryRepo sobre SQLite. Es persistencia pura: no
 // decide dedupe ni topic_key (eso vive en service/memory). Aquí solo se guarda y se recupera;
 // los métodos de consulta (FindByHash, LatestByTopicKey) le dan al servicio lo que necesita
 // para tomar esas decisiones.
-type ObservationRepo struct {
+type MemoryRepo struct {
 	db execer
 }
 
 // Aserción en tiempo de compilación: el repo cumple el contrato del port.
-var _ ports.ObservationRepo = (*ObservationRepo)(nil)
+var _ ports.MemoryRepo = (*MemoryRepo)(nil)
 
-// NewObservationRepo crea el repositorio sobre la conexión dada.
-func NewObservationRepo(db *DB) *ObservationRepo {
-	return &ObservationRepo{db: db.sql}
+// NewMemoryRepo crea el repositorio sobre la conexión dada.
+func NewMemoryRepo(db *DB) *MemoryRepo {
+	return &MemoryRepo{db: db.sql}
 }
 
-// Add inserta una observación nueva con los valores ya resueltos por el servicio (incluidos
+// Add inserta una memoria nueva con los valores ya resueltos por el servicio (incluidos
 // los timestamps). Devuelve el id local autogenerado.
-func (r *ObservationRepo) Add(ctx context.Context, o domain.Observation) (int64, error) {
+func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
 	const q = `
-		INSERT INTO observations (
+		INSERT INTO memories (
 			sync_id, session_id, type, title, content, tool_name, project, scope,
 			topic_key, normalized_hash, revision_count, duplicate_count, pinned,
 			created_at, updated_at, last_seen_at, review_after, deleted_at
@@ -46,34 +46,34 @@ func (r *ObservationRepo) Add(ctx context.Context, o domain.Observation) (int64,
 		nullTime(o.LastSeenAt), nullTime(o.ReviewAfter), nullTime(deletedAtValue(o)),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("sqlite: insertar observación: %w", err)
+		return 0, fmt.Errorf("sqlite: insertar memoria: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("sqlite: id de observación: %w", err)
+		return 0, fmt.Errorf("sqlite: id de memoria: %w", err)
 	}
 	return id, nil
 }
 
-// Get recupera una observación viva por id; devuelve (nil, nil) si no existe.
-func (r *ObservationRepo) Get(ctx context.Context, id int64) (*domain.Observation, error) {
-	q := `SELECT ` + observationColumns + ` FROM observations WHERE id = ? AND deleted_at IS NULL`
+// Get recupera una memoria viva por id; devuelve (nil, nil) si no existe.
+func (r *MemoryRepo) Get(ctx context.Context, id int64) (*domain.Memory, error) {
+	q := `SELECT ` + memoryColumns + ` FROM memories WHERE id = ? AND deleted_at IS NULL`
 	return r.queryOne(ctx, q, id)
 }
 
 // GetBySyncID recupera por identidad estable de sync; (nil, nil) si no existe.
-func (r *ObservationRepo) GetBySyncID(ctx context.Context, syncID string) (*domain.Observation, error) {
-	q := `SELECT ` + observationColumns + `
-		FROM observations WHERE sync_id = ? AND deleted_at IS NULL
+func (r *MemoryRepo) GetBySyncID(ctx context.Context, syncID string) (*domain.Memory, error) {
+	q := `SELECT ` + memoryColumns + `
+		FROM memories WHERE sync_id = ? AND deleted_at IS NULL
 		ORDER BY id DESC LIMIT 1`
 	return r.queryOne(ctx, q, syncID)
 }
 
-// Update reemplaza los campos editables de una observación y devuelve su estado final. Los
+// Update reemplaza los campos editables de una memoria y devuelve su estado final. Los
 // timestamps (updated_at) los fija el servicio en la entidad recibida.
-func (r *ObservationRepo) Update(ctx context.Context, id int64, o domain.Observation) (*domain.Observation, error) {
+func (r *MemoryRepo) Update(ctx context.Context, id int64, o domain.Memory) (*domain.Memory, error) {
 	const q = `
-		UPDATE observations SET
+		UPDATE memories SET
 			type = ?, title = ?, content = ?, tool_name = ?, project = ?, scope = ?,
 			topic_key = ?, normalized_hash = ?, revision_count = ?, duplicate_count = ?,
 			updated_at = ?, last_seen_at = ?, review_after = ?
@@ -86,7 +86,7 @@ func (r *ObservationRepo) Update(ctx context.Context, id int64, o domain.Observa
 		id,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: actualizar observación: %w", err)
+		return nil, fmt.Errorf("sqlite: actualizar memoria: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, nil
@@ -94,27 +94,27 @@ func (r *ObservationRepo) Update(ctx context.Context, id int64, o domain.Observa
 	return r.Get(ctx, id)
 }
 
-// SoftDelete marca la observación como borrada sin quitarla. La marca de tiempo la pone la base
+// SoftDelete marca la memoria como borrada sin quitarla. La marca de tiempo la pone la base
 // de datos (datetime('now')): es un dato de auditoría, no una regla de dominio.
-func (r *ObservationRepo) SoftDelete(ctx context.Context, id int64) error {
-	const q = `UPDATE observations SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL`
+func (r *MemoryRepo) SoftDelete(ctx context.Context, id int64) error {
+	const q = `UPDATE memories SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL`
 	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, id); err != nil {
-		return fmt.Errorf("sqlite: soft-delete observación: %w", err)
+		return fmt.Errorf("sqlite: soft-delete memoria: %w", err)
 	}
 	return nil
 }
 
-// HardDelete elimina físicamente la observación.
-func (r *ObservationRepo) HardDelete(ctx context.Context, id int64) error {
-	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM observations WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("sqlite: hard-delete observación: %w", err)
+// HardDelete elimina físicamente la memoria.
+func (r *MemoryRepo) HardDelete(ctx context.Context, id int64) error {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM memories WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("sqlite: hard-delete memoria: %w", err)
 	}
 	return nil
 }
 
-// Recent lista observaciones vivas por recencia (camino de navegación del usuario).
-func (r *ObservationRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Observation, error) {
-	query := `SELECT ` + observationColumns + ` FROM observations WHERE deleted_at IS NULL`
+// Recent lista memorias vivas por recencia (camino de navegación del usuario).
+func (r *MemoryRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
+	query := `SELECT ` + memoryColumns + ` FROM memories WHERE deleted_at IS NULL`
 	args := []any{}
 	if q.Project != "" {
 		query += ` AND project = ?`
@@ -131,8 +131,8 @@ func (r *ObservationRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]do
 
 // Search hidrata a SearchResult los vecinos resueltos por el VectorIndex, preservando el orden
 // de cercanía y su puntuación, y aplicando los filtros de q (tipo/proyecto/alcance). Las
-// observaciones borradas o que no pasen los filtros se descartan.
-func (r *ObservationRepo) Search(ctx context.Context, q ports.SearchQuery, neighbors []ports.Neighbor) ([]domain.SearchResult, error) {
+// memorias borradas o que no pasen los filtros se descartan.
+func (r *MemoryRepo) Search(ctx context.Context, q ports.SearchQuery, neighbors []ports.Neighbor) ([]domain.SearchResult, error) {
 	if len(neighbors) == 0 {
 		return nil, nil
 	}
@@ -141,12 +141,12 @@ func (r *ObservationRepo) Search(ctx context.Context, q ports.SearchQuery, neigh
 	scoreByID := make(map[int64]float64, len(neighbors))
 	ids := make([]any, 0, len(neighbors))
 	for _, n := range neighbors {
-		scoreByID[n.ObservationID] = n.Score
-		ids = append(ids, n.ObservationID)
+		scoreByID[n.MemoryID] = n.Score
+		ids = append(ids, n.MemoryID)
 	}
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-	query := `SELECT ` + observationColumns + ` FROM observations
+	query := `SELECT ` + memoryColumns + ` FROM memories
 		WHERE deleted_at IS NULL AND id IN (` + placeholders + `)`
 	args := append([]any{}, ids...)
 	if q.Type != "" {
@@ -166,7 +166,7 @@ func (r *ObservationRepo) Search(ctx context.Context, q ports.SearchQuery, neigh
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[int64]domain.Observation, len(found))
+	byID := make(map[int64]domain.Memory, len(found))
 	for _, o := range found {
 		byID[o.ID] = o
 	}
@@ -176,11 +176,11 @@ func (r *ObservationRepo) Search(ctx context.Context, q ports.SearchQuery, neigh
 	limit := normalizeLimit(q.Limit)
 	out := make([]domain.SearchResult, 0, len(neighbors))
 	for _, n := range neighbors {
-		o, ok := byID[n.ObservationID]
+		o, ok := byID[n.MemoryID]
 		if !ok {
 			continue
 		}
-		out = append(out, domain.SearchResult{Observation: o, Score: scoreByID[n.ObservationID]})
+		out = append(out, domain.SearchResult{Memory: o, Score: scoreByID[n.MemoryID]})
 		if len(out) >= limit {
 			break
 		}
@@ -188,10 +188,10 @@ func (r *ObservationRepo) Search(ctx context.Context, q ports.SearchQuery, neigh
 	return out, nil
 }
 
-// FindByHash devuelve la observación viva más reciente con el mismo hash normalizado dentro del
+// FindByHash devuelve la memoria viva más reciente con el mismo hash normalizado dentro del
 // mismo proyecto y alcance (base del dedupe exacto). (nil, nil) si no hay ninguna.
-func (r *ObservationRepo) FindByHash(ctx context.Context, project string, scope domain.Scope, hash string) (*domain.Observation, error) {
-	q := `SELECT ` + observationColumns + ` FROM observations
+func (r *MemoryRepo) FindByHash(ctx context.Context, project string, scope domain.Scope, hash string) (*domain.Memory, error) {
+	q := `SELECT ` + memoryColumns + ` FROM memories
 		WHERE normalized_hash = ?
 		  AND ifnull(project, '') = ?
 		  AND scope = ?
@@ -200,10 +200,10 @@ func (r *ObservationRepo) FindByHash(ctx context.Context, project string, scope 
 	return r.queryOne(ctx, q, hash, project, string(scope))
 }
 
-// LatestByTopicKey devuelve la observación viva más reciente de un mismo tema dentro del mismo
+// LatestByTopicKey devuelve la memoria viva más reciente de un mismo tema dentro del mismo
 // proyecto y alcance (base de la fusión por topic_key). (nil, nil) si no hay ninguna.
-func (r *ObservationRepo) LatestByTopicKey(ctx context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Observation, error) {
-	q := `SELECT ` + observationColumns + ` FROM observations
+func (r *MemoryRepo) LatestByTopicKey(ctx context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Memory, error) {
+	q := `SELECT ` + memoryColumns + ` FROM memories
 		WHERE topic_key = ?
 		  AND ifnull(project, '') = ?
 		  AND scope = ?
@@ -212,18 +212,18 @@ func (r *ObservationRepo) LatestByTopicKey(ctx context.Context, project string, 
 	return r.queryOne(ctx, q, string(key), project, string(scope))
 }
 
-// SetPinned fija o desfija una observación (estado local).
-func (r *ObservationRepo) SetPinned(ctx context.Context, id int64, pinned bool) error {
-	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `UPDATE observations SET pinned = ? WHERE id = ?`, boolToInt(pinned), id); err != nil {
-		return fmt.Errorf("sqlite: fijar observación: %w", err)
+// SetPinned fija o desfija una memoria (estado local).
+func (r *MemoryRepo) SetPinned(ctx context.Context, id int64, pinned bool) error {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `UPDATE memories SET pinned = ? WHERE id = ?`, boolToInt(pinned), id); err != nil {
+		return fmt.Errorf("sqlite: fijar memoria: %w", err)
 	}
 	return nil
 }
 
-// NeedingReview lista observaciones vivas cuya fecha de revisión ya venció (review_after en el
+// NeedingReview lista memorias vivas cuya fecha de revisión ya venció (review_after en el
 // pasado), de la más antigua a la más nueva.
-func (r *ObservationRepo) NeedingReview(ctx context.Context, project string, limit int) ([]domain.Observation, error) {
-	query := `SELECT ` + observationColumns + ` FROM observations
+func (r *MemoryRepo) NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error) {
+	query := `SELECT ` + memoryColumns + ` FROM memories
 		WHERE deleted_at IS NULL
 		  AND review_after IS NOT NULL
 		  AND datetime(review_after) < datetime('now')`
@@ -240,24 +240,24 @@ func (r *ObservationRepo) NeedingReview(ctx context.Context, project string, lim
 // ─── helpers internos ────────────────────────────────────────────────────────
 
 // queryOne ejecuta una consulta que devuelve a lo sumo una fila; (nil, nil) si no hay ninguna.
-func (r *ObservationRepo) queryOne(ctx context.Context, query string, args ...any) (*domain.Observation, error) {
-	o, err := scanObservation(execFromCtx(ctx, r.db).QueryRowContext(ctx, query, args...))
+func (r *MemoryRepo) queryOne(ctx context.Context, query string, args ...any) (*domain.Memory, error) {
+	o, err := scanMemory(execFromCtx(ctx, r.db).QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: leer observación: %w", err)
+		return nil, fmt.Errorf("sqlite: leer memoria: %w", err)
 	}
 	return &o, nil
 }
 
 // queryMany ejecuta una consulta que devuelve varias filas.
-func (r *ObservationRepo) queryMany(ctx context.Context, query string, args ...any) ([]domain.Observation, error) {
+func (r *MemoryRepo) queryMany(ctx context.Context, query string, args ...any) ([]domain.Memory, error) {
 	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: consultar observaciones: %w", err)
+		return nil, fmt.Errorf("sqlite: consultar memorias: %w", err)
 	}
-	return scanObservations(rows)
+	return scanMemories(rows)
 }
 
 func boolToInt(b bool) int {
@@ -267,9 +267,9 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// deletedAtValue devuelve el tiempo de borrado o el cero si la observación está viva, para
+// deletedAtValue devuelve el tiempo de borrado o el cero si la memoria está viva, para
 // reutilizar nullTime al insertar.
-func deletedAtValue(o domain.Observation) time.Time {
+func deletedAtValue(o domain.Memory) time.Time {
 	if o.DeletedAt != nil {
 		return *o.DeletedAt
 	}

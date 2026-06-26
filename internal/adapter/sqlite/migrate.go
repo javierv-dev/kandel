@@ -6,9 +6,9 @@ import "context"
 // correr migrate() sobre una base vacía o ya existente es seguro y no destruye datos.
 //
 // Diferencias deliberadas frente al proyecto viejo (ver §6.bis del plan):
-//   - NO hay FTS5 (ni tabla virtual observations_fts ni sus triggers): la búsqueda deja de ser
-//     léxica y pasa a ser 100% vectorial. El motor vectorial (tabla observation_vectors) se
-//     añadirá en la Fase 5.bis; esta migración cubre solo la Fase 3 (observaciones).
+//   - NO hay FTS5 (ni tabla virtual memories_fts ni sus triggers): la búsqueda deja de ser
+//     léxica y pasa a ser 100% vectorial. El motor vectorial (tabla memory_vectors) se
+//     añadirá en la Fase 5.bis; esta migración cubre solo la Fase 3 (memorias).
 //   - Los timestamps se guardan como TEXT en formato "2006-01-02 15:04:05" (UTC), fijados por
 //     la capa de servicio vía Clock; el adaptador no usa datetime('now') salvo en el borrado.
 const schema = `
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	summary    TEXT
 );
 
-CREATE TABLE IF NOT EXISTS observations (
+CREATE TABLE IF NOT EXISTS memories (
 	id              INTEGER PRIMARY KEY AUTOINCREMENT,
 	sync_id         TEXT,
 	session_id      TEXT NOT NULL,
@@ -44,18 +44,18 @@ CREATE TABLE IF NOT EXISTS observations (
 	FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_obs_session ON observations(session_id);
-CREATE INDEX IF NOT EXISTS idx_obs_type    ON observations(type);
-CREATE INDEX IF NOT EXISTS idx_obs_project ON observations(project);
-CREATE INDEX IF NOT EXISTS idx_obs_created ON observations(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_obs_scope   ON observations(scope);
-CREATE INDEX IF NOT EXISTS idx_obs_sync_id ON observations(sync_id);
-CREATE INDEX IF NOT EXISTS idx_obs_topic   ON observations(topic_key, project, scope, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_obs_deleted ON observations(deleted_at);
-CREATE INDEX IF NOT EXISTS idx_obs_dedupe  ON observations(normalized_hash, project, scope, type, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_obs_review  ON observations(review_after);
+CREATE INDEX IF NOT EXISTS idx_mem_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_mem_type    ON memories(type);
+CREATE INDEX IF NOT EXISTS idx_mem_project ON memories(project);
+CREATE INDEX IF NOT EXISTS idx_mem_created ON memories(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mem_scope   ON memories(scope);
+CREATE INDEX IF NOT EXISTS idx_mem_sync_id ON memories(sync_id);
+CREATE INDEX IF NOT EXISTS idx_mem_topic   ON memories(topic_key, project, scope, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mem_deleted ON memories(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_mem_dedupe  ON memories(normalized_hash, project, scope, type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mem_review  ON memories(review_after);
 
-CREATE TABLE IF NOT EXISTS user_prompts (
+CREATE TABLE IF NOT EXISTS prompts (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	sync_id    TEXT,
 	session_id TEXT NOT NULL,
@@ -65,10 +65,10 @@ CREATE TABLE IF NOT EXISTS user_prompts (
 	FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_prompts_session ON user_prompts(session_id);
-CREATE INDEX IF NOT EXISTS idx_prompts_project ON user_prompts(project);
-CREATE INDEX IF NOT EXISTS idx_prompts_created ON user_prompts(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_prompts_sync_id ON user_prompts(sync_id);
+CREATE INDEX IF NOT EXISTS idx_prompts_session ON prompts(session_id);
+CREATE INDEX IF NOT EXISTS idx_prompts_project ON prompts(project);
+CREATE INDEX IF NOT EXISTS idx_prompts_created ON prompts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prompts_sync_id ON prompts(sync_id);
 
 CREATE TABLE IF NOT EXISTS memory_relations (
 	id              INTEGER PRIMARY KEY AUTOINCREMENT,

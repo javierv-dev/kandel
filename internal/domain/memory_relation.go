@@ -2,28 +2,28 @@ package domain
 
 import "time"
 
-// RelationKind clasifica el tipo de relación entre dos memorias. Nace como pending
+// RelationType clasifica el tipo de relación entre dos memorias. Nace como pending
 // (placeholder, sin clasificar) y, al juzgarse, pasa a uno de los veredictos.
-type RelationKind string
+type RelationType string
 
 const (
 	// RelationPending es la ausencia de veredicto: hay un candidato, nadie lo ha juzgado.
-	RelationPending RelationKind = "pending"
-	RelationRelated RelationKind = "related"
+	RelationPending RelationType = "pending"
+	RelationRelated RelationType = "related"
 	// RelationCompatible indica que conviven sin contradecirse.
-	RelationCompatible RelationKind = "compatible"
+	RelationCompatible RelationType = "compatible"
 	// RelationScoped indica que aplican a ámbitos distintos.
-	RelationScoped RelationKind = "scoped"
+	RelationScoped RelationType = "scoped"
 	// RelationConflictsWith indica afirmaciones contradictorias.
-	RelationConflictsWith RelationKind = "conflicts_with"
+	RelationConflictsWith RelationType = "conflicts_with"
 	// RelationSupersedes indica que una reemplaza/anula a la otra.
-	RelationSupersedes RelationKind = "supersedes"
+	RelationSupersedes RelationType = "supersedes"
 	// RelationNotConflict indica que no hay solape semántico relevante.
-	RelationNotConflict RelationKind = "not_conflict"
+	RelationNotConflict RelationType = "not_conflict"
 )
 
 // Valid indica si el tipo de relación es uno de los reconocidos.
-func (k RelationKind) Valid() bool {
+func (k RelationType) Valid() bool {
 	switch k {
 	case RelationPending, RelationRelated, RelationCompatible, RelationScoped,
 		RelationConflictsWith, RelationSupersedes, RelationNotConflict:
@@ -57,14 +57,14 @@ func (s JudgmentStatus) Valid() bool {
 	}
 }
 
-// Relation es una relación o juicio entre dos memorias, usada para detectar conflictos.
+// MemoryRelation es una relación o juicio entre dos memorias, usada para detectar conflictos.
 // SourceID y TargetID referencian a las memorias por su identidad estable de sync (sync_id).
-type Relation struct {
+type MemoryRelation struct {
 	ID         int64
 	SyncID     string
 	SourceID   string // sync_id de la memoria A
 	TargetID   string // sync_id de la memoria B
-	Kind       RelationKind
+	Kind       RelationType
 	Reason     string
 	Evidence   string
 	Confidence float64
@@ -74,6 +74,6 @@ type Relation struct {
 }
 
 // IsConflict indica si la relación, ya juzgada, representa una contradicción.
-func (r Relation) IsConflict() bool {
+func (r MemoryRelation) IsConflict() bool {
 	return r.Status == JudgmentJudged && r.Kind == RelationConflictsWith
 }

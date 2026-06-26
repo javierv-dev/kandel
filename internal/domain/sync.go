@@ -6,16 +6,16 @@ import "time"
 type SyncEntity string
 
 const (
-	SyncEntitySession     SyncEntity = "session"
-	SyncEntityObservation SyncEntity = "observation"
-	SyncEntityPrompt      SyncEntity = "prompt"
-	SyncEntityRelation    SyncEntity = "relation"
+	SyncEntitySession  SyncEntity = "session"
+	SyncEntityMemory   SyncEntity = "memory"
+	SyncEntityPrompt   SyncEntity = "prompt"
+	SyncEntityRelation SyncEntity = "relation"
 )
 
 // Valid indica si la entidad de sync es una de las reconocidas.
 func (e SyncEntity) Valid() bool {
 	switch e {
-	case SyncEntitySession, SyncEntityObservation, SyncEntityPrompt, SyncEntityRelation:
+	case SyncEntitySession, SyncEntityMemory, SyncEntityPrompt, SyncEntityRelation:
 		return true
 	default:
 		return false

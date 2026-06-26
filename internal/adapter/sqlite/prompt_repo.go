@@ -24,7 +24,7 @@ func NewPromptRepo(db *DB) *PromptRepo {
 
 // Add guarda un prompt y devuelve su id local.
 func (r *PromptRepo) Add(ctx context.Context, p domain.Prompt) (int64, error) {
-	const q = `INSERT INTO user_prompts (sync_id, session_id, content, project, created_at)
+	const q = `INSERT INTO prompts (sync_id, session_id, content, project, created_at)
 		VALUES (?, ?, ?, ?, ?)`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		nullString(p.SyncID), p.SessionID, p.Content, nullString(p.Project), formatTime(p.CreatedAt),
@@ -42,7 +42,7 @@ func (r *PromptRepo) Add(ctx context.Context, p domain.Prompt) (int64, error) {
 // AddIfMissing guarda el prompt solo si no existe uno idéntico (misma sesión, proyecto y
 // contenido). El bool indica si se insertó (true) o ya existía (false).
 func (r *PromptRepo) AddIfMissing(ctx context.Context, p domain.Prompt) (int64, bool, error) {
-	const find = `SELECT id FROM user_prompts
+	const find = `SELECT id FROM prompts
 		WHERE session_id = ? AND ifnull(project, '') = ? AND content = ?
 		ORDER BY id DESC LIMIT 1`
 	var existing int64
@@ -63,7 +63,7 @@ func (r *PromptRepo) AddIfMissing(ctx context.Context, p domain.Prompt) (int64, 
 // Recent lista los prompts más recientes de un proyecto.
 func (r *PromptRepo) Recent(ctx context.Context, project string, limit int) ([]domain.Prompt, error) {
 	query := `SELECT id, ifnull(sync_id, ''), session_id, ifnull(project, ''), content, created_at
-		FROM user_prompts`
+		FROM prompts`
 	args := []any{}
 	if project != "" {
 		query += ` WHERE project = ?`
@@ -96,7 +96,7 @@ func (r *PromptRepo) Recent(ctx context.Context, project string, limit int) ([]d
 
 // Delete elimina un prompt por id.
 func (r *PromptRepo) Delete(ctx context.Context, id int64) error {
-	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM user_prompts WHERE id = ?`, id); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM prompts WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("sqlite: borrar prompt: %w", err)
 	}
 	return nil

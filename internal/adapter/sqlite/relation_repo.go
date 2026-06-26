@@ -28,7 +28,7 @@ const relationColumns = `id, sync_id, source_id, target_id, relation, ifnull(rea
 	ifnull(evidence, ''), confidence, judgment_status, created_at, updated_at`
 
 // Insert crea una relación (típicamente pending) y devuelve su id local.
-func (r *RelationRepo) Insert(ctx context.Context, rel domain.Relation) (int64, error) {
+func (r *RelationRepo) Insert(ctx context.Context, rel domain.MemoryRelation) (int64, error) {
 	const q = `INSERT INTO memory_relations
 		(sync_id, source_id, target_id, relation, reason, evidence, confidence, judgment_status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -48,7 +48,7 @@ func (r *RelationRepo) Insert(ctx context.Context, rel domain.Relation) (int64, 
 }
 
 // Get recupera una relación por id; (nil, nil) si no existe.
-func (r *RelationRepo) Get(ctx context.Context, id int64) (*domain.Relation, error) {
+func (r *RelationRepo) Get(ctx context.Context, id int64) (*domain.MemoryRelation, error) {
 	q := `SELECT ` + relationColumns + ` FROM memory_relations WHERE id = ?`
 	rel, err := scanRelation(execFromCtx(ctx, r.db).QueryRowContext(ctx, q, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -76,7 +76,7 @@ func (r *RelationRepo) Judge(ctx context.Context, id int64, v domain.Verdict) er
 }
 
 // ListByStatus lista relaciones por estado de juicio, de la más reciente a la más antigua.
-func (r *RelationRepo) ListByStatus(ctx context.Context, status domain.JudgmentStatus, limit int) ([]domain.Relation, error) {
+func (r *RelationRepo) ListByStatus(ctx context.Context, status domain.JudgmentStatus, limit int) ([]domain.MemoryRelation, error) {
 	q := `SELECT ` + relationColumns + ` FROM memory_relations
 		WHERE judgment_status = ?
 		ORDER BY datetime(created_at) DESC, id DESC LIMIT ?`
@@ -85,7 +85,7 @@ func (r *RelationRepo) ListByStatus(ctx context.Context, status domain.JudgmentS
 		return nil, fmt.Errorf("sqlite: consultar relaciones: %w", err)
 	}
 	defer rows.Close()
-	var out []domain.Relation
+	var out []domain.MemoryRelation
 	for rows.Next() {
 		rel, err := scanRelation(rows)
 		if err != nil {
@@ -97,9 +97,9 @@ func (r *RelationRepo) ListByStatus(ctx context.Context, status domain.JudgmentS
 }
 
 // scanRelation escanea una fila al modelo de dominio.
-func scanRelation(sc rowScanner) (domain.Relation, error) {
+func scanRelation(sc rowScanner) (domain.MemoryRelation, error) {
 	var (
-		rel              domain.Relation
+		rel              domain.MemoryRelation
 		kind, status     string
 		createdAt, updAt string
 	)
@@ -107,16 +107,16 @@ func scanRelation(sc rowScanner) (domain.Relation, error) {
 		&rel.ID, &rel.SyncID, &rel.SourceID, &rel.TargetID, &kind,
 		&rel.Reason, &rel.Evidence, &rel.Confidence, &status, &createdAt, &updAt,
 	); err != nil {
-		return domain.Relation{}, err
+		return domain.MemoryRelation{}, err
 	}
-	rel.Kind = domain.RelationKind(kind)
+	rel.Kind = domain.RelationType(kind)
 	rel.Status = domain.JudgmentStatus(status)
 	var err error
 	if rel.CreatedAt, err = parseTime(createdAt); err != nil {
-		return domain.Relation{}, err
+		return domain.MemoryRelation{}, err
 	}
 	if rel.UpdatedAt, err = parseTime(updAt); err != nil {
-		return domain.Relation{}, err
+		return domain.MemoryRelation{}, err
 	}
 	return rel, nil
 }
