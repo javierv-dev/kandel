@@ -110,13 +110,30 @@ func (f *fakeConflict) RecordVerdict(_ context.Context, _, _ int64, _ domain.Ver
 	return domain.MemoryRelation{}, nil
 }
 
+// fakeSync registra las llamadas de sincronización.
+type fakeSync struct {
+	exportResult service.ExportResult
+	importResult service.ImportResult
+	exported     bool
+	imported     bool
+}
+
+func (f *fakeSync) Export(context.Context) (service.ExportResult, error) {
+	f.exported = true
+	return f.exportResult, nil
+}
+func (f *fakeSync) Import(context.Context) (service.ImportResult, error) {
+	f.imported = true
+	return f.importResult, nil
+}
+
 // newTestApp construye un App con dobles y buffers de salida capturables.
 func newTestApp() (*App, *fakeMemory, *fakeLifecycle, *bytes.Buffer, *bytes.Buffer) {
 	mem := &fakeMemory{}
 	life := &fakeLifecycle{}
 	out := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
-	app := &App{Memory: mem, Lifecycle: life, Embedding: &fakeEmbedding{}, Doctor: fakeDoctor{}, Conflict: &fakeConflict{}, Out: out, Err: errBuf, Version: "test"}
+	app := &App{Memory: mem, Lifecycle: life, Embedding: &fakeEmbedding{}, Doctor: fakeDoctor{}, Conflict: &fakeConflict{}, Sync: &fakeSync{}, Out: out, Err: errBuf, Version: "test"}
 	return app, mem, life, out, errBuf
 }
 
@@ -335,6 +352,33 @@ func TestConflictsMissingID(t *testing.T) {
 	app, _, _, _, _ := newTestApp()
 	if err := Dispatch(context.Background(), []string{"conflicts"}, app); err == nil {
 		t.Fatal("conflicts sin id debe devolver error")
+	}
+}
+
+func TestSyncExportByDefault(t *testing.T) {
+	app, _, _, out, _ := newTestApp()
+	sync := &fakeSync{exportResult: service.ExportResult{ChunkID: "abc", Count: 2}}
+	app.Sync = sync
+	if err := Dispatch(context.Background(), []string{"sync"}, app); err != nil {
+		t.Fatalf("sync devolvió error: %v", err)
+	}
+	if !sync.exported || sync.imported {
+		t.Error("sync sin flags debe exportar, no importar")
+	}
+	if !strings.Contains(out.String(), "abc") {
+		t.Errorf("debe informar el chunk exportado: %q", out.String())
+	}
+}
+
+func TestSyncImportFlag(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	sync := &fakeSync{importResult: service.ImportResult{ChunksImported: 1, MutationsApplied: 3}}
+	app.Sync = sync
+	if err := Dispatch(context.Background(), []string{"sync", "--import"}, app); err != nil {
+		t.Fatalf("sync --import devolvió error: %v", err)
+	}
+	if !sync.imported || sync.exported {
+		t.Error("sync --import debe importar, no exportar")
 	}
 }
 

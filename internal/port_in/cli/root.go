@@ -72,6 +72,12 @@ type ConflictUseCases interface {
 	RecordVerdict(ctx context.Context, sourceID, targetID int64, verdict domain.Verdict) (domain.MemoryRelation, error)
 }
 
+// SyncUseCases es la cara de la sincronización: exportar la cola e importar chunks ajenos.
+type SyncUseCases interface {
+	Export(ctx context.Context) (service.ExportResult, error)
+	Import(ctx context.Context) (service.ImportResult, error)
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
@@ -83,6 +89,7 @@ type App struct {
 	Prompt    PromptUseCases
 	Doctor    DoctorUseCases
 	Conflict  ConflictUseCases
+	Sync      SyncUseCases
 
 	Out     io.Writer
 	Err     io.Writer
