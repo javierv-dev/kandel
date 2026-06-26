@@ -119,5 +119,59 @@ func TestVectorCascadeOnHardDelete(t *testing.T) {
 	}
 }
 
+func TestPendingEmbedding(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	idx := NewVectorIndex(db)
+	ctx := context.Background()
+
+	// sinVector: nunca se indexa → pendiente.
+	sinVector := seedMemory(t, db, "sin-vector")
+	// alDia: vector del modelo activo → no pendiente.
+	alDia := seedMemory(t, db, "al-dia")
+	// obsoleto: vector de otro modelo → pendiente (el modelo es contrato de datos).
+	obsoleto := seedMemory(t, db, "obsoleto")
+	// borrado: tiene vector del modelo activo pero está soft-deleted → excluido.
+	borrado := seedMemory(t, db, "borrado")
+
+	if err := idx.Upsert(ctx, alDia, []float32{1, 0}, "bge-m3"); err != nil {
+		t.Fatalf("Upsert alDia: %v", err)
+	}
+	if err := idx.Upsert(ctx, obsoleto, []float32{1, 0}, "modelo-viejo"); err != nil {
+		t.Fatalf("Upsert obsoleto: %v", err)
+	}
+	if err := idx.Upsert(ctx, borrado, []float32{1, 0}, "bge-m3"); err != nil {
+		t.Fatalf("Upsert borrado: %v", err)
+	}
+	if err := repo.SoftDelete(ctx, borrado); err != nil {
+		t.Fatalf("SoftDelete: %v", err)
+	}
+
+	ids, err := idx.PendingEmbedding(ctx, "bge-m3", 0)
+	if err != nil {
+		t.Fatalf("PendingEmbedding: %v", err)
+	}
+	// Esperados: sinVector y obsoleto, en orden de id ascendente.
+	want := []int64{sinVector, obsoleto}
+	if len(ids) != len(want) {
+		t.Fatalf("pendientes = %v, se esperaban %v", ids, want)
+	}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Errorf("pendientes[%d] = %d, se esperaba %d (lista %v)", i, ids[i], want[i], ids)
+		}
+	}
+
+	// El límite acota el resultado.
+	limited, err := idx.PendingEmbedding(ctx, "bge-m3", 1)
+	if err != nil {
+		t.Fatalf("PendingEmbedding con límite: %v", err)
+	}
+	if len(limited) != 1 || limited[0] != sinVector {
+		t.Errorf("con límite 1 esperaba [%d], obtuve %v", sinVector, limited)
+	}
+}
+
 // Aserción de que el tipo de dominio usado existe (evita import sin uso si cambia el sample).
 var _ = domain.TypeDecision

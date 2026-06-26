@@ -83,6 +83,39 @@ func (v *VectorIndex) Delete(ctx context.Context, memoryID int64) error {
 	return nil
 }
 
+// PendingEmbedding lista los ids de memorias vivas sin vector o con vector de otro modelo,
+// ordenados por id ascendente para que el backfill por lotes avance de forma estable. El LEFT
+// JOIN deja en NULL las filas sin vector; el filtro las captura junto a las de modelo distinto.
+func (v *VectorIndex) PendingEmbedding(ctx context.Context, model string, limit int) ([]int64, error) {
+	query := `SELECT m.id FROM memories m
+		LEFT JOIN memory_vectors mv ON mv.memory_id = m.id
+		WHERE m.deleted_at IS NULL AND (mv.memory_id IS NULL OR mv.model != ?)
+		ORDER BY m.id ASC`
+	args := []any{model}
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := execFromCtx(ctx, v.db).QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: listar memorias pendientes de vector: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 // encodeVector serializa un vector a bytes little-endian (4 bytes por float32).
 func encodeVector(vec []float32) []byte {
 	buf := make([]byte, len(vec)*4)

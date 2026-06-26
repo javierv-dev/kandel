@@ -20,4 +20,9 @@ type VectorIndex interface {
 	Nearest(ctx context.Context, query []float32, limit int) ([]Neighbor, error)
 	// Delete quita el vector de una memoria (al hacer hard-delete de la memoria).
 	Delete(ctx context.Context, memoryID int64) error
+	// PendingEmbedding devuelve los ids de memorias vivas que aún no tienen vector, o cuyo
+	// vector lo generó un modelo distinto al indicado (el modelo es contrato de datos: mezclar
+	// modelos invalida las distancias de coseno). Es la base de los comandos de mantenimiento
+	// "embeddings backfill/reembed". Un limit <= 0 devuelve todos los pendientes.
+	PendingEmbedding(ctx context.Context, model string, limit int) ([]int64, error)
 }

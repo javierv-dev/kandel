@@ -45,6 +45,12 @@ type LifecycleUseCases interface {
 	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 
+// EmbeddingUseCases es la cara del mantenimiento de vectores que la CLI consume.
+type EmbeddingUseCases interface {
+	Backfill(ctx context.Context) (service.BackfillResult, error)
+	Reembed(ctx context.Context, id int64) error
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
@@ -52,6 +58,7 @@ type App struct {
 	Memory    MemoryUseCases
 	Session   SessionUseCases
 	Lifecycle LifecycleUseCases
+	Embedding EmbeddingUseCases
 
 	Out     io.Writer
 	Err     io.Writer

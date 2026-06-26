@@ -321,6 +321,12 @@ func (v *fakeVectorIndex) Delete(_ context.Context, memoryID int64) error {
 	return nil
 }
 
+// PendingEmbedding no se ejercita en los tests de MemoryService (el backfill tiene sus propios
+// dobles en embedding_test.go); aquí basta con cumplir el contrato.
+func (v *fakeVectorIndex) PendingEmbedding(_ context.Context, _ string, _ int) ([]int64, error) {
+	return nil, nil
+}
+
 // Aserciones de que los fakes cumplen los contratos de ports.
 var (
 	_ ports.Clock       = fixedClock{}

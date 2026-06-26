@@ -62,11 +62,13 @@ func run(args []string) error {
 	memoryService := service.NewMemoryService(memoryRepo, syncRepo, uow, clk, embedder, vectorIndex)
 	sessionService := service.NewSessionService(sessionRepo, syncRepo, uow, clk)
 	lifecycleService := service.NewLifecycleService(memoryRepo)
+	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex)
 
 	app := &cli.App{
 		Memory:    memoryService,
 		Session:   sessionService,
 		Lifecycle: lifecycleService,
+		Embedding: embeddingService,
 		Out:       os.Stdout,
 		Err:       os.Stderr,
 		Version:   version,

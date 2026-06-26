@@ -69,13 +69,29 @@ func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]dom
 	return nil, nil
 }
 
+// fakeEmbedding registra las llamadas de mantenimiento de vectores.
+type fakeEmbedding struct {
+	backfillCalled bool
+	reembedID      int64
+	backfillResult service.BackfillResult
+}
+
+func (f *fakeEmbedding) Backfill(context.Context) (service.BackfillResult, error) {
+	f.backfillCalled = true
+	return f.backfillResult, nil
+}
+func (f *fakeEmbedding) Reembed(_ context.Context, id int64) error {
+	f.reembedID = id
+	return nil
+}
+
 // newTestApp construye un App con dobles y buffers de salida capturables.
 func newTestApp() (*App, *fakeMemory, *fakeLifecycle, *bytes.Buffer, *bytes.Buffer) {
 	mem := &fakeMemory{}
 	life := &fakeLifecycle{}
 	out := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
-	app := &App{Memory: mem, Lifecycle: life, Out: out, Err: errBuf, Version: "test"}
+	app := &App{Memory: mem, Lifecycle: life, Embedding: &fakeEmbedding{}, Out: out, Err: errBuf, Version: "test"}
 	return app, mem, life, out, errBuf
 }
 
@@ -210,6 +226,37 @@ func TestPinAndUnpin(t *testing.T) {
 	}
 	if life.unpinnedID != 5 {
 		t.Errorf("unpinnedID = %d, se esperaba 5", life.unpinnedID)
+	}
+}
+
+func TestEmbeddingsBackfill(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	emb := &fakeEmbedding{backfillResult: service.BackfillResult{Embedded: 3}}
+	app.Embedding = emb
+	if err := Dispatch(context.Background(), []string{"embeddings", "backfill"}, app); err != nil {
+		t.Fatalf("embeddings backfill devolvió error: %v", err)
+	}
+	if !emb.backfillCalled {
+		t.Error("no se llamó a Backfill")
+	}
+}
+
+func TestEmbeddingsReembedParsesID(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	emb := &fakeEmbedding{}
+	app.Embedding = emb
+	if err := Dispatch(context.Background(), []string{"embeddings", "reembed", "8"}, app); err != nil {
+		t.Fatalf("embeddings reembed devolvió error: %v", err)
+	}
+	if emb.reembedID != 8 {
+		t.Errorf("reembedID = %d, se esperaba 8", emb.reembedID)
+	}
+}
+
+func TestEmbeddingsUnknownSubcommand(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	if err := Dispatch(context.Background(), []string{"embeddings", "frobnicate"}, app); err == nil {
+		t.Fatal("se esperaba error por subcomando desconocido")
 	}
 }
 
