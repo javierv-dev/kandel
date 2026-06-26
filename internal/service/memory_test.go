@@ -1,0 +1,248 @@
+package service
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/javierv-dev/kandel/internal/domain"
+	"github.com/javierv-dev/kandel/internal/ports"
+)
+
+var clockNow = time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
+
+func newMemoryFixture() (*MemoryService, *fakeObs, *fakeSync) {
+	obs := newFakeObs()
+	sync := &fakeSync{}
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow})
+	return svc, obs, sync
+}
+
+func baseSaveInput() SaveInput {
+	return SaveInput{
+		SessionID: "s1",
+		Project:   "Proj",
+		Type:      domain.TypeDecision,
+		Title:     "Usar hexagonal",
+		Content:   "Se decide arquitectura hexagonal.",
+	}
+}
+
+func TestSaveCreatesNew(t *testing.T) {
+	svc, obs, sync := newMemoryFixture()
+	res, err := svc.Save(context.Background(), baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if res.Outcome != SaveCreated {
+		t.Errorf("outcome esperado created, fue %v", res.Outcome)
+	}
+	if res.Observation.Project != "proj" {
+		t.Errorf("el proyecto debe normalizarse a minúsculas, fue %q", res.Observation.Project)
+	}
+	if res.Observation.SyncID == "" {
+		t.Error("una memoria nueva debe recibir sync_id")
+	}
+	// decisión decae a 6 meses.
+	if !res.Observation.ReviewAfter.Equal(clockNow.AddDate(0, 6, 0)) {
+		t.Errorf("review_after de decision debe ser +6 meses, fue %v", res.Observation.ReviewAfter)
+	}
+	if len(obs.items) != 1 {
+		t.Errorf("debe haber 1 observación, hay %d", len(obs.items))
+	}
+	if len(sync.enqueued) != 1 || sync.enqueued[0].Op != domain.SyncOpUpsert {
+		t.Errorf("debe encolarse 1 upsert, fue %+v", sync.enqueued)
+	}
+}
+
+func TestSaveDuplicateWithinWindow(t *testing.T) {
+	svc, obs, sync := newMemoryFixture()
+	ctx := context.Background()
+	if _, err := svc.Save(ctx, baseSaveInput()); err != nil {
+		t.Fatalf("Save 1: %v", err)
+	}
+	res, err := svc.Save(ctx, baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+	if res.Outcome != SaveDuplicate {
+		t.Errorf("la segunda igual debe ser duplicate, fue %v", res.Outcome)
+	}
+	if len(obs.items) != 1 {
+		t.Errorf("un duplicado no debe crear fila nueva, hay %d", len(obs.items))
+	}
+	if res.Observation.DuplicateCount != 2 {
+		t.Errorf("duplicate_count debe ser 2, fue %d", res.Observation.DuplicateCount)
+	}
+	if len(sync.enqueued) != 2 {
+		t.Errorf("cada Save encola una mutación, hubo %d", len(sync.enqueued))
+	}
+}
+
+func TestSaveDuplicateOutsideWindowCreatesNew(t *testing.T) {
+	obs := newFakeObs()
+	sync := &fakeSync{}
+	clk := &mutableClock{now: clockNow}
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, clk)
+	ctx := context.Background()
+
+	if _, err := svc.Save(ctx, baseSaveInput()); err != nil {
+		t.Fatalf("Save 1: %v", err)
+	}
+	// Avanzar más allá de la ventana de dedupe.
+	clk.now = clockNow.Add(defaultDedupeWindow + time.Minute)
+	res, err := svc.Save(ctx, baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+	if res.Outcome != SaveCreated {
+		t.Errorf("fuera de la ventana debe crear nueva, fue %v", res.Outcome)
+	}
+	if len(obs.items) != 2 {
+		t.Errorf("debe haber 2 observaciones, hay %d", len(obs.items))
+	}
+}
+
+func TestSaveMergesByTopicKey(t *testing.T) {
+	svc, obs, sync := newMemoryFixture()
+	ctx := context.Background()
+
+	first := baseSaveInput()
+	first.TopicKey = "architecture/auth"
+	first.Content = "primera versión"
+	if _, err := svc.Save(ctx, first); err != nil {
+		t.Fatalf("Save 1: %v", err)
+	}
+
+	second := baseSaveInput()
+	second.TopicKey = "architecture/auth"
+	second.Content = "versión revisada"
+	res, err := svc.Save(ctx, second)
+	if err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+	if res.Outcome != SaveMerged {
+		t.Errorf("mismo topic_key debe fusionar, fue %v", res.Outcome)
+	}
+	if len(obs.items) != 1 {
+		t.Errorf("la fusión no crea fila nueva, hay %d", len(obs.items))
+	}
+	if res.Observation.RevisionCount != 2 {
+		t.Errorf("revision_count debe ser 2, fue %d", res.Observation.RevisionCount)
+	}
+	if res.Observation.Content != "versión revisada" {
+		t.Errorf("el contenido debe actualizarse, fue %q", res.Observation.Content)
+	}
+	if len(sync.enqueued) != 2 {
+		t.Errorf("cada Save encola una mutación, hubo %d", len(sync.enqueued))
+	}
+}
+
+func TestSaveRequiresProjectForProjectScope(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	in := baseSaveInput()
+	in.Project = "   "
+	_, err := svc.Save(context.Background(), in)
+	if err != domain.ErrAmbiguousProject {
+		t.Errorf("escribir scope project sin proyecto debe fallar con ErrAmbiguousProject, fue %v", err)
+	}
+}
+
+func TestSaveGlobalScopeAllowsEmptyProject(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	in := baseSaveInput()
+	in.Project = ""
+	in.Scope = domain.ScopeGlobal
+	res, err := svc.Save(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Save global: %v", err)
+	}
+	if res.Outcome != SaveCreated {
+		t.Errorf("scope global sin proyecto debe crearse, fue %v", res.Outcome)
+	}
+}
+
+func TestSaveInvalidTopicKey(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	in := baseSaveInput()
+	in.TopicKey = "Mal/Topic/Tres/Niveles"
+	_, err := svc.Save(context.Background(), in)
+	if err == nil {
+		t.Error("un topic_key inválido debe fallar")
+	}
+}
+
+func TestUpdateAppliesPartialChanges(t *testing.T) {
+	svc, _, sync := newMemoryFixture()
+	ctx := context.Background()
+	res, _ := svc.Save(ctx, baseSaveInput())
+
+	newTitle := "Título nuevo"
+	newContent := "contenido nuevo"
+	updated, err := svc.Update(ctx, res.Observation.ID, UpdateInput{Title: &newTitle, Content: &newContent})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.Title != newTitle || updated.Content != newContent {
+		t.Errorf("los cambios no se aplicaron: %+v", updated)
+	}
+	if updated.NormalizedHash == res.Observation.NormalizedHash {
+		t.Error("al cambiar el contenido el hash debe recalcularse")
+	}
+	// Save + Update encolan una mutación cada uno.
+	if len(sync.enqueued) != 2 {
+		t.Errorf("esperaba 2 mutaciones, hubo %d", len(sync.enqueued))
+	}
+}
+
+func TestUpdateMissing(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	_, err := svc.Update(context.Background(), 999, UpdateInput{})
+	if err != domain.ErrNotFound {
+		t.Errorf("Update de id inexistente debe dar ErrNotFound, fue %v", err)
+	}
+}
+
+func TestDeleteSoftAndEnqueue(t *testing.T) {
+	svc, obs, sync := newMemoryFixture()
+	ctx := context.Background()
+	res, _ := svc.Save(ctx, baseSaveInput())
+
+	if err := svc.Delete(ctx, res.Observation.ID, false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	got, _ := obs.Get(ctx, res.Observation.ID)
+	if got != nil {
+		t.Error("tras soft-delete la memoria no debe recuperarse")
+	}
+	last := sync.enqueued[len(sync.enqueued)-1]
+	if last.Op != domain.SyncOpDelete {
+		t.Errorf("el borrado debe encolar una mutación delete, fue %v", last.Op)
+	}
+}
+
+func TestDeleteMissing(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	err := svc.Delete(context.Background(), 999, false)
+	if err != domain.ErrNotFound {
+		t.Errorf("Delete de id inexistente debe dar ErrNotFound, fue %v", err)
+	}
+}
+
+func TestRecentDelegates(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	ctx := context.Background()
+	_, _ = svc.Save(ctx, baseSaveInput())
+	got, err := svc.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("esperaba 1 reciente, hubo %d", len(got))
+	}
+}
+
+// mutableClock permite avanzar el tiempo entre llamadas en un test.
+type mutableClock struct{ now time.Time }
+
+func (c *mutableClock) Now() time.Time { return c.now }

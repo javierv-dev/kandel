@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/javierv-dev/kandel/internal/domain"
-	"github.com/javierv-dev/kandel/internal/ports"
 )
 
 func sampleMutation(entityKey string) domain.SyncMutation {
@@ -25,8 +24,8 @@ func sampleMutation(entityKey string) domain.SyncMutation {
 // enqueue encola una mutación dentro de una transacción de la unidad de trabajo.
 func enqueue(t *testing.T, uow *UnitOfWork, repo *SyncRepo, m domain.SyncMutation) {
 	t.Helper()
-	err := uow.Do(context.Background(), func(tx ports.Tx) error {
-		return repo.EnqueueMutation(context.Background(), tx, m)
+	err := uow.Do(context.Background(), func(ctx context.Context) error {
+		return repo.EnqueueMutation(ctx, m)
 	})
 	if err != nil {
 		t.Fatalf("EnqueueMutation: %v", err)
@@ -94,8 +93,8 @@ func TestSyncEnqueueRollback(t *testing.T) {
 	uow := NewUnitOfWork(db)
 	ctx := context.Background()
 
-	err := uow.Do(ctx, func(tx ports.Tx) error {
-		if err := repo.EnqueueMutation(ctx, tx, sampleMutation("obs-roll")); err != nil {
+	err := uow.Do(ctx, func(ctx context.Context) error {
+		if err := repo.EnqueueMutation(ctx, sampleMutation("obs-roll")); err != nil {
 			return err
 		}
 		return errInduced

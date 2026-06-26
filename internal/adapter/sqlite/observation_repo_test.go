@@ -335,25 +335,17 @@ func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 	uow := NewUnitOfWork(db)
 	ctx := context.Background()
 
-	// insertViaTx escribe usando la transacción real (afirmando ports.Tx a *sqlTx), para que
-	// commit/rollback afecten de verdad a lo insertado. El repo aún no es transaccional; eso
-	// llega en fases posteriores, así que aquí se prueba la unidad de trabajo en sí.
-	insertViaTx := func(tx ports.Tx, syncID string) error {
+	// El repo es tx-aware vía context: llamado con el ctx que da uow.Do, escribe en la
+	// transacción, así que commit/rollback afectan de verdad a lo insertado.
+	addInTx := func(ctx context.Context, syncID string) error {
 		o := sampleObservation()
 		o.SyncID = syncID
-		st := tx.(*sqlTx)
-		_, err := st.exec.ExecContext(ctx,
-			`INSERT INTO observations (sync_id, session_id, type, title, content, project, scope,
-				revision_count, duplicate_count, pinned, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0, ?, ?)`,
-			o.SyncID, o.SessionID, string(o.Type), o.Title, o.Content, o.Project, string(o.Scope),
-			formatTime(o.CreatedAt), formatTime(o.UpdatedAt),
-		)
+		_, err := repo.Add(ctx, o)
 		return err
 	}
 
 	// Commit: lo escrito dentro de Do debe persistir.
-	if err := uow.Do(ctx, func(tx ports.Tx) error { return insertViaTx(tx, "obs-commit") }); err != nil {
+	if err := uow.Do(ctx, func(ctx context.Context) error { return addInTx(ctx, "obs-commit") }); err != nil {
 		t.Fatalf("Do commit: %v", err)
 	}
 	got, _ := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
@@ -362,8 +354,8 @@ func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 	}
 
 	// Rollback: un error dentro de Do no debe dejar rastro.
-	err := uow.Do(ctx, func(tx ports.Tx) error {
-		if err := insertViaTx(tx, "obs-roll"); err != nil {
+	err := uow.Do(ctx, func(ctx context.Context) error {
+		if err := addInTx(ctx, "obs-roll"); err != nil {
 			return err
 		}
 		return errInduced

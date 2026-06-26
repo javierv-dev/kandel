@@ -26,7 +26,7 @@ func NewSessionRepo(db *DB) *SessionRepo {
 func (r *SessionRepo) Create(ctx context.Context, s domain.Session) error {
 	const q = `INSERT INTO sessions (id, project, directory, started_at, ended_at, summary)
 		VALUES (?, ?, ?, ?, ?, ?)`
-	_, err := r.db.ExecContext(ctx, q,
+	_, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		s.ID, s.Project, s.Directory, formatTime(s.StartedAt),
 		endedAtValue(s), nullString(s.Summary),
 	)
@@ -39,7 +39,7 @@ func (r *SessionRepo) Create(ctx context.Context, s domain.Session) error {
 // End cierra una sesión y le adjunta un resumen. El instante de cierre lo pone la base de datos.
 func (r *SessionRepo) End(ctx context.Context, id, summary string) error {
 	const q = `UPDATE sessions SET ended_at = datetime('now'), summary = ? WHERE id = ?`
-	if _, err := r.db.ExecContext(ctx, q, nullString(summary), id); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, nullString(summary), id); err != nil {
 		return fmt.Errorf("sqlite: cerrar sesión: %w", err)
 	}
 	return nil
@@ -49,7 +49,7 @@ func (r *SessionRepo) End(ctx context.Context, id, summary string) error {
 func (r *SessionRepo) Get(ctx context.Context, id string) (*domain.Session, error) {
 	const q = `SELECT id, project, directory, started_at, ended_at, ifnull(summary, '')
 		FROM sessions WHERE id = ?`
-	s, err := scanSession(r.db.QueryRowContext(ctx, q, id))
+	s, err := scanSession(execFromCtx(ctx, r.db).QueryRowContext(ctx, q, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -71,7 +71,7 @@ func (r *SessionRepo) Recent(ctx context.Context, project string, limit int) ([]
 	query += ` ORDER BY datetime(started_at) DESC, id DESC LIMIT ?`
 	args = append(args, normalizeLimit(limit))
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: consultar sesiones: %w", err)
 	}
@@ -96,7 +96,7 @@ func (r *SessionRepo) MostRecentActive(ctx context.Context, project string) (str
 		WHERE project = ? AND ended_at IS NULL
 		ORDER BY datetime(started_at) DESC, id DESC LIMIT 1`
 	var id string
-	err := r.db.QueryRowContext(ctx, q, project).Scan(&id)
+	err := execFromCtx(ctx, r.db).QueryRowContext(ctx, q, project).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

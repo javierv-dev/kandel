@@ -37,7 +37,7 @@ func (r *ObservationRepo) Add(ctx context.Context, o domain.Observation) (int64,
 			topic_key, normalized_hash, revision_count, duplicate_count, pinned,
 			created_at, updated_at, last_seen_at, review_after, deleted_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	res, err := r.db.ExecContext(ctx, q,
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		nullString(o.SyncID), o.SessionID, string(o.Type), o.Title, o.Content,
 		nullString(o.ToolName), nullString(o.Project), string(o.Scope),
 		nullString(string(o.TopicKey)), nullString(o.NormalizedHash),
@@ -78,7 +78,7 @@ func (r *ObservationRepo) Update(ctx context.Context, id int64, o domain.Observa
 			topic_key = ?, normalized_hash = ?, revision_count = ?, duplicate_count = ?,
 			updated_at = ?, last_seen_at = ?, review_after = ?
 		WHERE id = ? AND deleted_at IS NULL`
-	res, err := r.db.ExecContext(ctx, q,
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		string(o.Type), o.Title, o.Content, nullString(o.ToolName), nullString(o.Project),
 		string(o.Scope), nullString(string(o.TopicKey)), nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount,
@@ -98,7 +98,7 @@ func (r *ObservationRepo) Update(ctx context.Context, id int64, o domain.Observa
 // de datos (datetime('now')): es un dato de auditoría, no una regla de dominio.
 func (r *ObservationRepo) SoftDelete(ctx context.Context, id int64) error {
 	const q = `UPDATE observations SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL`
-	if _, err := r.db.ExecContext(ctx, q, id); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, id); err != nil {
 		return fmt.Errorf("sqlite: soft-delete observación: %w", err)
 	}
 	return nil
@@ -106,7 +106,7 @@ func (r *ObservationRepo) SoftDelete(ctx context.Context, id int64) error {
 
 // HardDelete elimina físicamente la observación.
 func (r *ObservationRepo) HardDelete(ctx context.Context, id int64) error {
-	if _, err := r.db.ExecContext(ctx, `DELETE FROM observations WHERE id = ?`, id); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM observations WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("sqlite: hard-delete observación: %w", err)
 	}
 	return nil
@@ -214,7 +214,7 @@ func (r *ObservationRepo) LatestByTopicKey(ctx context.Context, project string, 
 
 // SetPinned fija o desfija una observación (estado local).
 func (r *ObservationRepo) SetPinned(ctx context.Context, id int64, pinned bool) error {
-	if _, err := r.db.ExecContext(ctx, `UPDATE observations SET pinned = ? WHERE id = ?`, boolToInt(pinned), id); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `UPDATE observations SET pinned = ? WHERE id = ?`, boolToInt(pinned), id); err != nil {
 		return fmt.Errorf("sqlite: fijar observación: %w", err)
 	}
 	return nil
@@ -241,7 +241,7 @@ func (r *ObservationRepo) NeedingReview(ctx context.Context, project string, lim
 
 // queryOne ejecuta una consulta que devuelve a lo sumo una fila; (nil, nil) si no hay ninguna.
 func (r *ObservationRepo) queryOne(ctx context.Context, query string, args ...any) (*domain.Observation, error) {
-	o, err := scanObservation(r.db.QueryRowContext(ctx, query, args...))
+	o, err := scanObservation(execFromCtx(ctx, r.db).QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -253,7 +253,7 @@ func (r *ObservationRepo) queryOne(ctx context.Context, query string, args ...an
 
 // queryMany ejecuta una consulta que devuelve varias filas.
 func (r *ObservationRepo) queryMany(ctx context.Context, query string, args ...any) ([]domain.Observation, error) {
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: consultar observaciones: %w", err)
 	}

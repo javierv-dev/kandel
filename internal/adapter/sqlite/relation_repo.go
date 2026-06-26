@@ -32,7 +32,7 @@ func (r *RelationRepo) Insert(ctx context.Context, rel domain.Relation) (int64, 
 	const q = `INSERT INTO memory_relations
 		(sync_id, source_id, target_id, relation, reason, evidence, confidence, judgment_status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	res, err := r.db.ExecContext(ctx, q,
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		rel.SyncID, rel.SourceID, rel.TargetID, string(rel.Kind),
 		nullString(rel.Reason), nullString(rel.Evidence), rel.Confidence, string(rel.Status),
 		formatTime(rel.CreatedAt), formatTime(rel.UpdatedAt),
@@ -50,7 +50,7 @@ func (r *RelationRepo) Insert(ctx context.Context, rel domain.Relation) (int64, 
 // Get recupera una relación por id; (nil, nil) si no existe.
 func (r *RelationRepo) Get(ctx context.Context, id int64) (*domain.Relation, error) {
 	q := `SELECT ` + relationColumns + ` FROM memory_relations WHERE id = ?`
-	rel, err := scanRelation(r.db.QueryRowContext(ctx, q, id))
+	rel, err := scanRelation(execFromCtx(ctx, r.db).QueryRowContext(ctx, q, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -66,7 +66,7 @@ func (r *RelationRepo) Judge(ctx context.Context, id int64, v domain.Verdict) er
 	const q = `UPDATE memory_relations
 		SET relation = ?, reason = ?, confidence = ?, judgment_status = ?, updated_at = datetime('now')
 		WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, q,
+	_, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		string(v.Relation), nullString(v.Reasoning), v.Confidence, string(domain.JudgmentJudged), id,
 	)
 	if err != nil {
@@ -80,7 +80,7 @@ func (r *RelationRepo) ListByStatus(ctx context.Context, status domain.JudgmentS
 	q := `SELECT ` + relationColumns + ` FROM memory_relations
 		WHERE judgment_status = ?
 		ORDER BY datetime(created_at) DESC, id DESC LIMIT ?`
-	rows, err := r.db.QueryContext(ctx, q, string(status), normalizeLimit(limit))
+	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, q, string(status), normalizeLimit(limit))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: consultar relaciones: %w", err)
 	}

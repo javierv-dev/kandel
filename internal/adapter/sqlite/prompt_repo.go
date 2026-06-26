@@ -26,7 +26,7 @@ func NewPromptRepo(db *DB) *PromptRepo {
 func (r *PromptRepo) Add(ctx context.Context, p domain.Prompt) (int64, error) {
 	const q = `INSERT INTO user_prompts (sync_id, session_id, content, project, created_at)
 		VALUES (?, ?, ?, ?, ?)`
-	res, err := r.db.ExecContext(ctx, q,
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		nullString(p.SyncID), p.SessionID, p.Content, nullString(p.Project), formatTime(p.CreatedAt),
 	)
 	if err != nil {
@@ -46,7 +46,7 @@ func (r *PromptRepo) AddIfMissing(ctx context.Context, p domain.Prompt) (int64, 
 		WHERE session_id = ? AND ifnull(project, '') = ? AND content = ?
 		ORDER BY id DESC LIMIT 1`
 	var existing int64
-	err := r.db.QueryRowContext(ctx, find, p.SessionID, p.Project, p.Content).Scan(&existing)
+	err := execFromCtx(ctx, r.db).QueryRowContext(ctx, find, p.SessionID, p.Project, p.Content).Scan(&existing)
 	if err == nil {
 		return existing, false, nil
 	}
@@ -72,7 +72,7 @@ func (r *PromptRepo) Recent(ctx context.Context, project string, limit int) ([]d
 	query += ` ORDER BY datetime(created_at) DESC, id DESC LIMIT ?`
 	args = append(args, normalizeLimit(limit))
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: consultar prompts: %w", err)
 	}
@@ -96,7 +96,7 @@ func (r *PromptRepo) Recent(ctx context.Context, project string, limit int) ([]d
 
 // Delete elimina un prompt por id.
 func (r *PromptRepo) Delete(ctx context.Context, id int64) error {
-	if _, err := r.db.ExecContext(ctx, `DELETE FROM user_prompts WHERE id = ?`, id); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM user_prompts WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("sqlite: borrar prompt: %w", err)
 	}
 	return nil

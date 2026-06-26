@@ -17,4 +17,6 @@ var (
 	ErrInvalidTopicKey = errors.New("domain: topic_key inválido")
 	// ErrAmbiguousProject indica que el proyecto no se pudo resolver sin ambigüedad.
 	ErrAmbiguousProject = errors.New("domain: proyecto ambiguo")
+	// ErrNotFound indica que la entidad solicitada no existe.
+	ErrNotFound = errors.New("domain: no encontrado")
 )

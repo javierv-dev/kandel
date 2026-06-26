@@ -28,8 +28,8 @@ func NewSyncRepo(db *DB) *SyncRepo {
 
 // EnqueueMutation añade una mutación a la cola dentro de la transacción dada. Garantiza primero
 // que exista la fila de sync_state del destino (clave foránea de sync_mutations).
-func (r *SyncRepo) EnqueueMutation(ctx context.Context, tx ports.Tx, m domain.SyncMutation) error {
-	exec := execFromTx(tx, r.db)
+func (r *SyncRepo) EnqueueMutation(ctx context.Context, m domain.SyncMutation) error {
+	exec := execFromCtx(ctx, r.db)
 	if _, err := exec.ExecContext(ctx,
 		`INSERT OR IGNORE INTO sync_state (target_key, updated_at) VALUES (?, datetime('now'))`,
 		m.TargetKey,
@@ -56,7 +56,7 @@ func (r *SyncRepo) ListPending(ctx context.Context, target string, afterSeq int6
 		FROM sync_mutations
 		WHERE target_key = ? AND acked_at IS NULL AND seq > ?
 		ORDER BY seq ASC LIMIT ?`
-	rows, err := r.db.QueryContext(ctx, q, target, afterSeq, normalizeLimit(limit))
+	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, q, target, afterSeq, normalizeLimit(limit))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: listar pendientes: %w", err)
 	}
@@ -85,7 +85,7 @@ func (r *SyncRepo) Ack(ctx context.Context, target string, seqs []int64) error {
 	for _, s := range seqs {
 		args = append(args, s)
 	}
-	if _, err := r.db.ExecContext(ctx, q, args...); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, args...); err != nil {
 		return fmt.Errorf("sqlite: confirmar mutaciones: %w", err)
 	}
 	return nil
@@ -94,7 +94,7 @@ func (r *SyncRepo) Ack(ctx context.Context, target string, seqs []int64) error {
 // RecordChunk marca un chunk como ya sincronizado con un destino (idempotente).
 func (r *SyncRepo) RecordChunk(ctx context.Context, target, chunkID string) error {
 	const q = `INSERT OR IGNORE INTO sync_chunks (target_key, chunk_id) VALUES (?, ?)`
-	if _, err := r.db.ExecContext(ctx, q, target, chunkID); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, target, chunkID); err != nil {
 		return fmt.Errorf("sqlite: registrar chunk: %w", err)
 	}
 	return nil
@@ -102,7 +102,7 @@ func (r *SyncRepo) RecordChunk(ctx context.Context, target, chunkID string) erro
 
 // SyncedChunks devuelve el conjunto de chunks ya sincronizados con un destino.
 func (r *SyncRepo) SyncedChunks(ctx context.Context, target string) (map[string]bool, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT chunk_id FROM sync_chunks WHERE target_key = ?`, target)
+	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, `SELECT chunk_id FROM sync_chunks WHERE target_key = ?`, target)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: leer chunks: %w", err)
 	}
@@ -124,14 +124,14 @@ func (r *SyncRepo) AcquireLease(ctx context.Context, target, owner string, ttl t
 	if ttl <= 0 {
 		ttl = time.Minute
 	}
-	if _, err := r.db.ExecContext(ctx,
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx,
 		`INSERT OR IGNORE INTO sync_state (target_key, updated_at) VALUES (?, datetime('now'))`,
 		target,
 	); err != nil {
 		return false, fmt.Errorf("sqlite: asegurar sync_state: %w", err)
 	}
 	until := formatTime(time.Now().UTC().Add(ttl))
-	res, err := r.db.ExecContext(ctx,
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx,
 		`UPDATE sync_state
 		 SET lease_owner = ?, lease_until = ?, updated_at = datetime('now')
 		 WHERE target_key = ?
@@ -154,7 +154,7 @@ func (r *SyncRepo) ReleaseLease(ctx context.Context, target, owner string) error
 	const q = `UPDATE sync_state
 		SET lease_owner = NULL, lease_until = NULL, updated_at = datetime('now')
 		WHERE target_key = ? AND (lease_owner = ? OR lease_owner IS NULL OR lease_owner = '')`
-	if _, err := r.db.ExecContext(ctx, q, target, owner); err != nil {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, target, owner); err != nil {
 		return fmt.Errorf("sqlite: liberar lease: %w", err)
 	}
 	return nil

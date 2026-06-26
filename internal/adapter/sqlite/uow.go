@@ -2,16 +2,28 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// sqlTx materializa ports.Tx envolviendo la transacción real de database/sql. ports.Tx es una
-// interfaz marcador vacía: los repos transaccionales reciben un ports.Tx y lo afirman a *sqlTx
-// para obtener el execer subyacente, sin que el servicio conozca el detalle.
-type sqlTx struct {
-	exec execer
+// txCtxKey es la clave (privada al paquete) bajo la que viaja la transacción en el context.
+type txCtxKey struct{}
+
+// withTx devuelve un context que lleva la transacción dada.
+func withTx(ctx context.Context, tx *sql.Tx) context.Context {
+	return context.WithValue(ctx, txCtxKey{}, tx)
+}
+
+// execFromCtx devuelve la transacción que lleva el context, o el fallback si no hay ninguna.
+// Es lo que hace tx-aware a todos los repos: si se les llama con un context dentro de
+// UnitOfWork.Do, operan sobre la transacción; si no, directo contra la conexión.
+func execFromCtx(ctx context.Context, fallback execer) execer {
+	if tx, ok := ctx.Value(txCtxKey{}).(*sql.Tx); ok && tx != nil {
+		return tx
+	}
+	return fallback
 }
 
 // UnitOfWork implementa ports.UnitOfWork sobre SQLite: ejecuta una función dentro de una
@@ -28,19 +40,10 @@ func NewUnitOfWork(db *DB) *UnitOfWork {
 	return &UnitOfWork{db: db}
 }
 
-// execFromTx devuelve el execer de la transacción si tx la lleva (un *sqlTx), o el fallback en
-// caso contrario. Permite que un repo participe en una transacción abierta por la unidad de
-// trabajo, o ejecute directo contra la conexión cuando no hay transacción.
-func execFromTx(tx ports.Tx, fallback execer) execer {
-	if st, ok := tx.(*sqlTx); ok && st != nil {
-		return st.exec
-	}
-	return fallback
-}
-
-// Do abre una transacción, ejecuta fn y la confirma; si fn devuelve error (o entra en pánico),
-// revierte todo. Garantiza atomicidad para los casos de uso que escriben varias entidades.
-func (u *UnitOfWork) Do(ctx context.Context, fn func(tx ports.Tx) error) (err error) {
+// Do abre una transacción, la inyecta en el context que recibe fn y la confirma; si fn devuelve
+// error (o entra en pánico), revierte todo. Los repos llamados con ese context participan en la
+// misma transacción.
+func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error) (err error) {
 	tx, err := u.db.sql.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("sqlite: abrir transacción: %w", err)
@@ -51,7 +54,7 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(tx ports.Tx) error) (err er
 			panic(p)
 		}
 	}()
-	if err := fn(&sqlTx{exec: tx}); err != nil {
+	if err := fn(withTx(ctx, tx)); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
