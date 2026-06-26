@@ -49,6 +49,7 @@ func run(args []string) error {
 	clk := clock.System{}
 	memoryRepo := sqlite.NewMemoryRepo(db)
 	sessionRepo := sqlite.NewSessionRepo(db)
+	promptRepo := sqlite.NewPromptRepo(db)
 	syncRepo := sqlite.NewSyncRepo(db)
 	vectorIndex := sqlite.NewVectorIndex(db)
 	uow := sqlite.NewUnitOfWork(db)
@@ -63,12 +64,14 @@ func run(args []string) error {
 	sessionService := service.NewSessionService(sessionRepo, syncRepo, uow, clk)
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex)
+	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)
 
 	app := &cli.App{
 		Memory:    memoryService,
 		Session:   sessionService,
 		Lifecycle: lifecycleService,
 		Embedding: embeddingService,
+		Prompt:    promptService,
 		Out:       os.Stdout,
 		Err:       os.Stderr,
 		Version:   version,

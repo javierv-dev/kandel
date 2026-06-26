@@ -201,6 +201,54 @@ func (f *fakeObs) NeedingReview(_ context.Context, project string, limit int) ([
 	return out, nil
 }
 
+// fakePrompts es un PromptRepo en memoria.
+type fakePrompts struct {
+	items  []domain.Prompt
+	nextID int64
+}
+
+func newFakePrompts() *fakePrompts { return &fakePrompts{} }
+
+func (f *fakePrompts) Add(_ context.Context, p domain.Prompt) (int64, error) {
+	f.nextID++
+	p.ID = f.nextID
+	f.items = append(f.items, p)
+	return p.ID, nil
+}
+
+func (f *fakePrompts) AddIfMissing(_ context.Context, p domain.Prompt) (int64, bool, error) {
+	for _, existing := range f.items {
+		if existing.SessionID == p.SessionID && existing.Project == p.Project && existing.Content == p.Content {
+			return existing.ID, false, nil
+		}
+	}
+	id, _ := f.Add(context.Background(), p)
+	return id, true, nil
+}
+
+func (f *fakePrompts) Recent(_ context.Context, project string, limit int) ([]domain.Prompt, error) {
+	var out []domain.Prompt
+	for _, p := range f.items {
+		if project == "" || p.Project == project {
+			out = append(out, p)
+		}
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *fakePrompts) Delete(_ context.Context, id int64) error {
+	for i, p := range f.items {
+		if p.ID == id {
+			f.items = append(f.items[:i], f.items[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
 // fakeSessions es un SessionRepo en memoria.
 type fakeSessions struct {
 	items map[string]domain.Session
@@ -333,6 +381,7 @@ var (
 	_ ports.UnitOfWork  = passthroughUoW{}
 	_ ports.SyncRepo    = (*fakeSync)(nil)
 	_ ports.MemoryRepo  = (*fakeObs)(nil)
+	_ ports.PromptRepo  = (*fakePrompts)(nil)
 	_ ports.SessionRepo = (*fakeSessions)(nil)
 	_ ports.Embedder    = (*fakeEmbedder)(nil)
 	_ ports.VectorIndex = (*fakeVectorIndex)(nil)

@@ -25,6 +25,9 @@ var ProfileAgent = map[string]bool{
 	"mem_review":            true,
 	"mem_pin":               true,
 	"mem_unpin":             true,
+	"mem_save_prompt":       true,
+	"mem_capture_passive":   true,
+	"mem_current_project":   true,
 }
 
 // ProfileAdmin son las herramientas de curación manual (TUI, paneles), no referenciadas en los

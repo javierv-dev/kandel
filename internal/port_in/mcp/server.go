@@ -35,12 +35,18 @@ type LifecyclePort interface {
 	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 
+// PromptPort es la cara de los casos de uso de prompts que el MCP consume.
+type PromptPort interface {
+	Save(ctx context.Context, in service.SavePromptInput) (service.SavePromptResult, error)
+}
+
 // Services agrupa los casos de uso que necesitan los handlers MCP. Es el equivalente al App de
 // la CLI: el wiring concreto vive en cmd/kandel/main.go.
 type Services struct {
 	Memory    MemoryPort
 	Session   SessionPort
 	Lifecycle LifecyclePort
+	Prompt    PromptPort
 
 	// DefaultProject es un override de proyecto a nivel de proceso (p. ej. KANDEL_PROJECT o
 	// `kandel mcp --project NAME`), usado cuando una llamada no trae proyecto explícito.
@@ -80,4 +86,5 @@ func registerTools(srv *server.MCPServer, svc Services, allowlist map[string]boo
 	registerMemoryTools(srv, svc, allowlist)
 	registerSessionTools(srv, svc, allowlist)
 	registerLifecycleTools(srv, svc, allowlist)
+	registerContextTools(srv, svc, allowlist)
 }

@@ -51,6 +51,12 @@ type EmbeddingUseCases interface {
 	Reembed(ctx context.Context, id int64) error
 }
 
+// PromptUseCases es la cara del guardado de prompts. La CLI no la usa directamente todavía
+// (no hay subcomando), pero la transporta en App para cablear el servidor MCP.
+type PromptUseCases interface {
+	Save(ctx context.Context, in service.SavePromptInput) (service.SavePromptResult, error)
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
@@ -59,6 +65,7 @@ type App struct {
 	Session   SessionUseCases
 	Lifecycle LifecycleUseCases
 	Embedding EmbeddingUseCases
+	Prompt    PromptUseCases
 
 	Out     io.Writer
 	Err     io.Writer

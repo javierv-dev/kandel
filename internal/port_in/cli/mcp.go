@@ -36,6 +36,7 @@ func (mcpCmd) Run(_ context.Context, args []string, app *App) error {
 		Memory:         app.Memory,
 		Session:        app.Session,
 		Lifecycle:      app.Lifecycle,
+		Prompt:         app.Prompt,
 		DefaultProject: resolveProject(*project),
 	}
 	srv := mcpadapter.NewServer(svc, mcpadapter.ResolveTools(*tools))

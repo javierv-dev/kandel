@@ -175,6 +175,76 @@ func TestHandleSuggestTopicKey(t *testing.T) {
 	}
 }
 
+func TestHandleSavePrompt(t *testing.T) {
+	pr := &fakePrompt{}
+	svc := Services{Prompt: pr, DefaultProject: "kandel"}
+	_, err := handleSavePrompt(svc)(context.Background(), callWith(map[string]any{"content": "arregla X"}))
+	if err != nil {
+		t.Fatalf("handleSavePrompt error: %v", err)
+	}
+	if pr.last.Content != "arregla X" || pr.last.Project != "kandel" {
+		t.Errorf("prompt mal traducido: %+v", pr.last)
+	}
+}
+
+func TestHandleCapturePassiveExtractsAndSaves(t *testing.T) {
+	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 1}}}
+	svc := Services{Memory: mem}
+	content := "Resumen del trabajo.\n\n## Key Learnings:\n- FTS5 no es LIKE\n- Sanitizar siempre\n\nFin."
+	res, err := handleCapturePassive(svc)(context.Background(), callWith(map[string]any{"content": content}))
+	if err != nil {
+		t.Fatalf("capture error: %v", err)
+	}
+	got := textOf(t, res)
+	var parsed struct {
+		Extracted int `json:"extracted"`
+		Saved     int `json:"saved"`
+	}
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("respuesta no es JSON: %q", got)
+	}
+	if parsed.Extracted != 2 || parsed.Saved != 2 {
+		t.Errorf("extracted/saved = %d/%d, se esperaba 2/2", parsed.Extracted, parsed.Saved)
+	}
+	if mem.saveCount != 2 {
+		t.Errorf("Memory.Save llamado %d veces, se esperaban 2", mem.saveCount)
+	}
+}
+
+func TestHandleCapturePassiveNoSection(t *testing.T) {
+	svc := Services{Memory: &fakeMemory{}}
+	res, _ := handleCapturePassive(svc)(context.Background(), callWith(map[string]any{"content": "sin viñetas ni encabezado"}))
+	if !res.IsError {
+		t.Error("sin sección de aprendizajes debe devolver error de tool")
+	}
+}
+
+func TestExtractLearnings(t *testing.T) {
+	got := extractLearnings("Aprendizajes:\n- uno\n* dos\n• tres\n\notra cosa")
+	if len(got) != 3 || got[0] != "uno" || got[2] != "tres" {
+		t.Errorf("extracción incorrecta: %v", got)
+	}
+}
+
+func TestHandleCurrentProjectOverride(t *testing.T) {
+	svc := Services{DefaultProject: "forzado"}
+	res, err := handleCurrentProject(svc)(context.Background(), callWith(nil))
+	if err != nil {
+		t.Fatalf("current_project error: %v", err)
+	}
+	got := textOf(t, res)
+	var parsed struct {
+		Project string `json:"project"`
+		Source  string `json:"project_source"`
+	}
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("respuesta no es JSON: %q", got)
+	}
+	if parsed.Project != "forzado" || parsed.Source != "process_override" {
+		t.Errorf("el override de proceso debe ganar: %+v", parsed)
+	}
+}
+
 // ─── utilidades de test ────────────────────────────────────────────────────────
 
 // callWith construye una CallToolRequest con los argumentos dados.
@@ -203,6 +273,7 @@ type fakeMemory struct {
 	lastSave    service.SaveInput
 	lastSearch  ports.SearchQuery
 	saveResult  service.SaveResult
+	saveCount   int
 	getResult   *domain.Memory
 	deletedID   int64
 	deletedHard bool
@@ -210,6 +281,7 @@ type fakeMemory struct {
 
 func (f *fakeMemory) Save(_ context.Context, in service.SaveInput) (service.SaveResult, error) {
 	f.lastSave = in
+	f.saveCount++
 	return f.saveResult, nil
 }
 func (f *fakeMemory) Get(_ context.Context, _ int64) (*domain.Memory, error) { return f.getResult, nil }
@@ -258,8 +330,18 @@ func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]dom
 	return nil, nil
 }
 
+type fakePrompt struct {
+	last service.SavePromptInput
+}
+
+func (f *fakePrompt) Save(_ context.Context, in service.SavePromptInput) (service.SavePromptResult, error) {
+	f.last = in
+	return service.SavePromptResult{Prompt: domain.Prompt{ID: 1}, Inserted: true}, nil
+}
+
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
 	_ SessionPort   = (*fakeSession)(nil)
 	_ LifecyclePort = (*fakeLifecycle)(nil)
+	_ PromptPort    = (*fakePrompt)(nil)
 )
