@@ -249,6 +249,59 @@ func TestHandleDoctor(t *testing.T) {
 	}
 }
 
+func TestHandleCompareTranslatesIDs(t *testing.T) {
+	cf := &fakeConflict{resultRel: domain.MemoryRelation{ID: 1, Kind: domain.RelationConflictsWith, Status: domain.JudgmentJudged}}
+	svc := Services{Conflict: cf}
+	res, err := handleCompare(svc)(context.Background(), callWith(map[string]any{"source_id": float64(3), "target_id": float64(8)}))
+	if err != nil {
+		t.Fatalf("handleCompare error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("handleCompare devolvió error de tool: %v", res)
+	}
+	if cf.compared != [2]int64{3, 8} {
+		t.Errorf("ids mal traducidos: %v", cf.compared)
+	}
+}
+
+func TestHandleCompareRequiresIDs(t *testing.T) {
+	res, _ := handleCompare(Services{Conflict: &fakeConflict{}})(context.Background(), callWith(map[string]any{"source_id": float64(3)}))
+	if !res.IsError {
+		t.Error("mem_compare sin target_id debe dar error de tool")
+	}
+}
+
+func TestHandleJudgeRecordsVerdict(t *testing.T) {
+	cf := &fakeConflict{}
+	svc := Services{Conflict: cf}
+	_, err := handleJudge(svc)(context.Background(), callWith(map[string]any{
+		"source_id": float64(1), "target_id": float64(2),
+		"relation": "supersedes", "confidence": 0.8, "reasoning": "A reemplaza B",
+	}))
+	if err != nil {
+		t.Fatalf("handleJudge error: %v", err)
+	}
+	if cf.recorded.Relation != domain.RelationSupersedes || cf.recorded.Confidence != 0.8 {
+		t.Errorf("veredicto mal traducido: %+v", cf.recorded)
+	}
+}
+
+func TestHandleJudgeInvalidRelation(t *testing.T) {
+	res, _ := handleJudge(Services{Conflict: &fakeConflict{}})(context.Background(), callWith(map[string]any{
+		"source_id": float64(1), "target_id": float64(2), "relation": "inventada",
+	}))
+	if !res.IsError {
+		t.Error("relación inválida debe dar error de tool")
+	}
+}
+
+func TestConflictToolsNotRegisteredWithoutPort(t *testing.T) {
+	srv := NewServer(Services{Memory: &fakeMemory{}}, ResolveTools("mem_compare,mem_judge"))
+	if srv.ListTools()["mem_compare"] != nil || srv.ListTools()["mem_judge"] != nil {
+		t.Error("las tools de conflicto no deben registrarse sin Conflict en Services")
+	}
+}
+
 func TestDoctorToolNotRegisteredWithoutPort(t *testing.T) {
 	// Sin Doctor en Services, mem_doctor no debe registrarse aunque la allowlist lo permita.
 	srv := NewServer(Services{Memory: &fakeMemory{}}, ResolveTools("mem_doctor"))
@@ -376,10 +429,30 @@ type fakeDoctor struct {
 
 func (f fakeDoctor) Run(context.Context) diagnostic.Report { return f.report }
 
+type fakeConflict struct {
+	compared   [2]int64
+	recorded   domain.Verdict
+	resultRel  domain.MemoryRelation
+	compareErr error
+}
+
+func (f *fakeConflict) Compare(_ context.Context, s, t int64) (domain.MemoryRelation, error) {
+	f.compared = [2]int64{s, t}
+	if f.compareErr != nil {
+		return domain.MemoryRelation{}, f.compareErr
+	}
+	return f.resultRel, nil
+}
+func (f *fakeConflict) RecordVerdict(_ context.Context, _, _ int64, v domain.Verdict) (domain.MemoryRelation, error) {
+	f.recorded = v
+	return f.resultRel, nil
+}
+
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
 	_ SessionPort   = (*fakeSession)(nil)
 	_ LifecyclePort = (*fakeLifecycle)(nil)
 	_ PromptPort    = (*fakePrompt)(nil)
 	_ DoctorPort    = fakeDoctor{}
+	_ ConflictPort  = (*fakeConflict)(nil)
 )

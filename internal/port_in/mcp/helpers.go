@@ -25,6 +25,18 @@ func argInt(req mcp.CallToolRequest, name string, def int) int {
 	}
 }
 
+// argFloat lee un argumento numérico como float64; def si falta.
+func argFloat(req mcp.CallToolRequest, name string, def float64) float64 {
+	switch v := req.GetArguments()[name].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	default:
+		return def
+	}
+}
+
 // argBool lee un argumento booleano; def si falta.
 func argBool(req mcp.CallToolRequest, name string, def bool) bool {
 	if v, ok := req.GetArguments()[name].(bool); ok {

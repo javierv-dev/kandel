@@ -93,13 +93,30 @@ type fakeDoctor struct {
 
 func (f fakeDoctor) Run(context.Context) diagnostic.Report { return f.report }
 
+// fakeConflict registra las llamadas de conflictos.
+type fakeConflict struct {
+	candidates []service.Candidate
+	findID     int64
+}
+
+func (f *fakeConflict) FindCandidates(_ context.Context, id int64, _ int) ([]service.Candidate, error) {
+	f.findID = id
+	return f.candidates, nil
+}
+func (f *fakeConflict) Compare(_ context.Context, _, _ int64) (domain.MemoryRelation, error) {
+	return domain.MemoryRelation{}, nil
+}
+func (f *fakeConflict) RecordVerdict(_ context.Context, _, _ int64, _ domain.Verdict) (domain.MemoryRelation, error) {
+	return domain.MemoryRelation{}, nil
+}
+
 // newTestApp construye un App con dobles y buffers de salida capturables.
 func newTestApp() (*App, *fakeMemory, *fakeLifecycle, *bytes.Buffer, *bytes.Buffer) {
 	mem := &fakeMemory{}
 	life := &fakeLifecycle{}
 	out := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
-	app := &App{Memory: mem, Lifecycle: life, Embedding: &fakeEmbedding{}, Doctor: fakeDoctor{}, Out: out, Err: errBuf, Version: "test"}
+	app := &App{Memory: mem, Lifecycle: life, Embedding: &fakeEmbedding{}, Doctor: fakeDoctor{}, Conflict: &fakeConflict{}, Out: out, Err: errBuf, Version: "test"}
 	return app, mem, life, out, errBuf
 }
 
@@ -298,6 +315,26 @@ func TestDoctorWarningDoesNotFail(t *testing.T) {
 	}}
 	if err := Dispatch(context.Background(), []string{"doctor"}, app); err != nil {
 		t.Fatalf("un warning no debe hacer fallar doctor: %v", err)
+	}
+}
+
+func TestConflictsListsCandidates(t *testing.T) {
+	app, _, _, out, _ := newTestApp()
+	app.Conflict = &fakeConflict{candidates: []service.Candidate{
+		{Memory: domain.Memory{ID: 3, Title: "Otra cosa"}, Score: 0.7},
+	}}
+	if err := Dispatch(context.Background(), []string{"conflicts", "5"}, app); err != nil {
+		t.Fatalf("conflicts devolvió error: %v", err)
+	}
+	if !strings.Contains(out.String(), "#3") {
+		t.Errorf("debe listar el candidato: %q", out.String())
+	}
+}
+
+func TestConflictsMissingID(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	if err := Dispatch(context.Background(), []string{"conflicts"}, app); err == nil {
+		t.Fatal("conflicts sin id debe devolver error")
 	}
 }
 

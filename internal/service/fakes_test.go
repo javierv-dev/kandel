@@ -375,14 +375,77 @@ func (v *fakeVectorIndex) PendingEmbedding(_ context.Context, _ string, _ int) (
 	return nil, nil
 }
 
+// fakeRelations es un RelationRepo en memoria.
+type fakeRelations struct {
+	items  []domain.MemoryRelation
+	nextID int64
+}
+
+func (f *fakeRelations) Insert(_ context.Context, r domain.MemoryRelation) (int64, error) {
+	f.nextID++
+	r.ID = f.nextID
+	f.items = append(f.items, r)
+	return r.ID, nil
+}
+
+func (f *fakeRelations) Get(_ context.Context, id int64) (*domain.MemoryRelation, error) {
+	for i := range f.items {
+		if f.items[i].ID == id {
+			c := f.items[i]
+			return &c, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeRelations) Judge(_ context.Context, id int64, v domain.Verdict) error {
+	for i := range f.items {
+		if f.items[i].ID == id {
+			f.items[i].Kind = v.Relation
+			f.items[i].Reason = v.Reasoning
+			f.items[i].Confidence = v.Confidence
+			f.items[i].Status = domain.JudgmentJudged
+			return nil
+		}
+	}
+	return nil
+}
+
+func (f *fakeRelations) ListByStatus(_ context.Context, status domain.JudgmentStatus, limit int) ([]domain.MemoryRelation, error) {
+	var out []domain.MemoryRelation
+	for _, r := range f.items {
+		if r.Status == status {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// fakeRunner es un AgentRunner que devuelve un veredicto fijo (o un error).
+type fakeRunner struct {
+	verdict    domain.Verdict
+	failWith   error
+	lastPrompt string
+}
+
+func (f *fakeRunner) Judge(_ context.Context, prompt string) (domain.Verdict, error) {
+	f.lastPrompt = prompt
+	if f.failWith != nil {
+		return domain.Verdict{}, f.failWith
+	}
+	return f.verdict, nil
+}
+
 // Aserciones de que los fakes cumplen los contratos de ports.
 var (
-	_ ports.Clock       = fixedClock{}
-	_ ports.UnitOfWork  = passthroughUoW{}
-	_ ports.SyncRepo    = (*fakeSync)(nil)
-	_ ports.MemoryRepo  = (*fakeObs)(nil)
-	_ ports.PromptRepo  = (*fakePrompts)(nil)
-	_ ports.SessionRepo = (*fakeSessions)(nil)
-	_ ports.Embedder    = (*fakeEmbedder)(nil)
-	_ ports.VectorIndex = (*fakeVectorIndex)(nil)
+	_ ports.Clock        = fixedClock{}
+	_ ports.UnitOfWork   = passthroughUoW{}
+	_ ports.SyncRepo     = (*fakeSync)(nil)
+	_ ports.MemoryRepo   = (*fakeObs)(nil)
+	_ ports.PromptRepo   = (*fakePrompts)(nil)
+	_ ports.SessionRepo  = (*fakeSessions)(nil)
+	_ ports.Embedder     = (*fakeEmbedder)(nil)
+	_ ports.VectorIndex  = (*fakeVectorIndex)(nil)
+	_ ports.RelationRepo = (*fakeRelations)(nil)
+	_ ports.AgentRunner  = (*fakeRunner)(nil)
 )

@@ -64,6 +64,14 @@ type DoctorUseCases interface {
 	Run(ctx context.Context) diagnostic.Report
 }
 
+// ConflictUseCases es la cara de la detección de conflictos. La CLI solo usa FindCandidates
+// (read-only); Compare/RecordVerdict viajan en App para cablear el servidor MCP (igual que Prompt).
+type ConflictUseCases interface {
+	FindCandidates(ctx context.Context, memoryID int64, limit int) ([]service.Candidate, error)
+	Compare(ctx context.Context, sourceID, targetID int64) (domain.MemoryRelation, error)
+	RecordVerdict(ctx context.Context, sourceID, targetID int64, verdict domain.Verdict) (domain.MemoryRelation, error)
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
@@ -74,6 +82,7 @@ type App struct {
 	Embedding EmbeddingUseCases
 	Prompt    PromptUseCases
 	Doctor    DoctorUseCases
+	Conflict  ConflictUseCases
 
 	Out     io.Writer
 	Err     io.Writer

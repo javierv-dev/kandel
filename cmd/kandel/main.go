@@ -14,6 +14,7 @@ import (
 
 	"github.com/javierv-dev/kandel/internal/adapter/clock"
 	"github.com/javierv-dev/kandel/internal/adapter/embedding"
+	"github.com/javierv-dev/kandel/internal/adapter/llm"
 	"github.com/javierv-dev/kandel/internal/adapter/sqlite"
 	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/port_in/cli"
@@ -51,9 +52,11 @@ func run(args []string) error {
 	memoryRepo := sqlite.NewMemoryRepo(db)
 	sessionRepo := sqlite.NewSessionRepo(db)
 	promptRepo := sqlite.NewPromptRepo(db)
+	relationRepo := sqlite.NewRelationRepo(db)
 	syncRepo := sqlite.NewSyncRepo(db)
 	vectorIndex := sqlite.NewVectorIndex(db)
 	uow := sqlite.NewUnitOfWork(db)
+	agentRunner := llm.FromEnv()
 	embedder := embedding.NewOllama(
 		os.Getenv("KANDEL_OLLAMA_HOST"),
 		os.Getenv("KANDEL_EMBED_MODEL"),
@@ -66,6 +69,7 @@ func run(args []string) error {
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex)
 	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)
+	conflictService := service.NewConflictService(memoryRepo, vectorIndex, embedder, relationRepo, agentRunner, uow, clk)
 	doctor := diagnostic.NewRunner(
 		diagnostic.EmbedderCheck{Embedder: embedder},
 		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, Model: embedder.Model()},
@@ -78,6 +82,7 @@ func run(args []string) error {
 		Embedding: embeddingService,
 		Prompt:    promptService,
 		Doctor:    doctor,
+		Conflict:  conflictService,
 		Out:       os.Stdout,
 		Err:       os.Stderr,
 		Version:   version,

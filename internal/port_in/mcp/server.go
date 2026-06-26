@@ -46,6 +46,12 @@ type DoctorPort interface {
 	Run(ctx context.Context) diagnostic.Report
 }
 
+// ConflictPort es la cara de la detección y juicio de conflictos que el MCP consume.
+type ConflictPort interface {
+	Compare(ctx context.Context, sourceID, targetID int64) (domain.MemoryRelation, error)
+	RecordVerdict(ctx context.Context, sourceID, targetID int64, verdict domain.Verdict) (domain.MemoryRelation, error)
+}
+
 // Services agrupa los casos de uso que necesitan los handlers MCP. Es el equivalente al App de
 // la CLI: el wiring concreto vive en cmd/kandel/main.go.
 type Services struct {
@@ -54,6 +60,7 @@ type Services struct {
 	Lifecycle LifecyclePort
 	Prompt    PromptPort
 	Doctor    DoctorPort
+	Conflict  ConflictPort
 
 	// DefaultProject es un override de proyecto a nivel de proceso (p. ej. KANDEL_PROJECT o
 	// `kandel mcp --project NAME`), usado cuando una llamada no trae proyecto explícito.
@@ -95,4 +102,5 @@ func registerTools(srv *server.MCPServer, svc Services, allowlist map[string]boo
 	registerLifecycleTools(srv, svc, allowlist)
 	registerContextTools(srv, svc, allowlist)
 	registerDoctorTools(srv, svc, allowlist)
+	registerConflictTools(srv, svc, allowlist)
 }
