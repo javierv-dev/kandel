@@ -14,7 +14,7 @@ var clockNow = time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
 func newMemoryFixture() (*MemoryService, *fakeObs, *fakeSync) {
 	obs := newFakeObs()
 	sync := &fakeSync{}
-	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow})
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, newFakeEmbedder(), newFakeVectorIndex())
 	return svc, obs, sync
 }
 
@@ -83,7 +83,7 @@ func TestSaveDuplicateOutsideWindowCreatesNew(t *testing.T) {
 	obs := newFakeObs()
 	sync := &fakeSync{}
 	clk := &mutableClock{now: clockNow}
-	svc := NewMemoryService(obs, sync, passthroughUoW{}, clk)
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, clk, newFakeEmbedder(), newFakeVectorIndex())
 	ctx := context.Background()
 
 	if _, err := svc.Save(ctx, baseSaveInput()); err != nil {
@@ -242,7 +242,81 @@ func TestRecentDelegates(t *testing.T) {
 	}
 }
 
+func TestSaveIndexesVector(t *testing.T) {
+	obs := newFakeObs()
+	sync := &fakeSync{}
+	emb := newFakeEmbedder()
+	vidx := newFakeVectorIndex()
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vidx)
+
+	res, err := svc.Save(context.Background(), baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, ok := vidx.vecs[res.Memory.ID]; !ok {
+		t.Error("Save debe indexar el vector de la memoria nueva")
+	}
+	if emb.calls != 1 {
+		t.Errorf("Save debe llamar al embedder una vez, llamó %d", emb.calls)
+	}
+}
+
+func TestSaveFailsWhenEmbedderFails(t *testing.T) {
+	obs := newFakeObs()
+	sync := &fakeSync{}
+	emb := newFakeEmbedder()
+	emb.failWith = errInducedSvc
+	vidx := newFakeVectorIndex()
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vidx)
+
+	_, err := svc.Save(context.Background(), baseSaveInput())
+	if err != errInducedSvc {
+		t.Fatalf("Save debe fallar si el embedder falla, fue %v", err)
+	}
+}
+
+func TestSearchEmbedsAndFilters(t *testing.T) {
+	obs := newFakeObs()
+	sync := &fakeSync{}
+	emb := newFakeEmbedder()
+	vidx := newFakeVectorIndex()
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vidx)
+	ctx := context.Background()
+
+	a := baseSaveInput()
+	a.Content = "memoria a"
+	if _, err := svc.Save(ctx, a); err != nil {
+		t.Fatalf("Save a: %v", err)
+	}
+	b := baseSaveInput()
+	b.Content = "memoria b"
+	if _, err := svc.Save(ctx, b); err != nil {
+		t.Fatalf("Save b: %v", err)
+	}
+	other := baseSaveInput()
+	other.Project = "otro"
+	other.Content = "memoria de otro proyecto"
+	if _, err := svc.Save(ctx, other); err != nil {
+		t.Fatalf("Save other: %v", err)
+	}
+
+	results, err := svc.Search(ctx, ports.SearchQuery{Query: "algo", Project: "proj", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("Search filtrada por 'proj' debe devolver 2, fue %d", len(results))
+	}
+}
+
 // mutableClock permite avanzar el tiempo entre llamadas en un test.
 type mutableClock struct{ now time.Time }
 
 func (c *mutableClock) Now() time.Time { return c.now }
+
+// errInducedSvc fuerza fallos en dependencias dentro de los tests de servicio.
+var errInducedSvc = errInducedError("fallo inducido")
+
+type errInducedError string
+
+func (e errInducedError) Error() string { return string(e) }

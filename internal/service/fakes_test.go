@@ -125,8 +125,28 @@ func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memor
 	return out, nil
 }
 
-func (f *fakeObs) Search(context.Context, ports.SearchQuery, []ports.Neighbor) ([]domain.SearchResult, error) {
-	return nil, nil
+func (f *fakeObs) Search(_ context.Context, q ports.SearchQuery, neighbors []ports.Neighbor) ([]domain.SearchResult, error) {
+	var out []domain.SearchResult
+	for _, n := range neighbors {
+		o, ok := f.items[n.MemoryID]
+		if !ok || o.IsDeleted() {
+			continue
+		}
+		if q.Project != "" && o.Project != q.Project {
+			continue
+		}
+		if q.Scope != "" && o.Scope != q.Scope {
+			continue
+		}
+		if q.Type != "" && o.Type != q.Type {
+			continue
+		}
+		out = append(out, domain.SearchResult{Memory: o, Score: n.Score})
+		if q.Limit > 0 && len(out) >= q.Limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeObs) FindByHash(_ context.Context, project string, scope domain.Scope, hash string) (*domain.Memory, error) {
@@ -243,6 +263,64 @@ func (f *fakeSessions) MostRecentActive(_ context.Context, project string) (stri
 	return best.ID, true, nil
 }
 
+// fakeEmbedder devuelve un vector constante; basta para probar el cableado del servicio (la
+// corrección del coseno/ranking se prueba en el adaptador SQLite). failWith fuerza un error.
+type fakeEmbedder struct {
+	vec      []float32
+	failWith error
+	calls    int
+}
+
+func newFakeEmbedder() *fakeEmbedder {
+	return &fakeEmbedder{vec: []float32{1, 0, 0}}
+}
+
+func (e *fakeEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
+	e.calls++
+	if e.failWith != nil {
+		return nil, e.failWith
+	}
+	return e.vec, nil
+}
+func (e *fakeEmbedder) Dimensions() int { return len(e.vec) }
+func (e *fakeEmbedder) Model() string   { return "fake" }
+
+// fakeVectorIndex guarda vectores en memoria. Nearest devuelve los ids guardados (ordenados por
+// id, score 1.0): suficiente para probar el cableado de Search; el ranking real se prueba aparte.
+type fakeVectorIndex struct {
+	vecs map[int64][]float32
+}
+
+func newFakeVectorIndex() *fakeVectorIndex {
+	return &fakeVectorIndex{vecs: map[int64][]float32{}}
+}
+
+func (v *fakeVectorIndex) Upsert(_ context.Context, memoryID int64, vector []float32, _ string) error {
+	v.vecs[memoryID] = vector
+	return nil
+}
+
+func (v *fakeVectorIndex) Nearest(_ context.Context, _ []float32, limit int) ([]ports.Neighbor, error) {
+	ids := make([]int64, 0, len(v.vecs))
+	for id := range v.vecs {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	var out []ports.Neighbor
+	for _, id := range ids {
+		out = append(out, ports.Neighbor{MemoryID: id, Score: 1.0})
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (v *fakeVectorIndex) Delete(_ context.Context, memoryID int64) error {
+	delete(v.vecs, memoryID)
+	return nil
+}
+
 // Aserciones de que los fakes cumplen los contratos de ports.
 var (
 	_ ports.Clock       = fixedClock{}
@@ -250,4 +328,6 @@ var (
 	_ ports.SyncRepo    = (*fakeSync)(nil)
 	_ ports.MemoryRepo  = (*fakeObs)(nil)
 	_ ports.SessionRepo = (*fakeSessions)(nil)
+	_ ports.Embedder    = (*fakeEmbedder)(nil)
+	_ ports.VectorIndex = (*fakeVectorIndex)(nil)
 )

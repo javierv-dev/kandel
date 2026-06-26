@@ -7,8 +7,8 @@ import "context"
 //
 // Diferencias deliberadas frente al proyecto viejo (ver §6.bis del plan):
 //   - NO hay FTS5 (ni tabla virtual memories_fts ni sus triggers): la búsqueda deja de ser
-//     léxica y pasa a ser 100% vectorial. El motor vectorial (tabla memory_vectors) se
-//     añadirá en la Fase 5.bis; esta migración cubre solo la Fase 3 (memorias).
+//     léxica y pasa a ser 100% vectorial, sobre la tabla memory_vectors (vector BLOB 1:1 con
+//     cada memoria; el coseno se calcula en Go puro, ver vector_index.go).
 //   - Los timestamps se guardan como TEXT en formato "2006-01-02 15:04:05" (UTC), fijados por
 //     la capa de servicio vía Clock; el adaptador no usa datetime('now') salvo en el borrado.
 const schema = `
@@ -116,6 +116,14 @@ CREATE TABLE IF NOT EXISTS sync_chunks (
 	chunk_id    TEXT NOT NULL,
 	imported_at TEXT NOT NULL DEFAULT (datetime('now')),
 	PRIMARY KEY (target_key, chunk_id)
+);
+
+CREATE TABLE IF NOT EXISTS memory_vectors (
+	memory_id  INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+	model      TEXT NOT NULL,
+	dimensions INTEGER NOT NULL,
+	vector     BLOB NOT NULL,
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `
 

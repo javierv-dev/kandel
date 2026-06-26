@@ -55,21 +55,36 @@ type UpdateInput struct {
 
 // MemoryService implementa los casos de uso sobre memorias. Aquí vive la lógica de dedupe
 // exacto, fusión por tema y decaimiento, fuera del SQL y testeable con repos fake.
+// searchPoolFactor amplía el número de vecinos que se piden al índice vectorial respecto al
+// límite final, porque después se filtran por proyecto/alcance/tipo y algunos se descartan.
+const searchPoolFactor = 5
+
+// minSearchPool es el tamaño mínimo del conjunto de candidatos a rankear.
+const minSearchPool = 50
+
+// MemoryService implementa los casos de uso sobre memorias. Aquí vive la lógica de dedupe
+// exacto, fusión por tema y decaimiento, fuera del SQL y testeable con repos fake.
 type MemoryService struct {
 	memories     ports.MemoryRepo
 	sync         ports.SyncRepo
 	uow          ports.UnitOfWork
 	clock        ports.Clock
+	embedder     ports.Embedder
+	vectors      ports.VectorIndex
 	dedupeWindow time.Duration
 }
 
-// NewMemoryService construye el servicio con sus dependencias inyectadas.
-func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.UnitOfWork, clock ports.Clock) *MemoryService {
+// NewMemoryService construye el servicio con sus dependencias inyectadas. El embedder y el índice
+// vectorial son obligatorios: el guardado calcula y persiste el vector en la misma transacción,
+// y la búsqueda semántica los necesita.
+func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.UnitOfWork, clock ports.Clock, embedder ports.Embedder, vectors ports.VectorIndex) *MemoryService {
 	return &MemoryService{
 		memories:     memories,
 		sync:         sync,
 		uow:          uow,
 		clock:        clock,
+		embedder:     embedder,
+		vectors:      vectors,
 		dedupeWindow: defaultDedupeWindow,
 	}
 }
@@ -148,6 +163,10 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 				if err != nil {
 					return err
 				}
+				// El contenido cambió con la revisión → recalcular su vector.
+				if err := m.indexVector(ctx, updated.ID, updated.Content); err != nil {
+					return err
+				}
 				result = SaveResult{Memory: *updated, Outcome: SaveMerged}
 				return m.enqueueUpsert(ctx, *updated)
 			}
@@ -171,13 +190,18 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 		}
 
 		// 3. Memoria nueva.
-		candidate.SyncID = newSyncID("obs")
+		candidate.SyncID = newSyncID("mem")
 		candidate.ReviewAfter = domain.ReviewAfterFor(in.Type, now)
 		id, err := m.memories.Add(ctx, candidate)
 		if err != nil {
 			return err
 		}
 		candidate.ID = id
+		// El embedder es obligatorio: si falla, la transacción revierte y no queda una memoria
+		// sin vector buscable (§6.bis del plan).
+		if err := m.indexVector(ctx, id, candidate.Content); err != nil {
+			return err
+		}
 		result = SaveResult{Memory: candidate, Outcome: SaveCreated}
 		return m.enqueueUpsert(ctx, candidate)
 	})
@@ -195,6 +219,34 @@ func (m *MemoryService) Get(ctx context.Context, id int64) (*domain.Memory, erro
 // Recent lista memorias recientes (navegación del usuario).
 func (m *MemoryService) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
 	return m.memories.Recent(ctx, q)
+}
+
+// Search es la búsqueda semántica del agente: convierte la consulta en vector, pide los vecinos
+// más cercanos al índice y los hidrata a memorias aplicando los filtros de q. Pide un conjunto
+// de candidatos más amplio que el límite final porque luego se filtran por proyecto/alcance/tipo.
+func (m *MemoryService) Search(ctx context.Context, q ports.SearchQuery) ([]domain.SearchResult, error) {
+	vector, err := m.embedder.Embed(ctx, q.Query)
+	if err != nil {
+		return nil, err
+	}
+	pool := q.Limit * searchPoolFactor
+	if pool < minSearchPool {
+		pool = minSearchPool
+	}
+	neighbors, err := m.vectors.Nearest(ctx, vector, pool)
+	if err != nil {
+		return nil, err
+	}
+	return m.memories.Search(ctx, q, neighbors)
+}
+
+// indexVector calcula el vector del contenido y lo guarda en el índice, anotando el modelo.
+func (m *MemoryService) indexVector(ctx context.Context, memoryID int64, content string) error {
+	vector, err := m.embedder.Embed(ctx, content)
+	if err != nil {
+		return err
+	}
+	return m.vectors.Upsert(ctx, memoryID, vector, m.embedder.Model())
 }
 
 // Update aplica cambios parciales a una memoria viva y reencola su mutación. Si cambia el
