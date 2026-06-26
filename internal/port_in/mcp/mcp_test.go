@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/service"
@@ -226,6 +227,36 @@ func TestExtractLearnings(t *testing.T) {
 	}
 }
 
+func TestHandleDoctor(t *testing.T) {
+	svc := Services{Doctor: fakeDoctor{report: diagnostic.Report{
+		Worst:    diagnostic.SeverityWarning,
+		Findings: []diagnostic.Finding{{Check: "embedder", Severity: diagnostic.SeverityWarning, Message: "caído"}},
+	}}}
+	res, err := handleDoctor(svc)(context.Background(), callWith(nil))
+	if err != nil {
+		t.Fatalf("handleDoctor error: %v", err)
+	}
+	got := textOf(t, res)
+	var parsed struct {
+		OK    bool   `json:"ok"`
+		Worst string `json:"worst"`
+	}
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("respuesta no es JSON: %q", got)
+	}
+	if parsed.OK || parsed.Worst != "warning" {
+		t.Errorf("reporte mal serializado: %+v", parsed)
+	}
+}
+
+func TestDoctorToolNotRegisteredWithoutPort(t *testing.T) {
+	// Sin Doctor en Services, mem_doctor no debe registrarse aunque la allowlist lo permita.
+	srv := NewServer(Services{Memory: &fakeMemory{}}, ResolveTools("mem_doctor"))
+	if srv.ListTools()["mem_doctor"] != nil {
+		t.Error("mem_doctor no debe registrarse sin Doctor en Services")
+	}
+}
+
 func TestHandleCurrentProjectOverride(t *testing.T) {
 	svc := Services{DefaultProject: "forzado"}
 	res, err := handleCurrentProject(svc)(context.Background(), callWith(nil))
@@ -339,9 +370,16 @@ func (f *fakePrompt) Save(_ context.Context, in service.SavePromptInput) (servic
 	return service.SavePromptResult{Prompt: domain.Prompt{ID: 1}, Inserted: true}, nil
 }
 
+type fakeDoctor struct {
+	report diagnostic.Report
+}
+
+func (f fakeDoctor) Run(context.Context) diagnostic.Report { return f.report }
+
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
 	_ SessionPort   = (*fakeSession)(nil)
 	_ LifecyclePort = (*fakeLifecycle)(nil)
 	_ PromptPort    = (*fakePrompt)(nil)
+	_ DoctorPort    = fakeDoctor{}
 )

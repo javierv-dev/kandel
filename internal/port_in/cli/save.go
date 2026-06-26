@@ -30,10 +30,11 @@ func (saveCmd) Run(ctx context.Context, args []string, app *App) error {
 		fmt.Fprintln(app.Err, "uso: kandel save <título> <contenido> [--type TIPO] [--project P] [--scope S] [--topic K]")
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
+	positionals, err := parseFlags(fs, args)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() < 2 {
+	if len(positionals) < 2 {
 		fs.Usage()
 		return fmt.Errorf("save: faltan título y contenido")
 	}
@@ -48,8 +49,8 @@ func (saveCmd) Run(ctx context.Context, args []string, app *App) error {
 		Project:   resolveProject(*project),
 		Type:      domain.MemoryType(*typ),
 		Scope:     parsedScope,
-		Title:     fs.Arg(0),
-		Content:   fs.Arg(1),
+		Title:     positionals[0],
+		Content:   positionals[1],
 		ToolName:  *tool,
 		TopicKey:  *topic,
 	})

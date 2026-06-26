@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 
+	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/service"
@@ -40,6 +41,11 @@ type PromptPort interface {
 	Save(ctx context.Context, in service.SavePromptInput) (service.SavePromptResult, error)
 }
 
+// DoctorPort corre los chequeos de salud de solo lectura. La diagnostic.Runner la cumple.
+type DoctorPort interface {
+	Run(ctx context.Context) diagnostic.Report
+}
+
 // Services agrupa los casos de uso que necesitan los handlers MCP. Es el equivalente al App de
 // la CLI: el wiring concreto vive en cmd/kandel/main.go.
 type Services struct {
@@ -47,6 +53,7 @@ type Services struct {
 	Session   SessionPort
 	Lifecycle LifecyclePort
 	Prompt    PromptPort
+	Doctor    DoctorPort
 
 	// DefaultProject es un override de proyecto a nivel de proceso (p. ej. KANDEL_PROJECT o
 	// `kandel mcp --project NAME`), usado cuando una llamada no trae proyecto explícito.
@@ -87,4 +94,5 @@ func registerTools(srv *server.MCPServer, svc Services, allowlist map[string]boo
 	registerSessionTools(srv, svc, allowlist)
 	registerLifecycleTools(srv, svc, allowlist)
 	registerContextTools(srv, svc, allowlist)
+	registerDoctorTools(srv, svc, allowlist)
 }

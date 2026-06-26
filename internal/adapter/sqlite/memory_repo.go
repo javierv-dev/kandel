@@ -38,7 +38,7 @@ func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
 			created_at, updated_at, last_seen_at, review_after, deleted_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
-		nullString(o.SyncID), o.SessionID, string(o.Type), o.Title, o.Content,
+		nullString(o.SyncID), nullString(o.SessionID), string(o.Type), o.Title, o.Content,
 		nullString(o.ToolName), nullString(o.Project), string(o.Scope),
 		nullString(string(o.TopicKey)), nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount, boolToInt(o.Pinned),

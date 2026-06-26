@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/service"
@@ -85,13 +86,20 @@ func (f *fakeEmbedding) Reembed(_ context.Context, id int64) error {
 	return nil
 }
 
+// fakeDoctor devuelve un reporte preprogramado.
+type fakeDoctor struct {
+	report diagnostic.Report
+}
+
+func (f fakeDoctor) Run(context.Context) diagnostic.Report { return f.report }
+
 // newTestApp construye un App con dobles y buffers de salida capturables.
 func newTestApp() (*App, *fakeMemory, *fakeLifecycle, *bytes.Buffer, *bytes.Buffer) {
 	mem := &fakeMemory{}
 	life := &fakeLifecycle{}
 	out := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
-	app := &App{Memory: mem, Lifecycle: life, Embedding: &fakeEmbedding{}, Out: out, Err: errBuf, Version: "test"}
+	app := &App{Memory: mem, Lifecycle: life, Embedding: &fakeEmbedding{}, Doctor: fakeDoctor{}, Out: out, Err: errBuf, Version: "test"}
 	return app, mem, life, out, errBuf
 }
 
@@ -257,6 +265,39 @@ func TestEmbeddingsUnknownSubcommand(t *testing.T) {
 	app, _, _, _, _ := newTestApp()
 	if err := Dispatch(context.Background(), []string{"embeddings", "frobnicate"}, app); err == nil {
 		t.Fatal("se esperaba error por subcomando desconocido")
+	}
+}
+
+func TestDoctorHealthy(t *testing.T) {
+	app, _, _, out, _ := newTestApp()
+	app.Doctor = fakeDoctor{report: diagnostic.Report{Worst: diagnostic.SeverityInfo}}
+	if err := Dispatch(context.Background(), []string{"doctor"}, app); err != nil {
+		t.Fatalf("doctor sano devolvió error: %v", err)
+	}
+	if !strings.Contains(out.String(), "Todo en orden") {
+		t.Errorf("salida inesperada: %q", out.String())
+	}
+}
+
+func TestDoctorErrorFails(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	app.Doctor = fakeDoctor{report: diagnostic.Report{
+		Worst:    diagnostic.SeverityError,
+		Findings: []diagnostic.Finding{{Check: "x", Severity: diagnostic.SeverityError, Message: "roto"}},
+	}}
+	if err := Dispatch(context.Background(), []string{"doctor"}, app); err == nil {
+		t.Fatal("doctor con error debe devolver error")
+	}
+}
+
+func TestDoctorWarningDoesNotFail(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	app.Doctor = fakeDoctor{report: diagnostic.Report{
+		Worst:    diagnostic.SeverityWarning,
+		Findings: []diagnostic.Finding{{Check: "x", Severity: diagnostic.SeverityWarning, Message: "ojo"}},
+	}}
+	if err := Dispatch(context.Background(), []string{"doctor"}, app); err != nil {
+		t.Fatalf("un warning no debe hacer fallar doctor: %v", err)
 	}
 }
 

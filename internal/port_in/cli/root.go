@@ -7,12 +7,14 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/service"
@@ -57,6 +59,11 @@ type PromptUseCases interface {
 	Save(ctx context.Context, in service.SavePromptInput) (service.SavePromptResult, error)
 }
 
+// DoctorUseCases corre los chequeos de salud de solo lectura. La diagnostic.Runner la cumple.
+type DoctorUseCases interface {
+	Run(ctx context.Context) diagnostic.Report
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
@@ -66,6 +73,7 @@ type App struct {
 	Lifecycle LifecycleUseCases
 	Embedding EmbeddingUseCases
 	Prompt    PromptUseCases
+	Doctor    DoctorUseCases
 
 	Out     io.Writer
 	Err     io.Writer
@@ -137,6 +145,28 @@ func printUsage(app *App) {
 	}
 	fmt.Fprintln(app.Out, "  help         muestra esta ayuda")
 	fmt.Fprintln(app.Out, "  version      muestra la versión")
+}
+
+// parseFlags interpreta args permitiendo que los flags aparezcan en CUALQUIER posición, incluso
+// después de los argumentos posicionales. El paquete flag estándar deja de parsear en el primer
+// no-flag (así `save "título" "contenido" --type X` perdería --type); este helper repite el
+// parseo extrayendo los posicionales uno a uno. Devuelve los posicionales en orden.
+func parseFlags(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positionals []string
+	rest := args
+	for {
+		if err := fs.Parse(rest); err != nil {
+			return nil, err
+		}
+		rest = fs.Args()
+		if len(rest) == 0 {
+			break
+		}
+		// El primer resto es un posicional; el flag se reanuda con lo que sigue.
+		positionals = append(positionals, rest[0])
+		rest = rest[1:]
+	}
+	return positionals, nil
 }
 
 // resolveProject aplica la cadena de resolución de proyecto para la CLI: el valor explícito del

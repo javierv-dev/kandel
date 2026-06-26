@@ -52,7 +52,7 @@ type rowScanner interface {
 // memoryColumns es la lista de columnas, en orden, que espera scanMemory. Se usa en
 // todas las consultas de lectura de memorias para que columna y destino no se desalineen.
 // Las columnas anulables se normalizan con ifnull para escanear a string sin sql.Null*.
-const memoryColumns = `id, ifnull(sync_id, ''), session_id, type, title, content,
+const memoryColumns = `id, ifnull(sync_id, ''), ifnull(session_id, ''), type, title, content,
 	ifnull(tool_name, ''), ifnull(project, ''), scope, ifnull(topic_key, ''),
 	ifnull(normalized_hash, ''), revision_count, duplicate_count, pinned,
 	created_at, updated_at, last_seen_at, review_after, deleted_at`

@@ -15,6 +15,7 @@ import (
 	"github.com/javierv-dev/kandel/internal/adapter/clock"
 	"github.com/javierv-dev/kandel/internal/adapter/embedding"
 	"github.com/javierv-dev/kandel/internal/adapter/sqlite"
+	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/port_in/cli"
 	"github.com/javierv-dev/kandel/internal/service"
 )
@@ -65,6 +66,10 @@ func run(args []string) error {
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex)
 	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)
+	doctor := diagnostic.NewRunner(
+		diagnostic.EmbedderCheck{Embedder: embedder},
+		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, Model: embedder.Model()},
+	)
 
 	app := &cli.App{
 		Memory:    memoryService,
@@ -72,6 +77,7 @@ func run(args []string) error {
 		Lifecycle: lifecycleService,
 		Embedding: embeddingService,
 		Prompt:    promptService,
+		Doctor:    doctor,
 		Out:       os.Stdout,
 		Err:       os.Stderr,
 		Version:   version,

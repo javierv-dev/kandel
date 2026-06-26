@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS memories (
 	id              INTEGER PRIMARY KEY AUTOINCREMENT,
 	sync_id         TEXT,
-	session_id      TEXT NOT NULL,
+	session_id      TEXT,
 	type            TEXT NOT NULL,
 	title           TEXT NOT NULL,
 	content         TEXT NOT NULL,
@@ -58,7 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_mem_review  ON memories(review_after);
 CREATE TABLE IF NOT EXISTS prompts (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	sync_id    TEXT,
-	session_id TEXT NOT NULL,
+	session_id TEXT,
 	content    TEXT NOT NULL,
 	project    TEXT,
 	created_at TEXT NOT NULL,

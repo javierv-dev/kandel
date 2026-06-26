@@ -27,7 +27,7 @@ func (r *PromptRepo) Add(ctx context.Context, p domain.Prompt) (int64, error) {
 	const q = `INSERT INTO prompts (sync_id, session_id, content, project, created_at)
 		VALUES (?, ?, ?, ?, ?)`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
-		nullString(p.SyncID), p.SessionID, p.Content, nullString(p.Project), formatTime(p.CreatedAt),
+		nullString(p.SyncID), nullString(p.SessionID), p.Content, nullString(p.Project), formatTime(p.CreatedAt),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("sqlite: insertar prompt: %w", err)
@@ -43,7 +43,7 @@ func (r *PromptRepo) Add(ctx context.Context, p domain.Prompt) (int64, error) {
 // contenido). El bool indica si se insertó (true) o ya existía (false).
 func (r *PromptRepo) AddIfMissing(ctx context.Context, p domain.Prompt) (int64, bool, error) {
 	const find = `SELECT id FROM prompts
-		WHERE session_id = ? AND ifnull(project, '') = ? AND content = ?
+		WHERE ifnull(session_id, '') = ? AND ifnull(project, '') = ? AND content = ?
 		ORDER BY id DESC LIMIT 1`
 	var existing int64
 	err := execFromCtx(ctx, r.db).QueryRowContext(ctx, find, p.SessionID, p.Project, p.Content).Scan(&existing)
@@ -62,7 +62,7 @@ func (r *PromptRepo) AddIfMissing(ctx context.Context, p domain.Prompt) (int64, 
 
 // Recent lista los prompts más recientes de un proyecto.
 func (r *PromptRepo) Recent(ctx context.Context, project string, limit int) ([]domain.Prompt, error) {
-	query := `SELECT id, ifnull(sync_id, ''), session_id, ifnull(project, ''), content, created_at
+	query := `SELECT id, ifnull(sync_id, ''), ifnull(session_id, ''), ifnull(project, ''), content, created_at
 		FROM prompts`
 	args := []any{}
 	if project != "" {

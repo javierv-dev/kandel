@@ -28,10 +28,11 @@ func (searchCmd) Run(ctx context.Context, args []string, app *App) error {
 		fmt.Fprintln(app.Err, "uso: kandel search <consulta> [--type T] [--project P] [--scope S] [--limit N]")
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
+	positionals, err := parseFlags(fs, args)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() < 1 {
+	if len(positionals) < 1 {
 		fs.Usage()
 		return fmt.Errorf("search: falta la consulta")
 	}
@@ -46,7 +47,7 @@ func (searchCmd) Run(ctx context.Context, args []string, app *App) error {
 	}
 
 	results, err := app.Memory.Search(ctx, ports.SearchQuery{
-		Query:   fs.Arg(0),
+		Query:   positionals[0],
 		Type:    domain.MemoryType(*typ),
 		Project: resolveProject(*project),
 		Scope:   parsedScope,
