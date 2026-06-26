@@ -28,6 +28,16 @@ func NewUnitOfWork(db *DB) *UnitOfWork {
 	return &UnitOfWork{db: db}
 }
 
+// execFromTx devuelve el execer de la transacción si tx la lleva (un *sqlTx), o el fallback en
+// caso contrario. Permite que un repo participe en una transacción abierta por la unidad de
+// trabajo, o ejecute directo contra la conexión cuando no hay transacción.
+func execFromTx(tx ports.Tx, fallback execer) execer {
+	if st, ok := tx.(*sqlTx); ok && st != nil {
+		return st.exec
+	}
+	return fallback
+}
+
 // Do abre una transacción, ejecuta fn y la confirma; si fn devuelve error (o entra en pánico),
 // revierte todo. Garantiza atomicidad para los casos de uso que escriben varias entidades.
 func (u *UnitOfWork) Do(ctx context.Context, fn func(tx ports.Tx) error) (err error) {

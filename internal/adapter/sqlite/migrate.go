@@ -54,6 +54,69 @@ CREATE INDEX IF NOT EXISTS idx_obs_topic   ON observations(topic_key, project, s
 CREATE INDEX IF NOT EXISTS idx_obs_deleted ON observations(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_obs_dedupe  ON observations(normalized_hash, project, scope, type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_obs_review  ON observations(review_after);
+
+CREATE TABLE IF NOT EXISTS user_prompts (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	sync_id    TEXT,
+	session_id TEXT NOT NULL,
+	content    TEXT NOT NULL,
+	project    TEXT,
+	created_at TEXT NOT NULL,
+	FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompts_session ON user_prompts(session_id);
+CREATE INDEX IF NOT EXISTS idx_prompts_project ON user_prompts(project);
+CREATE INDEX IF NOT EXISTS idx_prompts_created ON user_prompts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prompts_sync_id ON user_prompts(sync_id);
+
+CREATE TABLE IF NOT EXISTS memory_relations (
+	id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	sync_id         TEXT NOT NULL UNIQUE,
+	source_id       TEXT NOT NULL,
+	target_id       TEXT NOT NULL,
+	relation        TEXT NOT NULL DEFAULT 'pending',
+	reason          TEXT,
+	evidence        TEXT,
+	confidence      REAL NOT NULL DEFAULT 0,
+	judgment_status TEXT NOT NULL DEFAULT 'pending',
+	created_at      TEXT NOT NULL,
+	updated_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memrel_source ON memory_relations(source_id, judgment_status);
+CREATE INDEX IF NOT EXISTS idx_memrel_target ON memory_relations(target_id, judgment_status);
+CREATE INDEX IF NOT EXISTS idx_memrel_status ON memory_relations(judgment_status);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+	target_key  TEXT PRIMARY KEY,
+	lease_owner TEXT,
+	lease_until TEXT,
+	updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sync_mutations (
+	seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+	target_key  TEXT NOT NULL,
+	entity      TEXT NOT NULL,
+	entity_key  TEXT NOT NULL,
+	op          TEXT NOT NULL,
+	payload     TEXT NOT NULL,
+	source      TEXT NOT NULL DEFAULT 'local',
+	project     TEXT NOT NULL DEFAULT '',
+	occurred_at TEXT NOT NULL DEFAULT (datetime('now')),
+	acked_at    TEXT,
+	FOREIGN KEY (target_key) REFERENCES sync_state(target_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_mutations_pending ON sync_mutations(target_key, acked_at, seq);
+
+CREATE TABLE IF NOT EXISTS sync_chunks (
+	target_key  TEXT NOT NULL,
+	chunk_id    TEXT NOT NULL,
+	imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+	PRIMARY KEY (target_key, chunk_id)
+);
 `
 
 // migrate aplica el esquema declarativo. Idempotente: cada sentencia usa IF NOT EXISTS.
