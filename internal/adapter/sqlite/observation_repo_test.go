@@ -1,0 +1,378 @@
+package sqlite
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/javierv-dev/kandel/internal/domain"
+	"github.com/javierv-dev/kandel/internal/ports"
+)
+
+// baseTime es un instante fijo para que las pruebas sean deterministas.
+var baseTime = time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
+
+// errInduced es un error de prueba para forzar el rollback de una transacción.
+var errInduced = errors.New("error inducido")
+
+// newTestDB abre una base temporal ya migrada y la cierra al terminar la prueba.
+func newTestDB(t *testing.T) *DB {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+// seedSession inserta una sesión para satisfacer la clave foránea de observations.
+func seedSession(t *testing.T, db *DB, id string) {
+	t.Helper()
+	_, err := db.sql.Exec(
+		`INSERT INTO sessions (id, project, directory, started_at) VALUES (?, ?, ?, ?)`,
+		id, "proj", "/dir", formatTime(baseTime),
+	)
+	if err != nil {
+		t.Fatalf("seedSession: %v", err)
+	}
+}
+
+// sampleObservation construye una observación válida con valores por defecto razonables.
+func sampleObservation() domain.Observation {
+	return domain.Observation{
+		SyncID:         "obs-1",
+		SessionID:      "s1",
+		Project:        "proj",
+		Type:           domain.TypeDecision,
+		Scope:          domain.ScopeProject,
+		Title:          "Usar hexagonal",
+		Content:        "Se decide arquitectura hexagonal.",
+		NormalizedHash: "hash-1",
+		RevisionCount:  1,
+		DuplicateCount: 1,
+		CreatedAt:      baseTime,
+		UpdatedAt:      baseTime,
+	}
+}
+
+func TestAddAndGet(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	ctx := context.Background()
+
+	in := sampleObservation()
+	in.ToolName = "claude"
+	in.TopicKey = domain.TopicKey("architecture/auth")
+	in.LastSeenAt = baseTime
+	in.ReviewAfter = baseTime.AddDate(0, 6, 0)
+
+	id, err := repo.Add(ctx, in)
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("Add devolvió id 0")
+	}
+
+	got, err := repo.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got == nil {
+		t.Fatal("Get devolvió nil para una observación existente")
+	}
+	if got.Title != in.Title || got.Content != in.Content {
+		t.Errorf("título/contenido no coinciden: %q / %q", got.Title, got.Content)
+	}
+	if got.Type != in.Type || got.Scope != in.Scope {
+		t.Errorf("tipo/scope no coinciden: %v / %v", got.Type, got.Scope)
+	}
+	if got.ToolName != "claude" || got.TopicKey != in.TopicKey {
+		t.Errorf("tool_name/topic_key no coinciden: %q / %q", got.ToolName, got.TopicKey)
+	}
+	if !got.CreatedAt.Equal(baseTime) || !got.ReviewAfter.Equal(in.ReviewAfter) {
+		t.Errorf("timestamps no coinciden: created=%v review=%v", got.CreatedAt, got.ReviewAfter)
+	}
+	if got.DeletedAt != nil {
+		t.Errorf("observación recién creada no debe estar borrada")
+	}
+}
+
+func TestGetMissing(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewObservationRepo(db)
+	got, err := repo.Get(context.Background(), 999)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != nil {
+		t.Errorf("Get de id inexistente debe ser nil, fue %+v", got)
+	}
+}
+
+func TestSoftDeleteHidesObservation(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	ctx := context.Background()
+
+	id, err := repo.Add(ctx, sampleObservation())
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := repo.SoftDelete(ctx, id); err != nil {
+		t.Fatalf("SoftDelete: %v", err)
+	}
+	got, err := repo.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != nil {
+		t.Errorf("una observación con soft-delete no debe recuperarse, fue %+v", got)
+	}
+}
+
+func TestFindByHash(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	ctx := context.Background()
+
+	in := sampleObservation()
+	in.NormalizedHash = "abc"
+	if _, err := repo.Add(ctx, in); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	got, err := repo.FindByHash(ctx, "proj", domain.ScopeProject, "abc")
+	if err != nil {
+		t.Fatalf("FindByHash: %v", err)
+	}
+	if got == nil {
+		t.Fatal("FindByHash debió encontrar la observación")
+	}
+
+	miss, err := repo.FindByHash(ctx, "proj", domain.ScopeProject, "otro")
+	if err != nil {
+		t.Fatalf("FindByHash: %v", err)
+	}
+	if miss != nil {
+		t.Errorf("FindByHash con hash inexistente debe ser nil")
+	}
+}
+
+func TestLatestByTopicKey(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	ctx := context.Background()
+
+	older := sampleObservation()
+	older.TopicKey = domain.TopicKey("config")
+	older.Content = "vieja"
+	older.UpdatedAt = baseTime
+	if _, err := repo.Add(ctx, older); err != nil {
+		t.Fatalf("Add older: %v", err)
+	}
+
+	newer := sampleObservation()
+	newer.SyncID = "obs-2"
+	newer.TopicKey = domain.TopicKey("config")
+	newer.Content = "nueva"
+	newer.UpdatedAt = baseTime.Add(time.Hour)
+	if _, err := repo.Add(ctx, newer); err != nil {
+		t.Fatalf("Add newer: %v", err)
+	}
+
+	got, err := repo.LatestByTopicKey(ctx, "proj", domain.ScopeProject, domain.TopicKey("config"))
+	if err != nil {
+		t.Fatalf("LatestByTopicKey: %v", err)
+	}
+	if got == nil || got.Content != "nueva" {
+		t.Errorf("LatestByTopicKey debió devolver la más reciente, fue %+v", got)
+	}
+}
+
+func TestRecentOrderingAndFilters(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	ctx := context.Background()
+
+	first := sampleObservation()
+	first.Content = "primera"
+	first.CreatedAt = baseTime
+	if _, err := repo.Add(ctx, first); err != nil {
+		t.Fatalf("Add first: %v", err)
+	}
+	second := sampleObservation()
+	second.SyncID = "obs-2"
+	second.Content = "segunda"
+	second.CreatedAt = baseTime.Add(time.Hour)
+	if _, err := repo.Add(ctx, second); err != nil {
+		t.Fatalf("Add second: %v", err)
+	}
+	// Una observación de otro proyecto que el filtro debe excluir.
+	other := sampleObservation()
+	other.SyncID = "obs-3"
+	other.Project = "otro"
+	if _, err := repo.Add(ctx, other); err != nil {
+		t.Fatalf("Add other: %v", err)
+	}
+
+	got, err := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("esperaba 2 observaciones de 'proj', obtuve %d", len(got))
+	}
+	if got[0].Content != "segunda" {
+		t.Errorf("la más reciente debe ir primero, fue %q", got[0].Content)
+	}
+}
+
+func TestSearchPreservesNeighborOrderAndScore(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	ctx := context.Background()
+
+	a := sampleObservation()
+	a.Content = "a"
+	idA, _ := repo.Add(ctx, a)
+	b := sampleObservation()
+	b.SyncID = "obs-2"
+	b.Content = "b"
+	idB, _ := repo.Add(ctx, b)
+
+	// Vecinos en orden de cercanía: B primero (score mayor), luego A.
+	neighbors := []ports.Neighbor{
+		{ObservationID: idB, Score: 0.9},
+		{ObservationID: idA, Score: 0.5},
+	}
+	got, err := repo.Search(ctx, ports.SearchQuery{Limit: 10}, neighbors)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("esperaba 2 resultados, obtuve %d", len(got))
+	}
+	if got[0].ID != idB || got[0].Score != 0.9 {
+		t.Errorf("primer resultado debe ser B con score 0.9, fue id=%d score=%v", got[0].ID, got[0].Score)
+	}
+	if got[1].ID != idA || got[1].Score != 0.5 {
+		t.Errorf("segundo resultado debe ser A con score 0.5, fue id=%d score=%v", got[1].ID, got[1].Score)
+	}
+}
+
+func TestSearchEmptyNeighbors(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewObservationRepo(db)
+	got, err := repo.Search(context.Background(), ports.SearchQuery{}, nil)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if got != nil {
+		t.Errorf("sin vecinos el resultado debe ser nil, fue %+v", got)
+	}
+}
+
+func TestSetPinned(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	ctx := context.Background()
+
+	id, _ := repo.Add(ctx, sampleObservation())
+	if err := repo.SetPinned(ctx, id, true); err != nil {
+		t.Fatalf("SetPinned: %v", err)
+	}
+	got, _ := repo.Get(ctx, id)
+	if got == nil || !got.Pinned {
+		t.Errorf("la observación debió quedar fijada, fue %+v", got)
+	}
+}
+
+func TestNeedingReview(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	ctx := context.Background()
+
+	due := sampleObservation()
+	due.Content = "vencida"
+	due.ReviewAfter = time.Now().UTC().Add(-time.Hour)
+	if _, err := repo.Add(ctx, due); err != nil {
+		t.Fatalf("Add due: %v", err)
+	}
+	future := sampleObservation()
+	future.SyncID = "obs-2"
+	future.Content = "futura"
+	future.ReviewAfter = time.Now().UTC().Add(time.Hour)
+	if _, err := repo.Add(ctx, future); err != nil {
+		t.Fatalf("Add future: %v", err)
+	}
+
+	got, err := repo.NeedingReview(ctx, "proj", 10)
+	if err != nil {
+		t.Fatalf("NeedingReview: %v", err)
+	}
+	if len(got) != 1 || got[0].Content != "vencida" {
+		t.Errorf("solo la vencida debe necesitar revisión, obtuve %+v", got)
+	}
+}
+
+func TestUnitOfWorkCommitAndRollback(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewObservationRepo(db)
+	uow := NewUnitOfWork(db)
+	ctx := context.Background()
+
+	// insertViaTx escribe usando la transacción real (afirmando ports.Tx a *sqlTx), para que
+	// commit/rollback afecten de verdad a lo insertado. El repo aún no es transaccional; eso
+	// llega en fases posteriores, así que aquí se prueba la unidad de trabajo en sí.
+	insertViaTx := func(tx ports.Tx, syncID string) error {
+		o := sampleObservation()
+		o.SyncID = syncID
+		st := tx.(*sqlTx)
+		_, err := st.exec.ExecContext(ctx,
+			`INSERT INTO observations (sync_id, session_id, type, title, content, project, scope,
+				revision_count, duplicate_count, pinned, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0, ?, ?)`,
+			o.SyncID, o.SessionID, string(o.Type), o.Title, o.Content, o.Project, string(o.Scope),
+			formatTime(o.CreatedAt), formatTime(o.UpdatedAt),
+		)
+		return err
+	}
+
+	// Commit: lo escrito dentro de Do debe persistir.
+	if err := uow.Do(ctx, func(tx ports.Tx) error { return insertViaTx(tx, "obs-commit") }); err != nil {
+		t.Fatalf("Do commit: %v", err)
+	}
+	got, _ := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
+	if len(got) != 1 {
+		t.Fatalf("tras commit esperaba 1 observación, obtuve %d", len(got))
+	}
+
+	// Rollback: un error dentro de Do no debe dejar rastro.
+	err := uow.Do(ctx, func(tx ports.Tx) error {
+		if err := insertViaTx(tx, "obs-roll"); err != nil {
+			return err
+		}
+		return errInduced
+	})
+	if !errors.Is(err, errInduced) {
+		t.Fatalf("Do debió propagar el error inducido, fue %v", err)
+	}
+	got, _ = repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
+	if len(got) != 1 {
+		t.Errorf("tras rollback debe seguir habiendo 1 observación, obtuve %d", len(got))
+	}
+}
