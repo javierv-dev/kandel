@@ -92,6 +92,29 @@ func TestPromptDelete(t *testing.T) {
 	}
 }
 
+func TestPromptUpdateProject(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewPromptRepo(db)
+	ctx := context.Background()
+
+	_, _ = repo.Add(ctx, samplePrompt())
+
+	n, err := repo.UpdateProject(ctx, "proj", "proj-nuevo")
+	if err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("esperaba 1 fila migrada, fueron %d", n)
+	}
+	if got, _ := repo.Recent(ctx, "proj", 10); len(got) != 0 {
+		t.Errorf("no debe quedar nada bajo el nombre viejo, hay %d", len(got))
+	}
+	if got, _ := repo.Recent(ctx, "proj-nuevo", 10); len(got) != 1 {
+		t.Errorf("debe estar bajo el nombre nuevo, hay %d", len(got))
+	}
+}
+
 func TestPromptRecentOrdering(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

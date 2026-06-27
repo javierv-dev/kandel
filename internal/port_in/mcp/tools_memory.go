@@ -64,9 +64,9 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 		)
 	}
 
-	if shouldRegister("mem_get_observation", allowlist) {
+	if shouldRegister("mem_get", allowlist) {
 		srv.AddTool(
-			mcp.NewTool("mem_get_observation",
+			mcp.NewTool("mem_get",
 				mcp.WithDescription("Obtiene el contenido completo (sin truncar) de una memoria por su id, normalmente tras un mem_search."),
 				mcp.WithTitleAnnotation("Obtener memoria"),
 				mcp.WithReadOnlyHintAnnotation(true),
@@ -224,12 +224,12 @@ func handleContext(svc Services) server.ToolHandlerFunc {
 	}
 }
 
-// handleGet traduce la llamada mem_get_observation a Memory.Get.
+// handleGet traduce la llamada mem_get a Memory.Get.
 func handleGet(svc Services) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id := int64(argInt(req, "id", 0))
 		if id <= 0 {
-			return mcp.NewToolResultError("id es obligatorio para mem_get_observation"), nil
+			return mcp.NewToolResultError("id es obligatorio para mem_get"), nil
 		}
 		m, err := svc.Memory.Get(ctx, id)
 		if err != nil {

@@ -75,7 +75,7 @@ HERRAMIENTAS PRINCIPALES:
   mem_save — guarda decisiones, bugs, descubrimientos y convenciones DE FORMA PROACTIVA (no esperes a que te lo pidan)
   mem_search — busca por significado trabajo, decisiones o contexto de sesiones anteriores (búsqueda semántica)
   mem_context — recupera memorias recientes (al inicio de sesión o tras una compactación)
-  mem_get_observation — obtiene el contenido completo de una memoria por su id
+  mem_get — obtiene el contenido completo de una memoria por su id
   mem_session_summary — guarda el resumen de fin de sesión
 
 REGLA DE GUARDADO PROACTIVO: llama a mem_save justo después de CUALQUIER decisión, arreglo de bug,

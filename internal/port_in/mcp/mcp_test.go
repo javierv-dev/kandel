@@ -122,7 +122,7 @@ func TestHandleGetNotFound(t *testing.T) {
 	svc := Services{Memory: &fakeMemory{getResult: nil}}
 	res, _ := handleGet(svc)(context.Background(), callWith(map[string]any{"id": float64(9)}))
 	if !res.IsError {
-		t.Error("mem_get_observation de id inexistente debe devolver error de tool")
+		t.Error("mem_get de id inexistente debe devolver error de tool")
 	}
 }
 
@@ -217,13 +217,6 @@ func TestHandleCapturePassiveNoSection(t *testing.T) {
 	res, _ := handleCapturePassive(svc)(context.Background(), callWith(map[string]any{"content": "sin viñetas ni encabezado"}))
 	if !res.IsError {
 		t.Error("sin sección de aprendizajes debe devolver error de tool")
-	}
-}
-
-func TestExtractLearnings(t *testing.T) {
-	got := extractLearnings("Aprendizajes:\n- uno\n* dos\n• tres\n\notra cosa")
-	if len(got) != 3 || got[0] != "uno" || got[2] != "tres" {
-		t.Errorf("extracción incorrecta: %v", got)
 	}
 }
 

@@ -101,3 +101,15 @@ func (r *PromptRepo) Delete(ctx context.Context, id int64) error {
 	}
 	return nil
 }
+
+// UpdateProject renombra el proyecto de todos los prompts que lo tengan; devuelve cuántas filas
+// cambió.
+func (r *PromptRepo) UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error) {
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx,
+		`UPDATE prompts SET project = ? WHERE project = ?`, newProject, oldProject)
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: renombrar proyecto en prompts: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}

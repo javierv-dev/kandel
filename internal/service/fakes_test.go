@@ -201,6 +201,19 @@ func (f *fakeObs) NeedingReview(_ context.Context, project string, limit int) ([
 	return out, nil
 }
 
+func (f *fakeObs) UpdateProject(_ context.Context, oldProject, newProject string) (int64, error) {
+	var n int64
+	for id, o := range f.items {
+		if o.IsDeleted() || o.Project != oldProject {
+			continue
+		}
+		o.Project = newProject
+		f.items[id] = o
+		n++
+	}
+	return n, nil
+}
+
 // fakePrompts es un PromptRepo en memoria.
 type fakePrompts struct {
 	items  []domain.Prompt
@@ -249,6 +262,17 @@ func (f *fakePrompts) Delete(_ context.Context, id int64) error {
 	return nil
 }
 
+func (f *fakePrompts) UpdateProject(_ context.Context, oldProject, newProject string) (int64, error) {
+	var n int64
+	for i := range f.items {
+		if f.items[i].Project == oldProject {
+			f.items[i].Project = newProject
+			n++
+		}
+	}
+	return n, nil
+}
+
 // fakeSessions es un SessionRepo en memoria.
 type fakeSessions struct {
 	items map[string]domain.Session
@@ -292,6 +316,18 @@ func (f *fakeSessions) Recent(_ context.Context, project string, limit int) ([]d
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeSessions) UpdateProject(_ context.Context, oldProject, newProject string) (int64, error) {
+	var n int64
+	for id, s := range f.items {
+		if s.Project == oldProject {
+			s.Project = newProject
+			f.items[id] = s
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeSessions) MostRecentActive(_ context.Context, project string) (string, bool, error) {

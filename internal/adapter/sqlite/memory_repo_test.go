@@ -44,7 +44,7 @@ func seedSession(t *testing.T, db *DB, id string) {
 // sampleMemory construye una memoria válida con valores por defecto razonables.
 func sampleMemory() domain.Memory {
 	return domain.Memory{
-		SyncID:         "obs-1",
+		SyncID:         "mem-1",
 		SessionID:      "s1",
 		Project:        "proj",
 		Type:           domain.TypeDecision,
@@ -181,7 +181,7 @@ func TestLatestByTopicKey(t *testing.T) {
 	}
 
 	newer := sampleMemory()
-	newer.SyncID = "obs-2"
+	newer.SyncID = "mem-2"
 	newer.TopicKey = domain.TopicKey("config")
 	newer.Content = "nueva"
 	newer.UpdatedAt = baseTime.Add(time.Hour)
@@ -211,7 +211,7 @@ func TestRecentOrderingAndFilters(t *testing.T) {
 		t.Fatalf("Add first: %v", err)
 	}
 	second := sampleMemory()
-	second.SyncID = "obs-2"
+	second.SyncID = "mem-2"
 	second.Content = "segunda"
 	second.CreatedAt = baseTime.Add(time.Hour)
 	if _, err := repo.Add(ctx, second); err != nil {
@@ -219,7 +219,7 @@ func TestRecentOrderingAndFilters(t *testing.T) {
 	}
 	// Una memoria de otro proyecto que el filtro debe excluir.
 	other := sampleMemory()
-	other.SyncID = "obs-3"
+	other.SyncID = "mem-3"
 	other.Project = "otro"
 	if _, err := repo.Add(ctx, other); err != nil {
 		t.Fatalf("Add other: %v", err)
@@ -247,7 +247,7 @@ func TestSearchPreservesNeighborOrderAndScore(t *testing.T) {
 	a.Content = "a"
 	idA, _ := repo.Add(ctx, a)
 	b := sampleMemory()
-	b.SyncID = "obs-2"
+	b.SyncID = "mem-2"
 	b.Content = "b"
 	idB, _ := repo.Add(ctx, b)
 
@@ -312,7 +312,7 @@ func TestNeedingReview(t *testing.T) {
 		t.Fatalf("Add due: %v", err)
 	}
 	future := sampleMemory()
-	future.SyncID = "obs-2"
+	future.SyncID = "mem-2"
 	future.Content = "futura"
 	future.ReviewAfter = time.Now().UTC().Add(time.Hour)
 	if _, err := repo.Add(ctx, future); err != nil {
@@ -345,7 +345,7 @@ func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 	}
 
 	// Commit: lo escrito dentro de Do debe persistir.
-	if err := uow.Do(ctx, func(ctx context.Context) error { return addInTx(ctx, "obs-commit") }); err != nil {
+	if err := uow.Do(ctx, func(ctx context.Context) error { return addInTx(ctx, "mem-commit") }); err != nil {
 		t.Fatalf("Do commit: %v", err)
 	}
 	got, _ := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
@@ -355,7 +355,7 @@ func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 
 	// Rollback: un error dentro de Do no debe dejar rastro.
 	err := uow.Do(ctx, func(ctx context.Context) error {
-		if err := addInTx(ctx, "obs-roll"); err != nil {
+		if err := addInTx(ctx, "mem-roll"); err != nil {
 			return err
 		}
 		return errInduced

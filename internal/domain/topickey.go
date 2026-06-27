@@ -22,7 +22,7 @@ const maxTopicKeyLevels = 2
 
 // ParseTopicKey valida y normaliza una clave de tema. Devuelve ErrInvalidTopicKey si el
 // formato no cumple la convención. La cadena vacía NO es válida aquí: la opcionalidad del
-// topic_key la decide quien llama (una observación sin tema deja TopicKey en su valor cero).
+// topic_key la decide quien llama (una memoria sin tema deja TopicKey en su valor cero).
 func ParseTopicKey(raw string) (TopicKey, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -40,7 +40,7 @@ func ParseTopicKey(raw string) (TopicKey, error) {
 	return TopicKey(trimmed), nil
 }
 
-// IsZero indica si la clave está ausente (la observación no pertenece a ningún tema).
+// IsZero indica si la clave está ausente (la memoria no pertenece a ningún tema).
 func (k TopicKey) IsZero() bool {
 	return k == ""
 }

@@ -106,6 +106,18 @@ func (r *SessionRepo) MostRecentActive(ctx context.Context, project string) (str
 	return id, true, nil
 }
 
+// UpdateProject renombra el proyecto de todas las sesiones que lo tengan; devuelve cuántas filas
+// cambió.
+func (r *SessionRepo) UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error) {
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx,
+		`UPDATE sessions SET project = ? WHERE project = ?`, newProject, oldProject)
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: renombrar proyecto en sesiones: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // scanSession escanea una fila al modelo de dominio (ended_at anulable → *time.Time).
 func scanSession(sc rowScanner) (domain.Session, error) {
 	var (

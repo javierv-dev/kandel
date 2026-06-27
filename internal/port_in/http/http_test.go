@@ -174,6 +174,82 @@ func TestSavePrompt(t *testing.T) {
 	}
 }
 
+func TestContext(t *testing.T) {
+	cx := &fakeContext{result: "## Memoria\n- algo\n"}
+	rec := do(t, Services{Context: cx}, http.MethodGet, "/context?project=Kandel&scope=personal", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, se esperaba 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if cx.gotProject != "Kandel" || cx.gotScope != domain.ScopePersonal {
+		t.Errorf("argumentos mal traducidos: project=%q scope=%v", cx.gotProject, cx.gotScope)
+	}
+	if !strings.Contains(rec.Body.String(), "Memoria") {
+		t.Errorf("el contexto no se serializó: %s", rec.Body.String())
+	}
+}
+
+func TestContextBadScope(t *testing.T) {
+	rec := do(t, Services{Context: &fakeContext{}}, http.MethodGet, "/context?scope=raro", "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("scope inválido debe dar 400, dio %d", rec.Code)
+	}
+}
+
+func TestPassiveCapture(t *testing.T) {
+	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 1}, Outcome: service.SaveCreated}}
+	body := `{"session_id":"s1","project":"kandel","content":"Aprendizajes:\n- el primer aprendizaje útil\n- el segundo aprendizaje útil"}`
+	rec := do(t, Services{Memory: mem}, http.MethodPost, "/memories/passive", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, se esperaba 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"saved":2`) {
+		t.Errorf("se esperaban 2 guardados: %s", rec.Body.String())
+	}
+	if mem.lastSave.Type != domain.TypeLearning {
+		t.Errorf("la captura pasiva debe guardar tipo learning, fue %v", mem.lastSave.Type)
+	}
+}
+
+func TestPassiveCaptureNoSection(t *testing.T) {
+	mem := &fakeMemory{}
+	rec := do(t, Services{Memory: mem}, http.MethodPost, "/memories/passive", `{"content":"texto sin aprendizajes"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sin sección debe responder 200 con 0 extraídos, dio %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"extracted":0`) {
+		t.Errorf("se esperaban 0 extraídos: %s", rec.Body.String())
+	}
+}
+
+func TestMigrateProject(t *testing.T) {
+	pr := &fakeProject{result: service.MigrateResult{Migrated: true, MemoriesUpdated: 2}}
+	rec := do(t, Services{Project: pr}, http.MethodPost, "/projects/migrate", `{"old_project":"viejo","new_project":"nuevo"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, se esperaba 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if pr.gotOld != "viejo" || pr.gotNew != "nuevo" {
+		t.Errorf("argumentos mal traducidos: old=%q new=%q", pr.gotOld, pr.gotNew)
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"migrated"`) {
+		t.Errorf("respuesta inesperada: %s", rec.Body.String())
+	}
+}
+
+func TestMigrateProjectSkipped(t *testing.T) {
+	pr := &fakeProject{result: service.MigrateResult{Migrated: false}}
+	rec := do(t, Services{Project: pr}, http.MethodPost, "/projects/migrate", `{"old_project":"a","new_project":"a"}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"skipped"`) {
+		t.Fatalf("sin migración debe responder skipped: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMigrateProjectMissingFields(t *testing.T) {
+	rec := do(t, Services{Project: &fakeProject{}}, http.MethodPost, "/projects/migrate", `{"old_project":"a"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("faltando new_project debe dar 400, dio %d", rec.Code)
+	}
+}
+
 func TestUnknownRoute(t *testing.T) {
 	rec := do(t, Services{}, http.MethodGet, "/no-existe", "")
 	if rec.Code != http.StatusNotFound {
@@ -253,9 +329,35 @@ func (f *fakePrompt) Save(_ context.Context, in service.SavePromptInput) (servic
 	return service.SavePromptResult{Prompt: domain.Prompt{ID: 1}, Inserted: true}, nil
 }
 
+type fakeContext struct {
+	result     string
+	gotProject string
+	gotScope   domain.Scope
+}
+
+func (f *fakeContext) Format(_ context.Context, project string, scope domain.Scope) (string, error) {
+	f.gotProject = project
+	f.gotScope = scope
+	return f.result, nil
+}
+
+type fakeProject struct {
+	result service.MigrateResult
+	gotOld string
+	gotNew string
+}
+
+func (f *fakeProject) Migrate(_ context.Context, oldProject, newProject string) (service.MigrateResult, error) {
+	f.gotOld = oldProject
+	f.gotNew = newProject
+	return f.result, nil
+}
+
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
 	_ SessionPort   = (*fakeSession)(nil)
 	_ LifecyclePort = (*fakeLifecycle)(nil)
 	_ PromptPort    = (*fakePrompt)(nil)
+	_ ContextPort   = (*fakeContext)(nil)
+	_ ProjectPort   = (*fakeProject)(nil)
 )

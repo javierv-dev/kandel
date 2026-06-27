@@ -9,8 +9,8 @@ var (
 	ErrEmptyTitle = errors.New("domain: el título no puede estar vacío")
 	// ErrEmptyContent indica que el contenido de una memoria está vacío.
 	ErrEmptyContent = errors.New("domain: el contenido no puede estar vacío")
-	// ErrInvalidType indica un tipo de observación no reconocido.
-	ErrInvalidType = errors.New("domain: tipo de observación inválido")
+	// ErrInvalidType indica un tipo de memoria no reconocido.
+	ErrInvalidType = errors.New("domain: tipo de memoria inválido")
 	// ErrInvalidScope indica un alcance no reconocido.
 	ErrInvalidScope = errors.New("domain: alcance (scope) inválido")
 	// ErrInvalidTopicKey indica una clave de tema con formato incorrecto.

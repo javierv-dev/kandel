@@ -16,7 +16,7 @@ var ProfileAgent = map[string]bool{
 	"mem_save":              true,
 	"mem_search":            true,
 	"mem_context":           true,
-	"mem_get_observation":   true,
+	"mem_get":               true,
 	"mem_session_start":     true,
 	"mem_session_end":       true,
 	"mem_session_summary":   true,

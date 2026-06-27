@@ -78,6 +78,18 @@ type SyncUseCases interface {
 	Import(ctx context.Context) (service.ImportResult, error)
 }
 
+// ContextUseCases arma el bloque de contexto del proyecto. La CLI no lo usa directamente; viaja
+// en App para cablear el servidor HTTP (los hooks lo consumen vía GET /context).
+type ContextUseCases interface {
+	Format(ctx context.Context, project string, scope domain.Scope) (string, error)
+}
+
+// ProjectUseCases migra (renombra) un proyecto. Viaja en App para cablear el servidor HTTP (los
+// hooks lo consumen vía POST /projects/migrate).
+type ProjectUseCases interface {
+	Migrate(ctx context.Context, oldProject, newProject string) (service.MigrateResult, error)
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
@@ -90,6 +102,8 @@ type App struct {
 	Doctor    DoctorUseCases
 	Conflict  ConflictUseCases
 	Sync      SyncUseCases
+	Context   ContextUseCases
+	Project   ProjectUseCases
 
 	Out     io.Writer
 	Err     io.Writer

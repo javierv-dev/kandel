@@ -237,6 +237,18 @@ func (r *MemoryRepo) NeedingReview(ctx context.Context, project string, limit in
 	return r.queryMany(ctx, query, args...)
 }
 
+// UpdateProject renombra el proyecto de todas las memorias vivas que lo tengan; devuelve cuántas
+// filas cambió. Lo usa la migración de proyecto (renombrado por cambio de remoto git).
+func (r *MemoryRepo) UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error) {
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx,
+		`UPDATE memories SET project = ? WHERE project = ? AND deleted_at IS NULL`, newProject, oldProject)
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: renombrar proyecto en memorias: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // ─── helpers internos ────────────────────────────────────────────────────────
 
 // queryOne ejecuta una consulta que devuelve a lo sumo una fila; (nil, nil) si no hay ninguna.

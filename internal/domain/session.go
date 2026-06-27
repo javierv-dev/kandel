@@ -3,7 +3,7 @@ package domain
 import "time"
 
 // Session agrupa el trabajo de una sesión del agente (proyecto, directorio y momento).
-// No guarda conocimiento: es el contenedor temporal de las observaciones.
+// No guarda conocimiento: es el contenedor temporal de las memorias.
 type Session struct {
 	ID        string
 	Project   string

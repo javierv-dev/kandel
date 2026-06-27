@@ -38,8 +38,8 @@ func TestSyncEnqueueAndListPending(t *testing.T) {
 	uow := NewUnitOfWork(db)
 	ctx := context.Background()
 
-	enqueue(t, uow, repo, sampleMutation("obs-1"))
-	enqueue(t, uow, repo, sampleMutation("obs-2"))
+	enqueue(t, uow, repo, sampleMutation("mem-1"))
+	enqueue(t, uow, repo, sampleMutation("mem-2"))
 
 	pending, err := repo.ListPending(ctx, "remote", 0, 10)
 	if err != nil {
@@ -48,10 +48,10 @@ func TestSyncEnqueueAndListPending(t *testing.T) {
 	if len(pending) != 2 {
 		t.Fatalf("esperaba 2 pendientes, obtuve %d", len(pending))
 	}
-	if pending[0].EntityKey != "obs-1" || pending[1].EntityKey != "obs-2" {
+	if pending[0].EntityKey != "mem-1" || pending[1].EntityKey != "mem-2" {
 		t.Errorf("orden por seq incorrecto: %+v", pending)
 	}
-	if string(pending[0].Payload) != `{"sync_id":"obs-1"}` {
+	if string(pending[0].Payload) != `{"sync_id":"mem-1"}` {
 		t.Errorf("payload no coincide: %s", pending[0].Payload)
 	}
 	if pending[0].Entity != domain.SyncEntityMemory || pending[0].Op != domain.SyncOpUpsert {
@@ -63,8 +63,8 @@ func TestSyncEnqueueAndListPending(t *testing.T) {
 
 	// afterSeq excluye lo ya visto.
 	rest, _ := repo.ListPending(ctx, "remote", pending[0].Seq, 10)
-	if len(rest) != 1 || rest[0].EntityKey != "obs-2" {
-		t.Errorf("afterSeq debió devolver solo obs-2, fue %+v", rest)
+	if len(rest) != 1 || rest[0].EntityKey != "mem-2" {
+		t.Errorf("afterSeq debió devolver solo mem-2, fue %+v", rest)
 	}
 }
 
@@ -74,16 +74,16 @@ func TestSyncAck(t *testing.T) {
 	uow := NewUnitOfWork(db)
 	ctx := context.Background()
 
-	enqueue(t, uow, repo, sampleMutation("obs-1"))
-	enqueue(t, uow, repo, sampleMutation("obs-2"))
+	enqueue(t, uow, repo, sampleMutation("mem-1"))
+	enqueue(t, uow, repo, sampleMutation("mem-2"))
 	pending, _ := repo.ListPending(ctx, "remote", 0, 10)
 
 	if err := repo.Ack(ctx, "remote", []int64{pending[0].Seq}); err != nil {
 		t.Fatalf("Ack: %v", err)
 	}
 	after, _ := repo.ListPending(ctx, "remote", 0, 10)
-	if len(after) != 1 || after[0].EntityKey != "obs-2" {
-		t.Errorf("tras Ack solo debe quedar obs-2 pendiente, fue %+v", after)
+	if len(after) != 1 || after[0].EntityKey != "mem-2" {
+		t.Errorf("tras Ack solo debe quedar mem-2 pendiente, fue %+v", after)
 	}
 }
 
@@ -94,7 +94,7 @@ func TestSyncEnqueueRollback(t *testing.T) {
 	ctx := context.Background()
 
 	err := uow.Do(ctx, func(ctx context.Context) error {
-		if err := repo.EnqueueMutation(ctx, sampleMutation("obs-roll")); err != nil {
+		if err := repo.EnqueueMutation(ctx, sampleMutation("mem-roll")); err != nil {
 			return err
 		}
 		return errInduced

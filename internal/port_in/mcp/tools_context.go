@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/javierv-dev/kandel/internal/domain"
+	"github.com/javierv-dev/kandel/internal/learnings"
 	"github.com/javierv-dev/kandel/internal/project"
 	"github.com/javierv-dev/kandel/internal/service"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -81,20 +82,20 @@ func handleCapturePassive(svc Services) server.ToolHandlerFunc {
 		if content == "" {
 			return mcp.NewToolResultError("content es obligatorio para mem_capture_passive"), nil
 		}
-		learnings := extractLearnings(content)
-		if len(learnings) == 0 {
+		items := learnings.Extract(content)
+		if len(items) == 0 {
 			return mcp.NewToolResultError("no se encontró una sección de aprendizajes ('## Key Learnings:' o 'Aprendizajes:') con viñetas"), nil
 		}
 		project := svc.resolveProject(argString(req, "project"))
 		sessionID := argString(req, "session_id")
 		saved := 0
-		for _, text := range learnings {
+		for _, text := range items {
 			_, err := svc.Memory.Save(ctx, service.SaveInput{
 				SessionID: sessionID,
 				Project:   project,
 				Type:      domain.TypeLearning,
 				Scope:     domain.ScopeProject,
-				Title:     truncate(text, 80),
+				Title:     learnings.Truncate(text, 80),
 				Content:   text,
 			})
 			if err != nil {
@@ -103,7 +104,7 @@ func handleCapturePassive(svc Services) server.ToolHandlerFunc {
 			}
 			saved++
 		}
-		return jsonResult(map[string]any{"extracted": len(learnings), "saved": saved})
+		return jsonResult(map[string]any{"extracted": len(items), "saved": saved})
 	}
 }
 
@@ -123,58 +124,4 @@ func handleCurrentProject(svc Services) server.ToolHandlerFunc {
 		}
 		return jsonResult(result)
 	}
-}
-
-// extractLearnings busca una sección de aprendizajes (encabezado tipo "Key Learnings" o
-// "Aprendizajes") y devuelve el texto de las viñetas que la siguen, hasta una línea en blanco o
-// el siguiente encabezado. Si no hay encabezado, devuelve nil.
-func extractLearnings(content string) []string {
-	lines := strings.Split(content, "\n")
-	inSection := false
-	var out []string
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if !inSection {
-			if isLearningsHeader(line) {
-				inSection = true
-			}
-			continue
-		}
-		// Dentro de la sección: una línea en blanco o un nuevo encabezado la cierra.
-		if line == "" {
-			break
-		}
-		if strings.HasPrefix(line, "#") || (strings.HasPrefix(line, "**") && strings.HasSuffix(line, ":")) {
-			break
-		}
-		if item, ok := bulletText(line); ok {
-			out = append(out, item)
-		}
-	}
-	return out
-}
-
-// isLearningsHeader indica si una línea es el encabezado de la sección de aprendizajes.
-func isLearningsHeader(line string) bool {
-	l := strings.ToLower(strings.Trim(line, "#* :"))
-	return l == "key learnings" || l == "learnings" || l == "aprendizajes" || l == "learned"
-}
-
-// bulletText extrae el texto de una viñeta (-, *, •); el bool es false si la línea no es viñeta.
-func bulletText(line string) (string, bool) {
-	for _, prefix := range []string{"- ", "* ", "• ", "+ "} {
-		if strings.HasPrefix(line, prefix) {
-			return strings.TrimSpace(line[len(prefix):]), true
-		}
-	}
-	return "", false
-}
-
-// truncate recorta un texto a n runas, añadiendo una elipsis si lo recortó.
-func truncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n]) + "…"
 }

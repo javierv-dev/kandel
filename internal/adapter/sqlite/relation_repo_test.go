@@ -10,8 +10,8 @@ import (
 func sampleRelation() domain.MemoryRelation {
 	return domain.MemoryRelation{
 		SyncID:    "rel-1",
-		SourceID:  "obs-a",
-		TargetID:  "obs-b",
+		SourceID:  "mem-a",
+		TargetID:  "mem-b",
 		Kind:      domain.RelationPending,
 		Status:    domain.JudgmentPending,
 		CreatedAt: baseTime,
@@ -35,7 +35,7 @@ func TestRelationInsertAndGet(t *testing.T) {
 	if got == nil {
 		t.Fatal("Get devolvió nil para una relación existente")
 	}
-	if got.SourceID != "obs-a" || got.TargetID != "obs-b" {
+	if got.SourceID != "mem-a" || got.TargetID != "mem-b" {
 		t.Errorf("source/target no coinciden: %+v", got)
 	}
 	if got.Kind != domain.RelationPending || got.Status != domain.JudgmentPending {

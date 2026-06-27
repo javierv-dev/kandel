@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/javierv-dev/kandel/internal/domain"
+	"github.com/javierv-dev/kandel/internal/learnings"
 	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/service"
 )
@@ -323,5 +324,114 @@ func handleSavePrompt(svc Services) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{"id": res.Prompt.ID, "inserted": res.Inserted})
+	}
+}
+
+// handleContext arma el bloque de contexto del proyecto (sesiones, prompts y memorias recientes)
+// que los hooks inyectan al agente al iniciar la sesión.
+func handleContext(svc Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var scope domain.Scope
+		if raw := r.URL.Query().Get("scope"); raw != "" {
+			s, err := domain.ParseScope(raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			scope = s
+		}
+		text, err := svc.Context.Format(r.Context(), r.URL.Query().Get("project"), scope)
+		if err != nil {
+			writeError(w, statusForError(err), err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"context": text})
+	}
+}
+
+// passiveCaptureRequest es el cuerpo de POST /memories/passive: la salida cruda de un agente
+// (p. ej. de un subagente al terminar) de la que se extraen aprendizajes.
+type passiveCaptureRequest struct {
+	SessionID string `json:"session_id"`
+	Content   string `json:"content"`
+	Project   string `json:"project"`
+	Source    string `json:"source"`
+}
+
+// handlePassiveCapture extrae los aprendizajes en viñetas del contenido y guarda cada uno como
+// una memoria de tipo learning. El dedupe lo hace Memory.Save (por hash); aquí se cuentan los
+// resultados. Es fire-and-forget desde el hook: nunca debe fallar la sesión del agente.
+func handlePassiveCapture(svc Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body passiveCaptureRequest
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		items := learnings.Extract(body.Content)
+		extracted := len(items)
+		saved, duplicates := 0, 0
+		for _, text := range items {
+			res, err := svc.Memory.Save(r.Context(), service.SaveInput{
+				SessionID: body.SessionID,
+				Project:   body.Project,
+				Type:      domain.TypeLearning,
+				Scope:     domain.ScopeProject,
+				Title:     learnings.Truncate(text, 80),
+				Content:   text,
+			})
+			if err != nil {
+				// Un fallo (p. ej. embebedor caído) corta: se informa lo guardado hasta aquí.
+				writeError(w, statusForError(err), err.Error())
+				return
+			}
+			switch res.Outcome {
+			case service.SaveCreated:
+				saved++
+			default:
+				// merged o duplicate: ya existía algo equivalente.
+				duplicates++
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"extracted":  extracted,
+			"saved":      saved,
+			"duplicates": duplicates,
+		})
+	}
+}
+
+// migrateProjectRequest es el cuerpo de POST /projects/migrate.
+type migrateProjectRequest struct {
+	OldProject string `json:"old_project"`
+	NewProject string `json:"new_project"`
+}
+
+// handleMigrateProject renombra un proyecto en todas sus entidades. Es idempotente: nombres que
+// coinciden tras normalizar, o sin filas que migrar, responden 200 con status "skipped".
+func handleMigrateProject(svc Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body migrateProjectRequest
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		if body.OldProject == "" || body.NewProject == "" {
+			writeError(w, http.StatusBadRequest, "old_project y new_project son obligatorios")
+			return
+		}
+		res, err := svc.Project.Migrate(r.Context(), body.OldProject, body.NewProject)
+		if err != nil {
+			writeError(w, statusForError(err), err.Error())
+			return
+		}
+		if !res.Migrated {
+			writeJSON(w, http.StatusOK, map[string]any{"status": "skipped"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":   "migrated",
+			"memories": res.MemoriesUpdated,
+			"sessions": res.SessionsUpdated,
+			"prompts":  res.PromptsUpdated,
+		})
 	}
 }

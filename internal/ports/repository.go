@@ -53,6 +53,9 @@ type MemoryRepo interface {
 	SetPinned(ctx context.Context, id int64, pinned bool) error
 	// NeedingReview lista memorias cuya fecha de revisión ya venció.
 	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
+	// UpdateProject renombra el proyecto de todas las memorias que lo tengan; devuelve cuántas
+	// filas cambió. Lo usa la migración de proyecto (renombrado por cambio de remoto git).
+	UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error)
 }
 
 // SessionRepo persiste y recupera sesiones.
@@ -68,6 +71,9 @@ type SessionRepo interface {
 	// MostRecentActive devuelve el id de la sesión abierta más reciente del proyecto.
 	// El segundo valor es false si no hay ninguna abierta.
 	MostRecentActive(ctx context.Context, project string) (string, bool, error)
+	// UpdateProject renombra el proyecto de todas las sesiones que lo tengan; devuelve cuántas
+	// filas cambió.
+	UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error)
 }
 
 // PromptRepo persiste y recupera prompts (contexto crudo del usuario).
@@ -81,6 +87,9 @@ type PromptRepo interface {
 	Recent(ctx context.Context, project string, limit int) ([]domain.Prompt, error)
 	// Delete elimina un prompt por id.
 	Delete(ctx context.Context, id int64) error
+	// UpdateProject renombra el proyecto de todos los prompts que lo tengan; devuelve cuántas
+	// filas cambió.
+	UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error)
 }
 
 // RelationRepo persiste y recupera relaciones/juicios entre memorias (detección de conflictos).

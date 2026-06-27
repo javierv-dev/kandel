@@ -41,6 +41,16 @@ type PromptPort interface {
 	Save(ctx context.Context, in service.SavePromptInput) (service.SavePromptResult, error)
 }
 
+// ContextPort arma el bloque de contexto que los hooks inyectan al agente al iniciar sesión.
+type ContextPort interface {
+	Format(ctx context.Context, project string, scope domain.Scope) (string, error)
+}
+
+// ProjectPort migra (renombra) un proyecto en todas sus entidades.
+type ProjectPort interface {
+	Migrate(ctx context.Context, oldProject, newProject string) (service.MigrateResult, error)
+}
+
 // Services agrupa los casos de uso que necesita la API. El wiring concreto vive en
 // cmd/kandel/main.go; aquí solo se ven las interfaces.
 type Services struct {
@@ -48,6 +58,8 @@ type Services struct {
 	Session   SessionPort
 	Lifecycle LifecyclePort
 	Prompt    PromptPort
+	Context   ContextPort
+	Project   ProjectPort
 }
 
 // NewHandler construye el enrutador con todas las rutas registradas. Devuelve un http.Handler
@@ -73,6 +85,11 @@ func NewHandler(svc Services) http.Handler {
 	mux.HandleFunc("GET /sessions/{id}", handleGetSession(svc))
 
 	mux.HandleFunc("POST /prompts", handleSavePrompt(svc))
+
+	// Endpoints que consumen los hooks de integración con agentes (ver §18 del plan).
+	mux.HandleFunc("GET /context", handleContext(svc))
+	mux.HandleFunc("POST /memories/passive", handlePassiveCapture(svc))
+	mux.HandleFunc("POST /projects/migrate", handleMigrateProject(svc))
 
 	return mux
 }
