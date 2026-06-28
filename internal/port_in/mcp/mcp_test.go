@@ -54,14 +54,15 @@ func TestShouldRegisterNilAllowsAll(t *testing.T) {
 func TestNewServerRegistersOnlyAllowedTools(t *testing.T) {
 	svc := Services{Memory: &fakeMemory{}, Session: &fakeSession{}, Lifecycle: &fakeLifecycle{}}
 	srv := NewServer(svc, ResolveTools("admin"))
-	// El servidor expone una caja de herramientas (map nombre→tool); admin solo trae mem_delete.
+	// El servidor expone una caja de herramientas (map nombre→tool); admin trae mem_delete y
+	// mem_restore (curación: borrar lógico y deshacerlo).
 	tools := srv.ListTools()
-	if len(tools) != 1 || tools["mem_delete"] == nil {
+	if len(tools) != 2 || tools["mem_delete"] == nil || tools["mem_restore"] == nil {
 		names := make([]string, 0, len(tools))
 		for name := range tools {
 			names = append(names, name)
 		}
-		t.Fatalf("perfil admin debe registrar solo mem_delete, registró: %v", names)
+		t.Fatalf("perfil admin debe registrar mem_delete y mem_restore, registró: %v", names)
 	}
 }
 
@@ -126,15 +127,31 @@ func TestHandleGetNotFound(t *testing.T) {
 	}
 }
 
-func TestHandleDeleteHard(t *testing.T) {
+func TestHandleDeleteIsAlwaysSoft(t *testing.T) {
 	mem := &fakeMemory{}
 	svc := Services{Memory: mem}
+	// Aunque la llamada pida hard=true, el agente solo puede borrar lógico (hard reservado a la CLI).
 	_, err := handleDelete(svc)(context.Background(), callWith(map[string]any{"id": float64(4), "hard": true}))
 	if err != nil {
 		t.Fatalf("handleDelete error: %v", err)
 	}
-	if mem.deletedID != 4 || !mem.deletedHard {
-		t.Errorf("delete mal traducido: id=%d hard=%v", mem.deletedID, mem.deletedHard)
+	if mem.deletedID != 4 || mem.deletedHard {
+		t.Errorf("mem_delete debe ser siempre soft: id=%d hard=%v", mem.deletedID, mem.deletedHard)
+	}
+}
+
+func TestHandleRestore(t *testing.T) {
+	mem := &fakeMemory{}
+	svc := Services{Memory: mem}
+	res, err := handleRestore(svc)(context.Background(), callWith(map[string]any{"id": float64(7)}))
+	if err != nil {
+		t.Fatalf("handleRestore error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("handleRestore devolvió error de tool: %v", res)
+	}
+	if mem.restoredID != 7 {
+		t.Errorf("restore mal traducido: id=%d", mem.restoredID)
 	}
 }
 
@@ -354,6 +371,7 @@ type fakeMemory struct {
 	getResult   *domain.Memory
 	deletedID   int64
 	deletedHard bool
+	restoredID  int64
 }
 
 func (f *fakeMemory) Save(_ context.Context, in service.SaveInput) (service.SaveResult, error) {
@@ -376,6 +394,10 @@ func (f *fakeMemory) Delete(_ context.Context, id int64, hard bool) error {
 	f.deletedID = id
 	f.deletedHard = hard
 	return nil
+}
+func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error) {
+	f.restoredID = id
+	return domain.Memory{ID: id}, nil
 }
 
 type fakeSession struct {

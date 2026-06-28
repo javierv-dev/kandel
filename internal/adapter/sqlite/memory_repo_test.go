@@ -137,6 +137,35 @@ func TestSoftDeleteHidesMemory(t *testing.T) {
 	}
 }
 
+func TestRestoreUndoesSoftDelete(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	id, err := repo.Add(ctx, sampleMemory())
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := repo.SoftDelete(ctx, id); err != nil {
+		t.Fatalf("SoftDelete: %v", err)
+	}
+	if err := repo.Restore(ctx, id); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	got, err := repo.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got == nil {
+		t.Error("tras Restore la memoria debe volver a recuperarse")
+	}
+	// Restaurar algo que no estaba borrado (ya viva) → ErrNotFound (no afecta filas).
+	if err := repo.Restore(ctx, id); err != domain.ErrNotFound {
+		t.Errorf("Restore de una memoria viva debe dar ErrNotFound, fue %v", err)
+	}
+}
+
 func TestFindByHash(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

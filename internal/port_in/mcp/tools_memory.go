@@ -108,13 +108,23 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 	if shouldRegister("mem_delete", allowlist) {
 		srv.AddTool(
 			mcp.NewTool("mem_delete",
-				mcp.WithDescription("Borra una memoria por id. Por defecto es soft-delete (reversible); hard=true la elimina junto con su vector."),
-				mcp.WithTitleAnnotation("Borrar memoria"),
+				mcp.WithDescription("⚠️ ÚSALA CON PRECAUCIÓN. Borra una memoria por id (borrado LÓGICO y reversible: deja de aparecer en búsquedas y listados). Es reversible con mem_restore. Solo bórrala si estás seguro (memoria errónea, duplicada o que el usuario pidió olvidar). El borrado físico irreversible NO está disponible aquí; solo por la CLI (`kandel delete <id> --hard`)."),
+				mcp.WithTitleAnnotation("Borrar memoria (lógico)"),
 				mcp.WithDestructiveHintAnnotation(true),
-				mcp.WithNumber("id", mcp.Required(), mcp.Description("Id de la memoria")),
-				mcp.WithBoolean("hard", mcp.Description("Borrado físico irreversible (def. false)")),
+				mcp.WithNumber("id", mcp.Required(), mcp.Description("Id de la memoria a borrar")),
 			),
 			handleDelete(svc),
+		)
+	}
+
+	if shouldRegister("mem_restore", allowlist) {
+		srv.AddTool(
+			mcp.NewTool("mem_restore",
+				mcp.WithDescription("Restaura una memoria borrada lógicamente (deshace mem_delete) por su id. Vuelve a aparecer en búsquedas y listados."),
+				mcp.WithTitleAnnotation("Restaurar memoria"),
+				mcp.WithNumber("id", mcp.Required(), mcp.Description("Id de la memoria a restaurar")),
+			),
+			handleRestore(svc),
 		)
 	}
 }
@@ -298,22 +308,33 @@ func handleUpdate(svc Services) server.ToolHandlerFunc {
 	}
 }
 
-// handleDelete traduce la llamada mem_delete a Memory.Delete.
+// handleDelete traduce la llamada mem_delete a Memory.Delete. Solo permite borrado LÓGICO
+// (reversible) desde el agente; el borrado físico (hard) queda reservado a la CLI por seguridad.
 func handleDelete(svc Services) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id := int64(argInt(req, "id", 0))
 		if id <= 0 {
 			return mcp.NewToolResultError("id es obligatorio para mem_delete"), nil
 		}
-		hard := argBool(req, "hard", false)
-		if err := svc.Memory.Delete(ctx, id, hard); err != nil {
+		if err := svc.Memory.Delete(ctx, id, false); err != nil {
 			return mcp.NewToolResultError("error al borrar la memoria: " + err.Error()), nil
 		}
-		kind := "soft"
-		if hard {
-			kind = "hard"
+		return jsonResult(map[string]any{"id": id, "delete": "soft", "restore_with": "mem_restore"})
+	}
+}
+
+// handleRestore traduce la llamada mem_restore a Memory.Restore (deshace un soft-delete).
+func handleRestore(svc Services) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id := int64(argInt(req, "id", 0))
+		if id <= 0 {
+			return mcp.NewToolResultError("id es obligatorio para mem_restore"), nil
 		}
-		return jsonResult(map[string]any{"id": id, "delete": kind})
+		m, err := svc.Memory.Restore(ctx, id)
+		if err != nil {
+			return mcp.NewToolResultError("error al restaurar la memoria: " + err.Error()), nil
+		}
+		return jsonResult(map[string]any{"id": m.ID, "title": m.Title, "restored": true})
 	}
 }
 

@@ -32,7 +32,7 @@ func TestClaudeCodeInstall(t *testing.T) {
 		t.Errorf("falta la skill: %v", err)
 	}
 	// Scripts.
-	for _, s := range []string{"session-start.sh", "user-prompt-submit.sh", "session-stop.sh", "subagent-stop.sh", "post-compaction.sh", "_helpers.sh"} {
+	for _, s := range []string{"session-start.sh", "user-prompt-submit.sh", "session-stop.sh", "subagent-stop.sh", "post-compaction.sh"} {
 		if _, err := os.Stat(filepath.Join(home, ".claude", "kandel", "scripts", s)); err != nil {
 			t.Errorf("falta el script %q: %v", s, err)
 		}
@@ -40,8 +40,14 @@ func TestClaudeCodeInstall(t *testing.T) {
 	// MCP.
 	mcp := readJSON(t, filepath.Join(home, ".claude.json"))
 	servers, _ := mcp["mcpServers"].(map[string]any)
-	if _, ok := servers["kandel"]; !ok {
-		t.Errorf("no se registró el servidor MCP kandel: %+v", servers)
+	kandelSrv, ok := servers["kandel"].(map[string]any)
+	if !ok {
+		t.Fatalf("no se registró el servidor MCP kandel: %+v", servers)
+	}
+	// El env debe habilitar el juez LLM de mem_compare vía la CLI de Claude.
+	env, _ := kandelSrv["env"].(map[string]any)
+	if env["KANDEL_AGENT_CLI"] != "claude" {
+		t.Errorf("falta env KANDEL_AGENT_CLI=claude en el servidor MCP: %+v", kandelSrv)
 	}
 	// Hooks.
 	settings := readJSON(t, filepath.Join(home, ".claude", "settings.json"))

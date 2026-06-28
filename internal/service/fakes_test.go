@@ -107,6 +107,16 @@ func (f *fakeObs) HardDelete(_ context.Context, id int64) error {
 	return nil
 }
 
+func (f *fakeObs) Restore(_ context.Context, id int64) error {
+	o, ok := f.items[id]
+	if !ok || o.DeletedAt == nil {
+		return domain.ErrNotFound
+	}
+	o.DeletedAt = nil
+	f.items[id] = o
+	return nil
+}
+
 func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
 	var out []domain.Memory
 	for _, o := range f.items {

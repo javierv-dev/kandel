@@ -19,6 +19,7 @@ type MemoryPort interface {
 	Search(ctx context.Context, q ports.SearchQuery) ([]domain.SearchResult, error)
 	Update(ctx context.Context, id int64, in service.UpdateInput) (domain.Memory, error)
 	Delete(ctx context.Context, id int64, hard bool) error
+	Restore(ctx context.Context, id int64) (domain.Memory, error)
 }
 
 // SessionPort es la cara de los casos de uso de sesión que el MCP consume.
@@ -89,6 +90,8 @@ func NewServer(svc Services, allowlist map[string]bool) *server.MCPServer {
 		"0.1.0",
 		server.WithToolCapabilities(true),
 		server.WithInstructions(serverInstructions),
+		// Registra cada llamada a tool en ~/.kandel/logs/mcp.log (observabilidad del camino MCP).
+		server.WithToolHandlerMiddleware(loggingMiddleware),
 	)
 	registerTools(srv, svc, allowlist)
 	return srv

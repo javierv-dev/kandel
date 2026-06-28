@@ -114,6 +114,9 @@ func (claudeCode) installMCP(mcpFile string) error {
 	servers["kandel"] = map[string]any{
 		"command": "kandel",
 		"args":    []any{"mcp", "--tools=agent"},
+		// KANDEL_AGENT_CLI=claude habilita el juez LLM de mem_compare reutilizando la CLI de
+		// Claude (claude -p, headless). Sin esto, mem_compare falla con "CLI del agente no instalada".
+		"env": map[string]any{"KANDEL_AGENT_CLI": "claude"},
 	}
 	return saveJSONObject(mcpFile, cfg)
 }

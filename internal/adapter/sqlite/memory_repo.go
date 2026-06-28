@@ -104,6 +104,21 @@ func (r *MemoryRepo) SoftDelete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Restore revierte un soft-delete limpiando deleted_at. Solo afecta filas borradas lógicamente;
+// si no se afectó ninguna (no existe o no estaba borrada), devuelve domain.ErrNotFound. El vector
+// no se toca (el soft-delete nunca lo borró), así que la memoria vuelve a ser buscable al instante.
+func (r *MemoryRepo) Restore(ctx context.Context, id int64) error {
+	const q = `UPDATE memories SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL`
+	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, id)
+	if err != nil {
+		return fmt.Errorf("sqlite: restaurar memoria: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 // HardDelete elimina físicamente la memoria.
 func (r *MemoryRepo) HardDelete(ctx context.Context, id int64) error {
 	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM memories WHERE id = ?`, id); err != nil {

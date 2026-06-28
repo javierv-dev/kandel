@@ -229,6 +229,38 @@ func TestDeleteMissing(t *testing.T) {
 	}
 }
 
+func TestRestoreReindexesAndEnqueuesUpsert(t *testing.T) {
+	svc, obs, sync := newMemoryFixture()
+	ctx := context.Background()
+	res, _ := svc.Save(ctx, baseSaveInput())
+	if err := svc.Delete(ctx, res.Memory.ID, false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	restored, err := svc.Restore(ctx, res.Memory.ID)
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if restored.ID != res.Memory.ID {
+		t.Errorf("Restore devolvió id %d, esperaba %d", restored.ID, res.Memory.ID)
+	}
+	got, _ := obs.Get(ctx, res.Memory.ID)
+	if got == nil {
+		t.Error("tras Restore la memoria debe volver a recuperarse")
+	}
+	last := sync.enqueued[len(sync.enqueued)-1]
+	if last.Op != domain.SyncOpUpsert {
+		t.Errorf("Restore debe encolar una mutación upsert, fue %v", last.Op)
+	}
+}
+
+func TestRestoreMissing(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	if _, err := svc.Restore(context.Background(), 999); err != domain.ErrNotFound {
+		t.Errorf("Restore de id inexistente debe dar ErrNotFound, fue %v", err)
+	}
+}
+
 func TestRecentDelegates(t *testing.T) {
 	svc, _, _ := newMemoryFixture()
 	ctx := context.Background()

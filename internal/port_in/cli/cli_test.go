@@ -20,6 +20,7 @@ type fakeMemory struct {
 	recentQuery ports.RecentQuery
 	deletedID   int64
 	deletedHard bool
+	restoredID  int64
 	getID       int64
 	getResult   *domain.Memory
 	saveErr     error
@@ -56,6 +57,11 @@ func (f *fakeMemory) Delete(_ context.Context, id int64, hard bool) error {
 	f.deletedID = id
 	f.deletedHard = hard
 	return nil
+}
+
+func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error) {
+	f.restoredID = id
+	return domain.Memory{ID: id}, nil
 }
 
 // fakeLifecycle registra pin/unpin/review.

@@ -38,6 +38,9 @@ type MemoryRepo interface {
 	Update(ctx context.Context, id int64, o domain.Memory) (*domain.Memory, error)
 	// SoftDelete marca la memoria como borrada sin quitarla (DeletedAt).
 	SoftDelete(ctx context.Context, id int64) error
+	// Restore revierte un soft-delete (limpia DeletedAt). Solo afecta a memorias borradas
+	// lógicamente; si la memoria no existe o no estaba borrada, devuelve domain.ErrNotFound.
+	Restore(ctx context.Context, id int64) error
 	// HardDelete elimina la memoria y sus datos asociados (incluido su vector).
 	HardDelete(ctx context.Context, id int64) error
 	// Recent lista memorias por recencia para navegación del usuario.

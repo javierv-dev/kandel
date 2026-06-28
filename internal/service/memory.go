@@ -328,6 +328,28 @@ func (m *MemoryService) Delete(ctx context.Context, id int64, hard bool) error {
 	})
 }
 
+// Restore revierte un soft-delete y vuelve a encolar la memoria como alta para el sync (deshace
+// la mutación de borrado propagada). Devuelve la memoria restaurada. domain.ErrNotFound si la
+// memoria no existe o no estaba borrada.
+func (m *MemoryService) Restore(ctx context.Context, id int64) (domain.Memory, error) {
+	var restored domain.Memory
+	err := m.uow.Do(ctx, func(ctx context.Context) error {
+		if err := m.memories.Restore(ctx, id); err != nil {
+			return err
+		}
+		o, err := m.memories.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if o == nil {
+			return domain.ErrNotFound
+		}
+		restored = *o
+		return m.enqueueUpsert(ctx, *o)
+	})
+	return restored, err
+}
+
 // enqueueUpsert encola una mutación de alta/actualización para una memoria.
 func (m *MemoryService) enqueueUpsert(ctx context.Context, o domain.Memory) error {
 	return m.enqueue(ctx, o, domain.SyncOpUpsert)

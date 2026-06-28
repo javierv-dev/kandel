@@ -10,9 +10,15 @@ This protocol is MANDATORY and ALWAYS ACTIVE — not something you activate on d
 
 ## AVAILABLE TOOLS
 
-Core tools are loaded automatically at session start by the UserPromptSubmit hook.
-They are available immediately — no manual ToolSearch needed.
+The kandel tools come from an MCP server and their schemas are **deferred**: you MUST load them
+with `ToolSearch` before calling any `mem_*` tool (the SessionStart/UserPromptSubmit hooks remind
+you). Load the core set with a SINGLE ToolSearch the first time memory is relevant:
 
+```
+ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context,mcp__kandel__mem_session_summary,mcp__kandel__mem_get,mcp__kandel__mem_save_prompt
+```
+
+Core tools:
 - `mem_save`, `mem_search`, `mem_context`, `mem_session_summary`
 - `mem_get`, `mem_suggest_topic_key`, `mem_update`
 - `mem_session_start`, `mem_session_end`, `mem_save_prompt`
@@ -20,8 +26,14 @@ They are available immediately — no manual ToolSearch needed.
 **Fallback**: If tools are unexpectedly unavailable, run `kandel install claude-code`
 again and restart Claude Code. It repairs the MCP config, hooks and skill.
 
-Admin tools (deferred — use ToolSearch only if needed):
-- `mem_delete`, `mem_capture_passive`, `mem_compare`, `mem_judge`
+Additional tools (deferred — load with ToolSearch only when needed):
+- `mem_pin`, `mem_unpin`, `mem_review`, `mem_capture_passive`, `mem_current_project`
+- `mem_doctor`, `mem_compare`, `mem_judge`
+- `mem_delete`, `mem_restore`
+
+> ⚠️ `mem_delete` removes a memory (LOGICAL delete — reversible with `mem_restore`). Use it
+> ONLY when sure: a wrong/duplicate memory, or one the user asked to forget. Physical
+> (irreversible) deletion is NOT available to the agent — only via `kandel delete <id> --hard`.
 
 ## PROACTIVE SAVE TRIGGERS (mandatory — do NOT wait for user to ask)
 
@@ -75,16 +87,15 @@ Format for `mem_save`:
 
 ## WHEN TO SEARCH MEMORY
 
-When the user asks to recall something — any variation of "remember", "recall", "what did we do",
-"how did we solve", or the equivalent in the user's language, or references to past work:
-1. First call `mem_context` — checks recent session history (fast, cheap, no embedder needed)
-2. If not found, call `mem_search` with relevant keywords (semantic vector search by meaning)
-3. If you find a match, use `mem_get` for full untruncated content
+Recent sessions and memories are ALREADY injected at session start by the hook, so you do NOT need
+to call `mem_context` just to see them. Reach for the tools only when the injected context is not
+enough. When the user asks to recall something — any variation of "remember", "recall", "what did
+we do", "how did we solve", or the equivalent — or references past work not already in context:
+1. Call `mem_search` with relevant keywords (semantic vector search by meaning)
+2. If you find a match, use `mem_get` for full untruncated content
+3. Use `mem_context` only to re-list recent items if the injected context was truncated or lost
 
-Also search memory PROACTIVELY when:
-- Starting work on something that might have been done before
-- The user mentions a topic you have no context on — check if past sessions covered it
-- The user's FIRST message references the project, a feature, or a problem — call `mem_search` with keywords from their message to check for prior work before responding
+Do NOT load or call these tools for trivial requests that need no prior memory.
 
 ## SESSION CLOSE PROTOCOL (mandatory)
 

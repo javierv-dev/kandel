@@ -30,6 +30,7 @@ type MemoryUseCases interface {
 	Search(ctx context.Context, q ports.SearchQuery) ([]domain.SearchResult, error)
 	Update(ctx context.Context, id int64, in service.UpdateInput) (domain.Memory, error)
 	Delete(ctx context.Context, id int64, hard bool) error
+	Restore(ctx context.Context, id int64) (domain.Memory, error)
 }
 
 // SessionUseCases es la cara de los casos de uso de sesión que la CLI consume.
