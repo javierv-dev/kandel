@@ -119,7 +119,7 @@ func TestSessionStartCreatesSessionAndInjectsContext(t *testing.T) {
 	if req.body["project"] != wantProject {
 		t.Errorf("project = %v, se esperaba %q", req.body["project"], wantProject)
 	}
-	if !strings.Contains(out.String(), "Kandel Persistent Memory") {
+	if !strings.Contains(out.String(), "Memoria persistente kandel") {
 		t.Errorf("la salida no contiene el protocolo:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "CONTEXTO DE PRUEBA") {
@@ -138,7 +138,7 @@ func TestSessionStartWithoutSessionIDDoesNotCreate(t *testing.T) {
 		t.Errorf("sin session_id no debe crear sesión, hubo %d POST /sessions", n)
 	}
 	// Aun así inyecta el protocolo (es útil al modelo).
-	if !strings.Contains(out.String(), "Kandel Persistent Memory") {
+	if !strings.Contains(out.String(), "Memoria persistente kandel") {
 		t.Errorf("debería imprimir el protocolo aunque no haya sesión")
 	}
 }
@@ -234,7 +234,7 @@ func TestPostCompactionInjectsProtocol(t *testing.T) {
 		t.Errorf("post-compactación debe asegurar la sesión")
 	}
 	s := out.String()
-	if !strings.Contains(s, "post-compaction") || !strings.Contains(s, "mem_session_summary") {
+	if !strings.Contains(s, "post-compactación") || !strings.Contains(s, "mem_session_summary") {
 		t.Errorf("falta el protocolo post-compactación:\n%s", s)
 	}
 	if !strings.Contains(s, "CONTEXTO DE PRUEBA") {

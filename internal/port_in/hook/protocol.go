@@ -2,59 +2,59 @@ package hook
 
 // protocolSessionStart es el bloque que el hook SessionStart imprime por stdout; el agente lo
 // inyecta como contexto adicional. Recuerda al modelo el protocolo de memoria persistente.
-const protocolSessionStart = `## Kandel Persistent Memory — ACTIVE PROTOCOL
+const protocolSessionStart = `## Memoria persistente kandel — PROTOCOLO ACTIVO
 
-You have kandel memory tools (MCP server: kandel). This protocol is MANDATORY and ALWAYS ACTIVE.
+Tienes herramientas de memoria kandel (servidor MCP: kandel). Este protocolo es OBLIGATORIO y SIEMPRE ACTIVO.
 
-### TOOLS ARE DEFERRED — you MUST load them with ToolSearch before calling any mem_* tool
-The mem_* tool schemas are NOT loaded by default. Calling one without loading fails. Load the core
-set with a SINGLE ToolSearch (do it the first time memory is relevant in the session):
+### LAS TOOLS ESTÁN DIFERIDAS — DEBES cargarlas con ToolSearch antes de llamar cualquier tool mem_*
+Los esquemas de las tools mem_* NO se cargan por defecto: llamar una sin cargarla falla. Carga el
+conjunto principal con UN SOLO ToolSearch (hazlo la primera vez que la memoria sea relevante en la sesión):
   ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context,mcp__kandel__mem_session_summary,mcp__kandel__mem_get,mcp__kandel__mem_save_prompt
 
-Other tools (load with ToolSearch when needed): mem_update, mem_suggest_topic_key, mem_session_start, mem_session_end, mem_capture_passive, mem_pin, mem_unpin, mem_review, mem_compare, mem_judge, mem_delete (logical/reversible), mem_restore
+Otras tools (cárgalas con ToolSearch cuando las necesites): mem_update, mem_suggest_topic_key, mem_session_start, mem_session_end, mem_capture_passive, mem_pin, mem_unpin, mem_review, mem_compare, mem_judge, mem_delete (lógico/reversible), mem_restore
 
-### PROACTIVE SAVE — do NOT wait for the user to ask
-Call ` + "`mem_save`" + ` IMMEDIATELY after ANY of these:
-- Decision made (architecture, convention, workflow, tool choice)
-- Bug fixed (include root cause)
-- Convention or workflow documented/updated
-- Non-obvious discovery, gotcha, or edge case found
-- Pattern established (naming, structure, approach)
-- User preference or constraint learned
-- User confirms your recommendation or rejects an approach
-- A discussion concludes with a clear direction chosen
+### GUARDADO PROACTIVO — no esperes a que el usuario lo pida
+Llama a ` + "`mem_save`" + ` INMEDIATAMENTE después de CUALQUIERA de estos:
+- Se toma una decisión (arquitectura, convención, flujo de trabajo, elección de herramienta)
+- Se arregla un bug (incluye la causa raíz)
+- Se documenta o actualiza una convención o un flujo de trabajo
+- Se descubre algo no obvio, un gotcha o un caso límite
+- Se establece un patrón (nombres, estructura, enfoque)
+- Se aprende una preferencia o restricción del usuario
+- El usuario confirma tu recomendación o rechaza un enfoque
+- Una discusión concluye con una dirección clara elegida
 
-**Self-check after EVERY task**: "Did I or the user just make a decision, confirm a recommendation, express a preference, fix a bug, learn something, or establish a convention? If yes → mem_save NOW."
+**Autochequeo después de CADA tarea**: "¿Acabo yo o el usuario de tomar una decisión, confirmar una recomendación, expresar una preferencia, arreglar un bug, aprender algo o establecer una convención? Si es así → mem_save AHORA."
 
-### SEARCH MEMORY when (only when it actually helps — not for trivial requests):
-Recent sessions and memories are ALREADY injected below at session start, so you do NOT need to
-call mem_context just to see them. Use mem_search for DEEPER or SPECIFIC recall:
-- The user asks to recall something ("remember", "what did we do", or the equivalent in their language)
-- You are about to work on something that may have been done before and the injected context is not enough
+### BUSCA EN LA MEMORIA cuando (solo cuando de verdad ayude — no en peticiones triviales):
+Las sesiones y memorias recientes YA se inyectan más abajo al iniciar la sesión, así que NO necesitas
+llamar a mem_context solo para verlas. Usa mem_search para un recall MÁS PROFUNDO o ESPECÍFICO:
+- El usuario pide recordar algo ("recuerda", "qué hicimos", o el equivalente en su idioma)
+- Vas a trabajar en algo que quizá ya se hizo antes y el contexto inyectado no basta
 
-### SESSION CLOSE — before saying "done":
-Call ` + "`mem_session_summary`" + ` with: Goal, Discoveries, Accomplished, Next Steps, Relevant Files.`
+### CIERRE DE SESIÓN — antes de decir "listo":
+Llama a ` + "`mem_session_summary`" + ` con: Objetivo, Descubrimientos, Logrado, Próximos pasos, Archivos relevantes.`
 
 // firstMessageContext es el additionalContext que el hook UserPromptSubmit inyecta SOLO en el
 // primer mensaje de la sesión. Recordatorio CONDICIONAL (no una orden incondicional): el contexto
 // reciente ya se inyecta en el session-start, así que NO hace falta llamar mem_context; solo se
 // indica cómo cargar las tools (diferidas) y cuándo usarlas. Lo ve el modelo, no el usuario.
-const firstMessageContext = "kandel memory tools (MCP server: kandel) are available but their schemas are deferred. " +
-	"Recent project context is ALREADY injected at session start, so you do NOT need to call mem_context. " +
-	"WHEN you have something worth persisting (a decision, bug fix, convention, discovery, user preference) " +
-	"or need to recall something specific that is not already in context, FIRST load the tools with: " +
+const firstMessageContext = "Tienes herramientas de memoria kandel (servidor MCP: kandel), pero sus esquemas están diferidos. " +
+	"El contexto reciente del proyecto YA se inyecta al iniciar la sesión, así que NO necesitas llamar a mem_context. " +
+	"CUANDO tengas algo que valga la pena persistir (una decisión, un arreglo de bug, una convención, un descubrimiento, una preferencia del usuario) " +
+	"o necesites recordar algo específico que no esté ya en el contexto, PRIMERO carga las tools con: " +
 	"ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context," +
-	"mcp__kandel__mem_get,mcp__kandel__mem_save_prompt — then call the tool you need. " +
-	"Do NOT call these tools for trivial requests that create nothing worth remembering."
+	"mcp__kandel__mem_get,mcp__kandel__mem_save_prompt — luego llama la tool que necesites. " +
+	"NO llames estas tools en peticiones triviales que no crean nada que valga la pena recordar."
 
 // postCompactionHeader es la primera parte del bloque que imprime el hook post-compactación. El
 // resto (los pasos numerados con el nombre del proyecto interpolado) se compone en el handler.
-const postCompactionHeader = `## Kandel Persistent Memory — ACTIVE PROTOCOL (post-compaction)
+const postCompactionHeader = `## Memoria persistente kandel — PROTOCOLO ACTIVO (post-compactación)
 
-CRITICAL INSTRUCTION POST-COMPACTION — follow these steps IN ORDER:`
+INSTRUCCIÓN CRÍTICA POST-COMPACTACIÓN — sigue estos pasos EN ORDEN:`
 
 // postCompactionFooter cierra el bloque post-compactación tras los pasos interpolados.
-const postCompactionFooter = `3. If you need more detail on a specific topic, call mem_search with relevant keywords.
-4. Only THEN continue working on what the user asked.
+const postCompactionFooter = `3. Si necesitas más detalle sobre un tema concreto, llama a mem_search con palabras clave relevantes.
+4. Solo ENTONCES continúa con lo que pidió el usuario.
 
-All steps are MANDATORY. Without them, you lose context and start blind.`
+Todos los pasos son OBLIGATORIOS. Sin ellos, pierdes el contexto y empiezas a ciegas.`

@@ -73,9 +73,9 @@ func (r *runner) postCompaction(p payload) error {
 // interpolado y, opcionalmente, el contexto recuperado.
 func (r *runner) printPostCompaction(project, context string) {
 	fmt.Fprintln(r.out, postCompactionHeader)
-	fmt.Fprintf(r.out, "\n1. FIRST: Call mem_session_summary with the content of the compacted summary above. Use project: '%s'.\n", project)
-	fmt.Fprint(r.out, "   This preserves what was accomplished before compaction.\n\n")
-	fmt.Fprintf(r.out, "2. THEN: Call mem_context with project: '%s' to recover recent session history and memories.\n", project)
+	fmt.Fprintf(r.out, "\n1. PRIMERO: Llama a mem_session_summary con el contenido del resumen compactado de arriba. Usa project: '%s'.\n", project)
+	fmt.Fprint(r.out, "   Esto preserva lo que se logró antes de la compactación.\n\n")
+	fmt.Fprintf(r.out, "2. LUEGO: Llama a mem_context con project: '%s' para recuperar el historial reciente de sesiones y memorias.\n", project)
 	fmt.Fprintln(r.out, postCompactionFooter)
 	if context != "" {
 		fmt.Fprintf(r.out, "\n%s\n", context)
