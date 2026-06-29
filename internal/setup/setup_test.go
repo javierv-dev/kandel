@@ -31,6 +31,17 @@ func TestClaudeCodeInstall(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "kandel", "SKILL.md")); err != nil {
 		t.Errorf("falta la skill: %v", err)
 	}
+	// Skill del seed.
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "kandel-seed", "SKILL.md")); err != nil {
+		t.Errorf("falta la skill de seed: %v", err)
+	}
+	// Config local del agente (para el seed standalone).
+	confData, err := os.ReadFile(filepath.Join(home, ".kandel", "config"))
+	if err != nil {
+		t.Errorf("falta el config de agente: %v", err)
+	} else if !bytes.Contains(confData, []byte("agent_cli=claude")) {
+		t.Errorf("el config no fija agent_cli=claude: %s", confData)
+	}
 	// Scripts.
 	for _, s := range []string{"session-start.sh", "user-prompt-submit.sh", "session-stop.sh", "subagent-stop.sh", "post-compaction.sh"} {
 		if _, err := os.Stat(filepath.Join(home, ".claude", "kandel", "scripts", s)); err != nil {
@@ -127,9 +138,12 @@ func TestClaudeCodeUninstallPreservesUserConfig(t *testing.T) {
 		t.Errorf("los hooks de kandel deben retirarse: quedó UserPromptSubmit")
 	}
 
-	// La skill y los scripts se borraron.
+	// Las skills y los scripts se borraron.
 	if _, err := os.Stat(filepath.Join(home, ".claude", "kandel")); !os.IsNotExist(err) {
 		t.Errorf("la carpeta de scripts de kandel debe borrarse")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "kandel-seed")); !os.IsNotExist(err) {
+		t.Errorf("la skill de seed de kandel debe borrarse")
 	}
 }
 

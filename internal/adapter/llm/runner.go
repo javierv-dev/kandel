@@ -35,7 +35,10 @@ type Runner struct {
 	runCLI func(ctx context.Context, name string, args []string, stdin string) ([]byte, error)
 }
 
-var _ ports.AgentRunner = (*Runner)(nil)
+var (
+	_ ports.AgentRunner    = (*Runner)(nil)
+	_ ports.AgentGenerator = (*Runner)(nil)
+)
 
 // New construye un Runner con el comando y argumentos dados, usando el shell-out real.
 func New(name string, args ...string) *Runner {
@@ -55,6 +58,29 @@ func (r *Runner) Judge(ctx context.Context, prompt string) (domain.Verdict, erro
 		return domain.Verdict{}, err
 	}
 	return parseVerdict(raw)
+}
+
+// Generate envía el prompt al agente y devuelve su salida de texto, desenvolviendo el sobre
+// {"result":...} de las CLIs que lo usan (p. ej. claude --output-format json). Si no hay sobre,
+// devuelve la salida cruda recortada. No parsea el contenido: el llamador (p. ej. el seed) decide
+// cómo interpretarlo.
+func (r *Runner) Generate(ctx context.Context, prompt string) (string, error) {
+	raw, err := r.runCLI(ctx, r.name, r.args, prompt)
+	if err != nil {
+		return "", err
+	}
+	return unwrapResult(raw), nil
+}
+
+// unwrapResult extrae el texto útil de la salida del agente: si viene envuelto en un sobre con
+// "result" (estilo claude --output-format json), devuelve su contenido; si no, la salida recortada.
+func unwrapResult(raw []byte) string {
+	inner := strings.TrimSpace(string(raw))
+	var env envelope
+	if err := json.Unmarshal([]byte(inner), &env); err == nil && strings.TrimSpace(env.Result) != "" {
+		return strings.TrimSpace(env.Result)
+	}
+	return inner
 }
 
 // envelope captura la respuesta del agente. Algunas CLIs (p. ej. claude --output-format json)

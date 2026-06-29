@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -131,6 +133,27 @@ func (f *fakeSync) Export(context.Context) (service.ExportResult, error) {
 func (f *fakeSync) Import(context.Context) (service.ImportResult, error) {
 	f.imported = true
 	return f.importResult, nil
+}
+
+// fakeSeed registra las llamadas del seed para comprobar el flujo del comando.
+type fakeSeed struct {
+	candidates   []service.SeedCandidate
+	genInput     service.SeedGenerateInput
+	genErr       error
+	saved        []service.SeedCandidate
+	savedProject string
+	saveResult   service.SeedSaveResult
+}
+
+func (f *fakeSeed) Generate(_ context.Context, in service.SeedGenerateInput) ([]service.SeedCandidate, error) {
+	f.genInput = in
+	return f.candidates, f.genErr
+}
+
+func (f *fakeSeed) Save(_ context.Context, c []service.SeedCandidate, project string) (service.SeedSaveResult, error) {
+	f.saved = c
+	f.savedProject = project
+	return f.saveResult, nil
 }
 
 // newTestApp construye un App con dobles y buffers de salida capturables.
@@ -385,6 +408,90 @@ func TestSyncImportFlag(t *testing.T) {
 	}
 	if !sync.imported || sync.exported {
 		t.Error("sync --import debe importar, no exportar")
+	}
+}
+
+// writeSeedRepo crea un directorio temporal con algo de documentación para que el recolector de
+// fuentes del seed no devuelva vacío.
+func writeSeedRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Proyecto\nUsa Postgres como base de datos."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestSeedDryRunDoesNotSave(t *testing.T) {
+	app, _, _, out, _ := newTestApp()
+	seed := &fakeSeed{candidates: []service.SeedCandidate{
+		{Type: "decision", Scope: "project", Title: "Motor de BD", Content: "Postgres", TopicKey: "architecture/db-engine"},
+	}}
+	app.Seed = seed
+	dir := writeSeedRepo(t)
+
+	args := []string{"seed", "--dir", dir, "--agent", "claude", "--dry-run"}
+	if err := Dispatch(context.Background(), args, app); err != nil {
+		t.Fatalf("seed --dry-run devolvió error: %v", err)
+	}
+	if seed.saved != nil {
+		t.Errorf("dry-run no debe guardar nada, guardó %d", len(seed.saved))
+	}
+	if !strings.Contains(out.String(), "Motor de BD") {
+		t.Errorf("debe listar el candidato: %q", out.String())
+	}
+	// El agente y las fuentes deben llegar al servicio.
+	if seed.genInput.AgentCLI != "claude" || !strings.Contains(seed.genInput.Sources, "Postgres") {
+		t.Errorf("entrada de Generate inesperada: %+v", seed.genInput)
+	}
+}
+
+func TestSeedConfirmYesSaves(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	seed := &fakeSeed{candidates: []service.SeedCandidate{
+		{Type: "decision", Scope: "project", Title: "Motor de BD", Content: "Postgres"},
+	}}
+	app.Seed = seed
+	app.In = strings.NewReader("y\n")
+	dir := writeSeedRepo(t)
+
+	args := []string{"seed", "--dir", dir, "--agent", "claude", "--project", "kandel"}
+	if err := Dispatch(context.Background(), args, app); err != nil {
+		t.Fatalf("seed devolvió error: %v", err)
+	}
+	if len(seed.saved) != 1 {
+		t.Fatalf("se esperaba 1 guardado tras confirmar, hubo %d", len(seed.saved))
+	}
+	if seed.savedProject != "kandel" {
+		t.Errorf("proyecto guardado = %q, se esperaba kandel", seed.savedProject)
+	}
+}
+
+func TestSeedConfirmNoAborts(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	seed := &fakeSeed{candidates: []service.SeedCandidate{
+		{Type: "decision", Scope: "project", Title: "X", Content: "y"},
+	}}
+	app.Seed = seed
+	app.In = strings.NewReader("n\n")
+	dir := writeSeedRepo(t)
+
+	if err := Dispatch(context.Background(), []string{"seed", "--dir", dir, "--agent", "claude"}, app); err != nil {
+		t.Fatalf("seed devolvió error: %v", err)
+	}
+	if seed.saved != nil {
+		t.Errorf("una respuesta negativa no debe guardar nada")
+	}
+}
+
+func TestSeedNoAgentFails(t *testing.T) {
+	t.Setenv("KANDEL_AGENT_CLI", "")
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir()) // sin config → no hay agente resoluble
+	app, _, _, _, _ := newTestApp()
+	app.Seed = &fakeSeed{}
+	dir := writeSeedRepo(t)
+	if err := Dispatch(context.Background(), []string{"seed", "--dir", dir}, app); err == nil {
+		t.Fatal("seed sin agente configurado debe fallar")
 	}
 }
 

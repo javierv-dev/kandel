@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/javierv-dev/kandel/internal/agentconf"
 )
 
 func init() { register(claudeCode{}) }
@@ -47,11 +49,18 @@ var hookSpecs = []hookSpec{
 func (c claudeCode) Install(home string, out io.Writer) error {
 	_, skillFile, scriptsDir, mcpFile, settingsFile := c.paths(home)
 
-	// 1. Skill.
+	// 1. Skill principal.
 	if err := writeAsset("assets/skill/SKILL.md", skillFile, 0o644); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "✓ skill escrita en %s\n", skillFile)
+
+	// 1b. Skill del seed (/kandel-seed): poblar la memoria de un proyecto existente.
+	seedSkillFile := filepath.Join(filepath.Dir(filepath.Dir(skillFile)), "kandel-seed", "SKILL.md")
+	if err := writeAsset("assets/skill-seed/SKILL.md", seedSkillFile, 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "✓ skill de seed escrita en %s\n", seedSkillFile)
 
 	// 2. Scripts de hook.
 	scripts, err := writeAssetTree("assets/scripts", scriptsDir, 0o755)
@@ -71,6 +80,17 @@ func (c claudeCode) Install(home string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "✓ hooks de ciclo de vida fusionados en %s\n", settingsFile)
+
+	// 5. Config local (~/.kandel/config): qué CLI de agente y modelo usa el seed standalone, que NO
+	// hereda el env del servidor MCP. Para Claude Code: claude + sonnet.
+	confDir := filepath.Join(home, ".kandel")
+	if err := agentconf.Save(confDir, map[string]string{
+		agentconf.KeyAgentCLI:  "claude",
+		agentconf.KeySeedModel: "sonnet",
+	}); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "✓ config de agente escrita en %s\n", filepath.Join(confDir, "config"))
 
 	fmt.Fprintln(out, "\nListo. Reinicia Claude Code para que tome la configuración.")
 	fmt.Fprintln(out, "Requisito: Ollama corriendo con el modelo de embeddings (por defecto bge-m3).")
@@ -93,14 +113,17 @@ func (c claudeCode) Uninstall(home string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "✓ hooks de kandel retirados de %s\n", settingsFile)
 
-	// 3. Borra la skill y los scripts (carpetas propias de kandel).
+	// 3. Borra las skills y los scripts (carpetas propias de kandel).
 	if err := os.RemoveAll(filepath.Join(claudeDir, "skills", "kandel")); err != nil {
 		return fmt.Errorf("borrar skill: %w", err)
+	}
+	if err := os.RemoveAll(filepath.Join(claudeDir, "skills", "kandel-seed")); err != nil {
+		return fmt.Errorf("borrar skill de seed: %w", err)
 	}
 	if err := os.RemoveAll(filepath.Join(claudeDir, "kandel")); err != nil {
 		return fmt.Errorf("borrar scripts: %w", err)
 	}
-	fmt.Fprintln(out, "✓ skill y scripts borrados")
+	fmt.Fprintln(out, "✓ skills y scripts borrados")
 	return nil
 }
 

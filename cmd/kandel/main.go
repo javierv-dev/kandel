@@ -74,6 +74,9 @@ func run(args []string) error {
 	syncService := service.NewSyncService(syncRepo, git.New(syncDir()), memoryRepo, uow, clk, "")
 	contextService := service.NewContextService(sessionRepo, memoryRepo, promptRepo)
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
+	// El seed construye su generador bajo demanda: el agente y el modelo se resuelven en el comando
+	// (flags > entorno > config), no aquí, porque dependen de cómo se invoque.
+	seedService := service.NewSeedService(memoryService, embedder, llm.Generator)
 	doctor := diagnostic.NewRunner(
 		diagnostic.EmbedderCheck{Embedder: embedder},
 		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, Model: embedder.Model()},
@@ -90,6 +93,8 @@ func run(args []string) error {
 		Sync:      syncService,
 		Context:   contextService,
 		Project:   projectMigrator,
+		Seed:      seedService,
+		In:        os.Stdin,
 		Out:       os.Stdout,
 		Err:       os.Stderr,
 		Version:   version,

@@ -91,6 +91,14 @@ type ProjectUseCases interface {
 	Migrate(ctx context.Context, oldProject, newProject string) (service.MigrateResult, error)
 }
 
+// SeedUseCases puebla la memoria de un proyecto existente: genera candidatos de decisión a partir de
+// la documentación (LLM) y, tras aprobación, los guarda. Separa generación y guardado para meter el
+// gate de aprobación entre ambos (ver Fase 12, §19 del plan).
+type SeedUseCases interface {
+	Generate(ctx context.Context, in service.SeedGenerateInput) ([]service.SeedCandidate, error)
+	Save(ctx context.Context, candidates []service.SeedCandidate, project string) (service.SeedSaveResult, error)
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
@@ -105,7 +113,9 @@ type App struct {
 	Sync      SyncUseCases
 	Context   ContextUseCases
 	Project   ProjectUseCases
+	Seed      SeedUseCases
 
+	In      io.Reader // entrada para confirmaciones interactivas (por defecto os.Stdin)
 	Out     io.Writer
 	Err     io.Writer
 	Version string
@@ -139,6 +149,9 @@ func Dispatch(ctx context.Context, args []string, app *App) error {
 	}
 	if app.Err == nil {
 		app.Err = os.Stderr
+	}
+	if app.In == nil {
+		app.In = os.Stdin
 	}
 	if len(args) == 0 {
 		printUsage(app)

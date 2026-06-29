@@ -28,6 +28,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("topic_key", mcp.Description("topic_key opcional para fusionar revisiones del mismo tema (p. ej. architecture/auth-model)")),
 				mcp.WithString("project", mcp.Description("Proyecto explícito; si se omite, se usa el del proceso")),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
+				mcp.WithString("tool", mcp.Description("Herramienta que originó la memoria (procedencia), p. ej. kandel-seed")),
 			),
 			handleSave(svc),
 		)
@@ -153,6 +154,7 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 			Title:     title,
 			Content:   content,
 			TopicKey:  argString(req, "topic_key"),
+			ToolName:  argString(req, "tool"),
 		})
 		if err != nil {
 			return mcp.NewToolResultError("error al guardar: " + err.Error()), nil
