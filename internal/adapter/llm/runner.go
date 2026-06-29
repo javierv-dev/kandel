@@ -174,7 +174,13 @@ func defaultRunCLI(ctx context.Context, name string, args []string, stdin string
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return nil, fmt.Errorf("llm: la CLI %q terminó con código %d: %s", name, exitErr.ExitCode(), string(exitErr.Stderr))
+			// El detalle del fallo puede venir por stderr o, con --output-format json, por stdout (el
+			// sobre del error). Se incluyen ambos para que el motivo real sea visible en el log.
+			detail := strings.TrimSpace(string(exitErr.Stderr))
+			if so := strings.TrimSpace(string(out)); so != "" {
+				detail = strings.TrimSpace(detail + " " + truncate(so, 600))
+			}
+			return nil, fmt.Errorf("llm: la CLI %q terminó con código %d: %s", name, exitErr.ExitCode(), detail)
 		}
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, fmt.Errorf("%w: %q", ErrCLINotInstalled, name)
@@ -182,4 +188,12 @@ func defaultRunCLI(ctx context.Context, name string, args []string, stdin string
 		return nil, err
 	}
 	return out, nil
+}
+
+// truncate recorta s a n caracteres añadiendo una marca, para no inflar el mensaje de error.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…[recortado]"
 }
