@@ -2,6 +2,8 @@ package llm
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -9,11 +11,19 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
+// ErrAgentUnsupported indica que KANDEL_AGENT_CLI nombra un agente cuyo contrato de CLI kandel aún
+// no implementa (p. ej. opencode, de la familia de plugins TS; ver §18 del plan). Se avisa con un
+// mensaje claro en vez de lanzar a ciegas un comando que no cumple el contrato stdin→JSON.
+var ErrAgentUnsupported = errors.New("llm: agente no soportado todavía")
+
+// supportedAgents lista los agentes con contrato de CLI implementado (prompt por stdin → JSON por
+// stdout). Hoy solo Claude Code es objetivo de pruebas; el resto figura como hoja de ruta (§18).
+var supportedAgents = []string{"claude"}
+
 // FromEnv elige el juez LLM según la variable KANDEL_AGENT_CLI:
 //   - "claude"            → CLI de Claude (claude -p --output-format json --model haiku --max-turns 1)
-//   - cualquier otro valor → se trata como el nombre de un comando que recibe el prompt por stdin
-//     y devuelve el veredicto en JSON por stdout
 //   - vacío               → un runner noop que falla en Judge (no hay agente configurado)
+//   - cualquier otro valor → un runner que falla con un aviso claro (agente no soportado todavía)
 //
 // Siempre devuelve un AgentRunner usable: así el ConflictService se construye igual y la
 // detección de candidatos (que no usa el juez) y el registro de veredictos del agente
@@ -25,8 +35,8 @@ func FromEnv() ports.AgentRunner {
 	case "claude":
 		return New("claude", "-p", "--output-format", "json", "--model", "haiku", "--max-turns", "1")
 	default:
-		// Comando personalizado: se le pasa el prompt por stdin y se espera JSON por stdout.
-		return New(agent)
+		// Agente nombrado pero sin contrato de CLI implementado todavía: no se lanza a ciegas.
+		return unsupported{agent: agent}
 	}
 }
 
@@ -51,9 +61,8 @@ const seedSystemPrompt = "Eres un componente NO INTERACTIVO de la herramienta ka
 // instalador sabe qué CLI de agente corresponde (claude, gemini, …) y el seed razona mejor con un
 // modelo más capaz. Reglas:
 //   - "claude"             → claude -p (headless), sin tools, devuelve el JSON de candidatos
-//   - cualquier otro valor → se trata como el nombre de un comando que recibe el prompt por stdin y
-//     devuelve la salida por stdout
 //   - vacío                → un Noop cuyo Generate falla con ErrCLINotInstalled (no hay agente)
+//   - cualquier otro valor → un generador que falla con un aviso claro (agente no soportado todavía)
 func Generator(agent, model string) ports.AgentGenerator {
 	switch a := strings.TrimSpace(agent); a {
 	case "":
@@ -72,7 +81,8 @@ func Generator(agent, model string) ports.AgentGenerator {
 		return New("claude", "-p", "--output-format", "json", "--model", model,
 			"--max-turns", seedMaxTurns, "--allowedTools", "", "--append-system-prompt", seedSystemPrompt)
 	default:
-		return New(a)
+		// Agente nombrado pero sin contrato de CLI implementado todavía: no se lanza a ciegas.
+		return unsupported{agent: a}
 	}
 }
 
@@ -94,4 +104,29 @@ func (Noop) Judge(context.Context, string) (domain.Verdict, error) {
 // Generate siempre falla indicando que no hay agente configurado.
 func (Noop) Generate(context.Context, string) (string, error) {
 	return "", ErrCLINotInstalled
+}
+
+// unsupported es un AgentRunner/AgentGenerator para un agente nombrado pero aún no soportado (su
+// CLI no cumple el contrato stdin→JSON; p. ej. opencode, familia B). En vez de ejecutar un comando
+// arbitrario a ciegas, falla con un aviso claro que nombra el agente y lista los soportados.
+type unsupported struct{ agent string }
+
+var (
+	_ ports.AgentRunner    = unsupported{}
+	_ ports.AgentGenerator = unsupported{}
+)
+
+// err arma el mensaje de aviso: qué agente se pidió y cuáles están soportados hoy.
+func (u unsupported) err() error {
+	return fmt.Errorf("%w: %q (soportados: %s)", ErrAgentUnsupported, u.agent, strings.Join(supportedAgents, ", "))
+}
+
+// Judge siempre falla avisando que el agente no está soportado todavía.
+func (u unsupported) Judge(context.Context, string) (domain.Verdict, error) {
+	return domain.Verdict{}, u.err()
+}
+
+// Generate siempre falla avisando que el agente no está soportado todavía.
+func (u unsupported) Generate(context.Context, string) (string, error) {
+	return "", u.err()
 }

@@ -1,5 +1,5 @@
 // Package llm implementa el puerto ports.AgentRunner haciendo shell-out a la CLI de un agente
-// (claude, opencode, …) para el juicio de conflictos. El agente recibe el prompt por stdin y
+// (hoy claude) para el juicio de conflictos. El agente recibe el prompt por stdin y
 // devuelve un veredicto en JSON por stdout. El binario kandel sigue siendo puro-Go (CGO=0): la
 // inteligencia vive en un proceso externo, no enlazada.
 package llm
@@ -28,7 +28,7 @@ var (
 )
 
 // Runner implementa ports.AgentRunner invocando una CLI externa. El comando y sus argumentos son
-// configurables (claude, opencode, …); runCLI se inyecta en los tests para no lanzar procesos.
+// configurables (hoy claude); runCLI se inyecta en los tests para no lanzar procesos.
 type Runner struct {
 	name   string
 	args   []string
