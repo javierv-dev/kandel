@@ -41,16 +41,6 @@ func (s *seedFakeSaver) Save(_ context.Context, in SaveInput) (SaveResult, error
 	return SaveResult{Memory: domain.Memory{ID: int64(len(s.saved)), Title: in.Title}, Outcome: oc}, nil
 }
 
-// seedFakeEmbedder simula el pre-chequeo del embebedor.
-type seedFakeEmbedder struct{ err error }
-
-func (e seedFakeEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
-	if e.err != nil {
-		return nil, e.err
-	}
-	return []float32{0.1}, nil
-}
-
 // genFactory devuelve una fábrica que siempre entrega el generador dado.
 func genFactory(g ports.AgentGenerator) func(string, string) ports.AgentGenerator {
 	return func(string, string) ports.AgentGenerator { return g }
@@ -63,7 +53,7 @@ func TestSeedGenerateParsesAndFiltersCandidates(t *testing.T) {
 		{"type":"architecture","title":"Hexagonal","content":"capas domain/ports/service"},
 		{"type":"config","scope":"project","title":"","content":"sin título, se descarta"}
 	]`}
-	svc := NewSeedService(&seedFakeSaver{}, seedFakeEmbedder{}, genFactory(gen))
+	svc := NewSeedService(&seedFakeSaver{}, genFactory(gen))
 
 	cands, err := svc.Generate(context.Background(), SeedGenerateInput{Sources: "docs", Limit: 10})
 	if err != nil {
@@ -87,7 +77,7 @@ func TestSeedGenerateParsesAndFiltersCandidates(t *testing.T) {
 
 func TestSeedGenerateStripsCodeFence(t *testing.T) {
 	gen := &seedFakeGenerator{out: "```json\n[{\"type\":\"decision\",\"scope\":\"project\",\"title\":\"X\",\"content\":\"Y\"}]\n```"}
-	svc := NewSeedService(&seedFakeSaver{}, seedFakeEmbedder{}, genFactory(gen))
+	svc := NewSeedService(&seedFakeSaver{}, genFactory(gen))
 	cands, err := svc.Generate(context.Background(), SeedGenerateInput{Sources: "docs"})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -102,7 +92,7 @@ func TestSeedGenerateRespectsLimit(t *testing.T) {
 		{"type":"decision","scope":"project","title":"A","content":"a"},
 		{"type":"decision","scope":"project","title":"B","content":"b"}
 	]`}
-	svc := NewSeedService(&seedFakeSaver{}, seedFakeEmbedder{}, genFactory(gen))
+	svc := NewSeedService(&seedFakeSaver{}, genFactory(gen))
 	cands, err := svc.Generate(context.Background(), SeedGenerateInput{Sources: "docs", Limit: 1})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -118,7 +108,7 @@ func TestSeedGenerateUnboundedReturnsAll(t *testing.T) {
 		{"type":"decision","scope":"project","title":"B","content":"b"},
 		{"type":"decision","scope":"project","title":"C","content":"c"}
 	]`}
-	svc := NewSeedService(&seedFakeSaver{}, seedFakeEmbedder{}, genFactory(gen))
+	svc := NewSeedService(&seedFakeSaver{}, genFactory(gen))
 	// Limit 0 = sin tope: devuelve todos los candidatos válidos.
 	cands, err := svc.Generate(context.Background(), SeedGenerateInput{Sources: "docs", Limit: 0})
 	if err != nil {
@@ -134,7 +124,7 @@ func TestSeedGenerateUnboundedReturnsAll(t *testing.T) {
 }
 
 func TestSeedGenerateEmptySourcesFails(t *testing.T) {
-	svc := NewSeedService(&seedFakeSaver{}, seedFakeEmbedder{}, genFactory(&seedFakeGenerator{}))
+	svc := NewSeedService(&seedFakeSaver{}, genFactory(&seedFakeGenerator{}))
 	if _, err := svc.Generate(context.Background(), SeedGenerateInput{Sources: "  "}); err == nil {
 		t.Fatal("se esperaba error por falta de documentación")
 	}
@@ -142,7 +132,7 @@ func TestSeedGenerateEmptySourcesFails(t *testing.T) {
 
 func TestSeedGeneratePropagatesGeneratorError(t *testing.T) {
 	gen := &seedFakeGenerator{err: errors.New("cli caída")}
-	svc := NewSeedService(&seedFakeSaver{}, seedFakeEmbedder{}, genFactory(gen))
+	svc := NewSeedService(&seedFakeSaver{}, genFactory(gen))
 	if _, err := svc.Generate(context.Background(), SeedGenerateInput{Sources: "docs"}); err == nil {
 		t.Fatal("se esperaba error del generador")
 	}
@@ -150,7 +140,7 @@ func TestSeedGeneratePropagatesGeneratorError(t *testing.T) {
 
 func TestSeedSaveBatch(t *testing.T) {
 	saver := &seedFakeSaver{outcome: SaveCreated}
-	svc := NewSeedService(saver, seedFakeEmbedder{}, genFactory(&seedFakeGenerator{}))
+	svc := NewSeedService(saver, genFactory(&seedFakeGenerator{}))
 	cands := []SeedCandidate{
 		{Type: "decision", Scope: "project", Title: "A", Content: "a", TopicKey: "architecture/x"},
 		{Type: "architecture", Scope: "project", Title: "B", Content: "b"},
@@ -175,21 +165,9 @@ func TestSeedSaveBatch(t *testing.T) {
 	}
 }
 
-func TestSeedSaveAbortsWhenEmbedderDown(t *testing.T) {
-	saver := &seedFakeSaver{}
-	svc := NewSeedService(saver, seedFakeEmbedder{err: errors.New("ollama caído")}, genFactory(&seedFakeGenerator{}))
-	cands := []SeedCandidate{{Type: "decision", Scope: "project", Title: "A", Content: "a"}}
-	if _, err := svc.Save(context.Background(), cands, "kandel"); err == nil {
-		t.Fatal("se esperaba error por embebedor caído")
-	}
-	if len(saver.saved) != 0 {
-		t.Errorf("no debe guardar nada si el embebedor está caído, guardó %d", len(saver.saved))
-	}
-}
-
 func TestSeedSaveCountsInvalidScopeAsFailed(t *testing.T) {
 	saver := &seedFakeSaver{}
-	svc := NewSeedService(saver, seedFakeEmbedder{}, genFactory(&seedFakeGenerator{}))
+	svc := NewSeedService(saver, genFactory(&seedFakeGenerator{}))
 	cands := []SeedCandidate{{Type: "decision", Scope: "inexistente", Title: "A", Content: "a"}}
 	res, err := svc.Save(context.Background(), cands, "kandel")
 	if err != nil {

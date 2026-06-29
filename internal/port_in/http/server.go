@@ -51,6 +51,14 @@ type ProjectPort interface {
 	Migrate(ctx context.Context, oldProject, newProject string) (service.MigrateResult, error)
 }
 
+// EmbeddingPort cubre el mantenimiento de vectores que los hooks disparan: backfill de las memorias
+// que se guardaron sin vector (Ollama caído) y warm-up del modelo al iniciar sesión. Ambos se
+// ejecutan de forma asíncrona en el daemon; los endpoints solo los lanzan y responden 202.
+type EmbeddingPort interface {
+	SweepBackfill(ctx context.Context) (service.BackfillResult, bool, error)
+	Warmup(ctx context.Context) error
+}
+
 // Services agrupa los casos de uso que necesita la API. El wiring concreto vive en
 // cmd/kandel/main.go; aquí solo se ven las interfaces.
 type Services struct {
@@ -60,6 +68,7 @@ type Services struct {
 	Prompt    PromptPort
 	Context   ContextPort
 	Project   ProjectPort
+	Embedding EmbeddingPort
 }
 
 // NewHandler construye el enrutador con todas las rutas registradas. Devuelve un http.Handler
@@ -90,6 +99,10 @@ func NewHandler(svc Services) http.Handler {
 	mux.HandleFunc("GET /context", handleContext(svc))
 	mux.HandleFunc("POST /memories/passive", handlePassiveCapture(svc))
 	mux.HandleFunc("POST /projects/migrate", handleMigrateProject(svc))
+
+	// Mantenimiento de vectores disparado por hooks (asíncrono; respuesta 202).
+	mux.HandleFunc("POST /embeddings/backfill", handleBackfill(svc))
+	mux.HandleFunc("POST /embeddings/warmup", handleWarmup(svc))
 
 	return mux
 }

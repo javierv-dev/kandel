@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
@@ -257,6 +258,31 @@ func TestUnknownRoute(t *testing.T) {
 	}
 }
 
+func TestBackfillEndpointAccepts(t *testing.T) {
+	emb := newFakeEmbedding()
+	rec := do(t, Services{Embedding: emb}, http.MethodPost, "/embeddings/backfill", "")
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("backfill debe responder 202, dio %d", rec.Code)
+	}
+	emb.waitSweep(t)
+}
+
+func TestBackfillEndpointUnavailableWithoutEmbedder(t *testing.T) {
+	rec := do(t, Services{}, http.MethodPost, "/embeddings/backfill", "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("sin embebedor debe responder 503, dio %d", rec.Code)
+	}
+}
+
+func TestWarmupEndpointAccepts(t *testing.T) {
+	emb := newFakeEmbedding()
+	rec := do(t, Services{Embedding: emb}, http.MethodPost, "/embeddings/warmup", "")
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("warmup debe responder 202, dio %d", rec.Code)
+	}
+	emb.waitWarmup(t)
+}
+
 // ─── dobles ────────────────────────────────────────────────────────────────────
 
 type fakeMemory struct {
@@ -353,6 +379,43 @@ func (f *fakeProject) Migrate(_ context.Context, oldProject, newProject string) 
 	return f.result, nil
 }
 
+// fakeEmbedding cumple EmbeddingPort. Como los endpoints corren en una goroutine, expone canales
+// (creados de antemano) con los que el test espera a que el trabajo asíncrono termine (sin carreras
+// con -race).
+type fakeEmbedding struct {
+	sweepDone  chan struct{}
+	warmupDone chan struct{}
+}
+
+func newFakeEmbedding() *fakeEmbedding {
+	return &fakeEmbedding{sweepDone: make(chan struct{}, 1), warmupDone: make(chan struct{}, 1)}
+}
+
+func (f *fakeEmbedding) SweepBackfill(context.Context) (service.BackfillResult, bool, error) {
+	f.sweepDone <- struct{}{}
+	return service.BackfillResult{}, false, nil
+}
+func (f *fakeEmbedding) Warmup(context.Context) error {
+	f.warmupDone <- struct{}{}
+	return nil
+}
+func (f *fakeEmbedding) waitSweep(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.sweepDone:
+	case <-time.After(time.Second):
+		t.Fatal("SweepBackfill no se invocó")
+	}
+}
+func (f *fakeEmbedding) waitWarmup(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.warmupDone:
+	case <-time.After(time.Second):
+		t.Fatal("Warmup no se invocó")
+	}
+}
+
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
 	_ SessionPort   = (*fakeSession)(nil)
@@ -360,4 +423,5 @@ var (
 	_ PromptPort    = (*fakePrompt)(nil)
 	_ ContextPort   = (*fakeContext)(nil)
 	_ ProjectPort   = (*fakeProject)(nil)
+	_ EmbeddingPort = (*fakeEmbedding)(nil)
 )

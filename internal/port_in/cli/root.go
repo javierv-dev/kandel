@@ -48,9 +48,13 @@ type LifecycleUseCases interface {
 	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 
-// EmbeddingUseCases es la cara del mantenimiento de vectores que la CLI consume.
+// EmbeddingUseCases es la cara del mantenimiento de vectores que la CLI consume. Incluye las
+// variantes automáticas (SweepBackfill, Warmup) porque App.Embedding también se cablea al daemon
+// HTTP (barrido periódico + endpoints que disparan los hooks).
 type EmbeddingUseCases interface {
 	Backfill(ctx context.Context) (service.BackfillResult, error)
+	SweepBackfill(ctx context.Context) (service.BackfillResult, bool, error)
+	Warmup(ctx context.Context) error
 	Reembed(ctx context.Context, id int64) error
 }
 

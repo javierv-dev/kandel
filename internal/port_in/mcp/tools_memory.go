@@ -159,11 +159,18 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError("error al guardar: " + err.Error()), nil
 		}
-		return jsonResult(map[string]any{
+		out := map[string]any{
 			"id":      res.Memory.ID,
 			"outcome": string(res.Outcome),
 			"title":   res.Memory.Title,
-		})
+		}
+		if res.EmbeddingDeferred {
+			// La memoria se guardó, pero sin vector (embebedor caído): se avisa al agente para que
+			// sepa que aún no aparecerá en la búsqueda semántica hasta que el backfill la procese.
+			out["embedding_deferred"] = true
+			out["note"] = "guardada SIN vector (embebedor no disponible); pendiente de backfill, aún no aparece en mem_search"
+		}
+		return jsonResult(out)
 	}
 }
 

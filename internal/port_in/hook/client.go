@@ -113,6 +113,18 @@ func (c *client) migrateProject(ctx context.Context, oldProject, newProject stri
 	return c.postJSON(ctx, "/projects/migrate", map[string]string{"old_project": oldProject, "new_project": newProject})
 }
 
+// warmup pide al daemon que precaliente el modelo de embeddings (carga en RAM) de forma asíncrona,
+// para que el primer Save de la sesión no pague el arranque en frío de Ollama (~7s).
+func (c *client) warmup(ctx context.Context) (string, error) {
+	return c.postJSON(ctx, "/embeddings/warmup", map[string]string{})
+}
+
+// triggerBackfill pide al daemon que reembeba (asíncrono) las memorias guardadas sin vector. Lo
+// dispara el hook UserPromptSubmit para no esperar al barrido periódico del daemon.
+func (c *client) triggerBackfill(ctx context.Context) (string, error) {
+	return c.postJSON(ctx, "/embeddings/backfill", map[string]string{})
+}
+
 // passiveCapture envía la salida cruda de un agente para extraer aprendizajes (captura pasiva).
 func (c *client) passiveCapture(ctx context.Context, sessionID, content, project, source string) (string, error) {
 	return c.postJSON(ctx, "/memories/passive", map[string]string{

@@ -1,6 +1,8 @@
 package http
 
 import (
+	"context"
+	"log"
 	"net/http"
 
 	"github.com/javierv-dev/kandel/internal/domain"
@@ -48,9 +50,10 @@ func handleSaveMemory(svc Services) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"id":      res.Memory.ID,
-			"outcome": string(res.Outcome),
-			"memory":  res.Memory,
+			"id":                 res.Memory.ID,
+			"outcome":            string(res.Outcome),
+			"memory":             res.Memory,
+			"embedding_deferred": res.EmbeddingDeferred,
 		})
 	}
 }
@@ -433,5 +436,49 @@ func handleMigrateProject(svc Services) http.HandlerFunc {
 			"sessions": res.SessionsUpdated,
 			"prompts":  res.PromptsUpdated,
 		})
+	}
+}
+
+// handleBackfill dispara un backfill ASÍNCRONO de las memorias guardadas sin vector (embebedor
+// caído) y responde 202 de inmediato. Lo invoca el hook UserPromptSubmit para que los vectores
+// queden al día cuanto antes sin esperar al barrido periódico. La goroutine usa un contexto propio
+// (no el de la petición, que se cancela al responder) y la omisión por solapamiento la maneja
+// SweepBackfill (si ya hay uno en curso, no encola otro).
+func handleBackfill(svc Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if svc.Embedding == nil {
+			writeError(w, http.StatusServiceUnavailable, "embebedor no disponible")
+			return
+		}
+		go func() {
+			res, skipped, err := svc.Embedding.SweepBackfill(context.Background())
+			switch {
+			case err != nil:
+				log.Printf("backfill (disparado): error tras %d memorias: %v", res.Embedded, err)
+			case skipped:
+				log.Printf("backfill (disparado): omitido, ya había uno en curso")
+			case res.Embedded > 0:
+				log.Printf("backfill (disparado): %d memoria(s) embebida(s)", res.Embedded)
+			}
+		}()
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "backfill lanzado"})
+	}
+}
+
+// handleWarmup dispara un warm-up ASÍNCRONO del modelo de embeddings (una petición "ping") y
+// responde 202 de inmediato. Lo invoca el hook SessionStart para que el modelo quede cargado en
+// memoria y el primer Save real no pague el arranque en frío (~7s) de Ollama.
+func handleWarmup(svc Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if svc.Embedding == nil {
+			writeError(w, http.StatusServiceUnavailable, "embebedor no disponible")
+			return
+		}
+		go func() {
+			if err := svc.Embedding.Warmup(context.Background()); err != nil {
+				log.Printf("warm-up del embebedor: falló (Ollama caído?): %v", err)
+			}
+		}()
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "warm-up lanzado"})
 	}
 }

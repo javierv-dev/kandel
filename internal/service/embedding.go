@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
@@ -20,6 +21,9 @@ type EmbeddingService struct {
 	embedder ports.Embedder
 	vectors  ports.VectorIndex
 	batch    int
+	// mu serializa los backfills: el barrido del daemon, los disparos por hook y el comando manual
+	// pueden coincidir; sin esto correrían a la vez y reembeberían las mismas memorias dos veces.
+	mu sync.Mutex
 }
 
 // NewEmbeddingService construye el servicio con sus dependencias inyectadas.
@@ -41,7 +45,36 @@ type BackfillResult struct {
 // distinto al activo. Procesa por lotes y es idempotente y reanudable: cada vector que se
 // escribe sale del conjunto de pendientes, así que reejecutar tras un fallo continúa donde se
 // quedó. Si el embebedor falla, aborta devolviendo cuántos llevaba (parcial, reanudable).
+// Es el camino MANUAL (`kandel embeddings backfill`): bloquea hasta tener el lock (espera si hay
+// otro backfill en curso) y corre completo.
 func (s *EmbeddingService) Backfill(ctx context.Context) (BackfillResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.backfill(ctx)
+}
+
+// SweepBackfill es la variante para los disparadores AUTOMÁTICOS (barrido periódico del daemon y
+// hook UserPromptSubmit). Si ya hay un backfill en curso, NO espera ni encola otro: lo omite y
+// devuelve skipped=true. Así varios disparos solapados coalescen en una sola pasada.
+func (s *EmbeddingService) SweepBackfill(ctx context.Context) (BackfillResult, bool, error) {
+	if !s.mu.TryLock() {
+		return BackfillResult{}, true, nil
+	}
+	defer s.mu.Unlock()
+	r, err := s.backfill(ctx)
+	return r, false, err
+}
+
+// Warmup fuerza una petición de embeddings de sondeo ("ping") para que el modelo quede cargado en
+// memoria. Lo dispara el hook SessionStart al inicio de la conversación, de modo que el primer
+// Save real no pague el arranque en frío (~7s) de Ollama. Devuelve el error del embebedor si lo hay.
+func (s *EmbeddingService) Warmup(ctx context.Context) error {
+	_, err := s.embedder.Embed(ctx, "ping")
+	return err
+}
+
+// backfill es la implementación sin candado; lo toman Backfill (bloqueante) y SweepBackfill (TryLock).
+func (s *EmbeddingService) backfill(ctx context.Context) (BackfillResult, error) {
 	model := s.embedder.Model()
 	var result BackfillResult
 	for {

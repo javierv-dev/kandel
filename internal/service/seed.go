@@ -63,25 +63,19 @@ type memorySaver interface {
 	Save(ctx context.Context, in SaveInput) (SaveResult, error)
 }
 
-// embedderProbe es la cara mínima del embebedor que el seed usa para el pre-chequeo.
-type embedderProbe interface {
-	Embed(ctx context.Context, text string) ([]float32, error)
-}
-
 // SeedService implementa el caso de uso de poblar la memoria de un proyecto existente. Separa la
 // generación (cara, llama al LLM) del guardado (gate de aprobación entre medias, en el adaptador
-// CLI). Reusa MemoryService.Save: dedupe, embedding y sync vienen gratis.
+// CLI). Reusa MemoryService.Save: dedupe, embedding (tolerante) y sync vienen gratis.
 type SeedService struct {
 	memories     memorySaver
-	embedder     embedderProbe
 	newGenerator func(agentCLI, model string) ports.AgentGenerator
 }
 
 // NewSeedService construye el servicio. newGenerator es una fábrica (inyectada desde main) que, dado
 // el nombre de la CLI de agente y el modelo, devuelve el AgentGenerator concreto; así el service no
 // conoce el adaptador llm y los tests inyectan un generador falso.
-func NewSeedService(memories memorySaver, embedder embedderProbe, newGenerator func(agentCLI, model string) ports.AgentGenerator) *SeedService {
-	return &SeedService{memories: memories, embedder: embedder, newGenerator: newGenerator}
+func NewSeedService(memories memorySaver, newGenerator func(agentCLI, model string) ports.AgentGenerator) *SeedService {
+	return &SeedService{memories: memories, newGenerator: newGenerator}
 }
 
 // Generate pide al LLM que extraiga decisiones de alto valor de la documentación y devuelve los
@@ -123,16 +117,13 @@ func (s *SeedService) Generate(ctx context.Context, in SeedGenerateInput) ([]See
 	return candidates, nil
 }
 
-// Save persiste los candidatos como memorias (tipo de alto valor, procedencia "kandel-seed"). Antes
-// hace un pre-chequeo del embebedor: si está caído, MemoryService.Save revertiría cada inserción, así
-// que se aborta de inmediato con un mensaje claro (no a mitad del lote). El dedupe de Save hace que
-// re-ejecutar el seed sea idempotente. Devuelve el conteo por desenlace.
+// Save persiste los candidatos como memorias (tipo de alto valor, procedencia "kandel-seed"). Ya no
+// aborta si el embebedor está caído: MemoryService.Save es TOLERANTE y guarda cada memoria igual (sin
+// vector), que el backfill posterior reembeberá. El dedupe de Save hace que re-ejecutar el seed sea
+// idempotente. Devuelve el conteo por desenlace.
 func (s *SeedService) Save(ctx context.Context, candidates []SeedCandidate, project string) (SeedSaveResult, error) {
 	if len(candidates) == 0 {
 		return SeedSaveResult{}, nil
-	}
-	if _, err := s.embedder.Embed(ctx, "ping"); err != nil {
-		return SeedSaveResult{}, fmt.Errorf("seed: el embebedor no está disponible; arráncalo antes de guardar (p. ej. Ollama): %w", err)
 	}
 
 	var res SeedSaveResult

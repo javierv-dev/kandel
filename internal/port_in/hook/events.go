@@ -41,6 +41,11 @@ func (r *runner) sessionStart(p payload) error {
 		}
 	}
 
+	// Precalienta el modelo de embeddings (asíncrono en el daemon): mata el arranque en frío de
+	// Ollama (~7s) para que el primer Save real de la sesión responda rápido.
+	code, _ := r.client.warmup(r.ctx)
+	r.klog("POST /embeddings/warmup -> HTTP " + code)
+
 	// Inyecta el protocolo + el contexto del proyecto.
 	fmt.Fprint(r.out, protocolSessionStart)
 	if text := r.client.fetchContext(r.ctx, project); text != "" {
@@ -92,6 +97,12 @@ func (r *runner) userPromptSubmit(p payload) error {
 	} else {
 		r.klog("no se persiste prompt: session_id o prompt vacíos")
 	}
+
+	// Dispara un backfill inmediato (asíncrono en el daemon) de las memorias que se hayan guardado
+	// sin vector. Es barato si no hay pendientes (una consulta que vuelve vacía) y deja los vectores
+	// al día sin esperar al barrido periódico. No bloquea: el daemon responde 202.
+	bfCode, _ := r.client.triggerBackfill(r.ctx)
+	r.klog("POST /embeddings/backfill -> HTTP " + bfCode)
 
 	if firstMessage(p.SessionID) {
 		out := map[string]any{

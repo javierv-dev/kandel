@@ -4,9 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	nethttp "net/http"
 	"os"
 	"strings"
+	"time"
 
 	httpadapter "github.com/javierv-dev/kandel/internal/port_in/http"
 )
@@ -14,6 +16,10 @@ import (
 // defaultPort es el puerto por defecto del daemon HTTP. KANDEL_PORT lo sobreescribe; el
 // instalador de cada agente lo fija de forma coherente en los hooks y aquí (ver §18 del plan).
 const defaultPort = "8765"
+
+// defaultBackfillInterval es cada cuánto el daemon barre las memorias guardadas sin vector (p. ej.
+// con Ollama caído) y las reembebe. KANDEL_BACKFILL_INTERVAL lo sobreescribe; "0" lo desactiva.
+const defaultBackfillInterval = 2 * time.Minute
 
 // resolvePort devuelve el puerto efectivo del daemon: KANDEL_PORT si está definido, si no el
 // valor por defecto. Mantiene un único origen de verdad para el puerto entre hooks y servidor.
@@ -33,7 +39,7 @@ func init() { register(serveCmd{}) }
 func (serveCmd) Name() string     { return "serve" }
 func (serveCmd) Synopsis() string { return "arranca la API HTTP local" }
 
-func (serveCmd) Run(_ context.Context, args []string, app *App) error {
+func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
 	// Por defecto vacío: si no se pasa --addr, se compone desde KANDEL_PORT en 127.0.0.1.
@@ -56,8 +62,58 @@ func (serveCmd) Run(_ context.Context, args []string, app *App) error {
 		Prompt:    app.Prompt,
 		Context:   app.Context,
 		Project:   app.Project,
+		Embedding: app.Embedding,
 	})
+
+	// Barrido periódico de backfill: reembebe en segundo plano las memorias que se guardaron sin
+	// vector (Save es tolerante al embebedor caído). Es la red de seguridad; los hooks disparan
+	// además un backfill inmediato. Se omite si el intervalo es 0 o si no hay embebedor cableado.
+	if app.Embedding != nil {
+		if interval := resolveBackfillInterval(); interval > 0 {
+			go runBackfillSweep(ctx, app, interval)
+		}
+	}
+
 	fmt.Fprintf(app.Out, "kandel HTTP escuchando en http://%s\n", *addr)
 	// ListenAndServe bloquea hasta que el proceso termina o falla.
 	return nethttp.ListenAndServe(*addr, handler)
+}
+
+// resolveBackfillInterval devuelve el intervalo del barrido de backfill: KANDEL_BACKFILL_INTERVAL
+// (formato de time.ParseDuration, p. ej. "90s", "5m") si está definido, si no el valor por defecto.
+// "0" (o cualquier valor <= 0) desactiva el barrido.
+func resolveBackfillInterval() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("KANDEL_BACKFILL_INTERVAL"))
+	if raw == "" {
+		return defaultBackfillInterval
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return defaultBackfillInterval
+	}
+	return d
+}
+
+// runBackfillSweep corre el barrido hasta que el contexto se cancela. Cada tick dispara un
+// SweepBackfill (que se omite solo si ya hay uno en curso). Los errores se registran y no detienen
+// el barrido: Ollama puede estar caído ahora y volver en el siguiente tick.
+func runBackfillSweep(ctx context.Context, app *App, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			res, skipped, err := app.Embedding.SweepBackfill(ctx)
+			switch {
+			case err != nil:
+				log.Printf("barrido de backfill: error tras %d memorias: %v", res.Embedded, err)
+			case skipped:
+				// ya había uno en curso; nada que registrar.
+			case res.Embedded > 0:
+				log.Printf("barrido de backfill: %d memoria(s) embebida(s)", res.Embedded)
+			}
+		}
+	}
 }

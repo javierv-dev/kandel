@@ -141,3 +141,64 @@ func TestReembedNotFound(t *testing.T) {
 		t.Fatalf("se esperaba ErrNotFound, se obtuvo %v", err)
 	}
 }
+
+// TestSweepBackfillEmbedsPending verifica que la variante automática hace el mismo trabajo que
+// Backfill cuando no hay otro en curso (skipped=false).
+func TestSweepBackfillEmbedsPending(t *testing.T) {
+	repo := newFakeObs()
+	a := seedMemory(t, repo, "uno")
+	emb := newFakeEmbedder()
+	idx := newPendingIndex([]int64{a})
+	svc := newBackfillService(idx, repo, emb)
+
+	res, skipped, err := svc.SweepBackfill(context.Background())
+	if err != nil {
+		t.Fatalf("SweepBackfill devolvió error: %v", err)
+	}
+	if skipped {
+		t.Error("no debe omitirse si no hay otro backfill en curso")
+	}
+	if res.Embedded != 1 {
+		t.Errorf("Embedded = %d, se esperaba 1", res.Embedded)
+	}
+}
+
+// TestSweepBackfillSkipsWhenBusy verifica la coalescencia: si ya hay un backfill corriendo (lock
+// tomado), SweepBackfill se omite en vez de encolar otra pasada.
+func TestSweepBackfillSkipsWhenBusy(t *testing.T) {
+	repo := newFakeObs()
+	emb := newFakeEmbedder()
+	idx := newPendingIndex()
+	svc := newBackfillService(idx, repo, emb)
+
+	svc.mu.Lock() // simula un backfill en curso
+	defer svc.mu.Unlock()
+
+	_, skipped, err := svc.SweepBackfill(context.Background())
+	if err != nil {
+		t.Fatalf("SweepBackfill devolvió error: %v", err)
+	}
+	if !skipped {
+		t.Error("debe omitirse cuando ya hay un backfill en curso")
+	}
+}
+
+// TestWarmupCallsEmbedder verifica que el warm-up dispara una petición al embebedor y propaga su
+// error (para que el handler lo registre).
+func TestWarmupCallsEmbedder(t *testing.T) {
+	repo := newFakeObs()
+	idx := newPendingIndex()
+
+	emb := newFakeEmbedder()
+	svc := newBackfillService(idx, repo, emb)
+	if err := svc.Warmup(context.Background()); err != nil {
+		t.Fatalf("Warmup no debe fallar con el embebedor sano: %v", err)
+	}
+
+	embDown := newFakeEmbedder()
+	embDown.failWith = errors.New("ollama caído")
+	svcDown := newBackfillService(idx, repo, embDown)
+	if err := svcDown.Warmup(context.Background()); err == nil {
+		t.Error("Warmup debe propagar el error del embebedor caído")
+	}
+}

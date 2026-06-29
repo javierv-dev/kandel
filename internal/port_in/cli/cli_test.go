@@ -81,6 +81,7 @@ func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]dom
 // fakeEmbedding registra las llamadas de mantenimiento de vectores.
 type fakeEmbedding struct {
 	backfillCalled bool
+	warmupCalled   bool
 	reembedID      int64
 	backfillResult service.BackfillResult
 }
@@ -88,6 +89,14 @@ type fakeEmbedding struct {
 func (f *fakeEmbedding) Backfill(context.Context) (service.BackfillResult, error) {
 	f.backfillCalled = true
 	return f.backfillResult, nil
+}
+func (f *fakeEmbedding) SweepBackfill(context.Context) (service.BackfillResult, bool, error) {
+	f.backfillCalled = true
+	return f.backfillResult, false, nil
+}
+func (f *fakeEmbedding) Warmup(context.Context) error {
+	f.warmupCalled = true
+	return nil
 }
 func (f *fakeEmbedding) Reembed(_ context.Context, id int64) error {
 	f.reembedID = id

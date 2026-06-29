@@ -293,17 +293,39 @@ func TestSaveIndexesVector(t *testing.T) {
 	}
 }
 
-func TestSaveFailsWhenEmbedderFails(t *testing.T) {
+// Save es TOLERANTE al embebedor caído: la memoria se guarda igual (sin vector), marcando
+// EmbeddingDeferred, registrando un aviso y dejándola pendiente de backfill. No se pierde nada.
+func TestSaveToleratesEmbedderFailure(t *testing.T) {
 	obs := newFakeObs()
 	sync := &fakeSync{}
 	emb := newFakeEmbedder()
 	emb.failWith = errInducedSvc
 	vidx := newFakeVectorIndex()
-	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vidx)
+	var warned int
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vidx,
+		WithWarnLogger(func(string, ...any) { warned++ }))
 
-	_, err := svc.Save(context.Background(), baseSaveInput())
-	if err != errInducedSvc {
-		t.Fatalf("Save debe fallar si el embedder falla, fue %v", err)
+	res, err := svc.Save(context.Background(), baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save no debe fallar con el embebedor caído, fue %v", err)
+	}
+	if res.Outcome != SaveCreated {
+		t.Errorf("outcome = %q, se esperaba created", res.Outcome)
+	}
+	if !res.EmbeddingDeferred {
+		t.Error("EmbeddingDeferred debe ser true cuando el embebedor falla")
+	}
+	if res.Memory.ID == 0 {
+		t.Error("la memoria debe haberse guardado (id != 0) pese al fallo del embebedor")
+	}
+	if got, _ := obs.Get(context.Background(), res.Memory.ID); got == nil {
+		t.Error("la memoria debe persistir en el repo aunque no tenga vector")
+	}
+	if _, ok := vidx.vecs[res.Memory.ID]; ok {
+		t.Error("no debe haber vector indexado cuando el embebedor falla")
+	}
+	if warned == 0 {
+		t.Error("se esperaba un aviso registrado por el guardado sin vector")
 	}
 }
 

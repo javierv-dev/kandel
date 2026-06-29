@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/javierv-dev/kandel/internal/adapter/clock"
 	"github.com/javierv-dev/kandel/internal/adapter/embedding"
@@ -65,7 +66,8 @@ func run(args []string) error {
 	)
 
 	// Casos de uso (service/).
-	memoryService := service.NewMemoryService(memoryRepo, syncRepo, uow, clk, embedder, vectorIndex)
+	memoryService := service.NewMemoryService(memoryRepo, syncRepo, uow, clk, embedder, vectorIndex,
+		service.WithWarnLogger(embeddingWarnLogger()))
 	sessionService := service.NewSessionService(sessionRepo, syncRepo, uow, clk)
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex)
@@ -76,7 +78,7 @@ func run(args []string) error {
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
 	// El seed construye su generador bajo demanda: el agente y el modelo se resuelven en el comando
 	// (flags > entorno > config), no aquí, porque dependen de cómo se invoque.
-	seedService := service.NewSeedService(memoryService, embedder, llm.Generator)
+	seedService := service.NewSeedService(memoryService, llm.Generator)
 	doctor := diagnostic.NewRunner(
 		diagnostic.EmbedderCheck{Embedder: embedder},
 		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, Model: embedder.Model()},
@@ -141,4 +143,35 @@ func embedDimensions() int {
 		return 0
 	}
 	return n
+}
+
+// embeddingWarnLogger devuelve el destino de los avisos del MemoryService (p. ej. "memoria guardada
+// sin vector porque el embebedor está caído"). Anexa al log de embeddings (~/.kandel/logs/embeddings.log,
+// o KANDEL_LOG_DIR si está definido). Si no se puede resolver la ruta, escribe a stderr. Nunca
+// entra en pánico: la observabilidad es deseable, no crítica.
+func embeddingWarnLogger() func(string, ...any) {
+	dir := strings.TrimSpace(os.Getenv("KANDEL_LOG_DIR"))
+	if dir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			dir = filepath.Join(home, ".kandel", "logs")
+		}
+	}
+	return func(format string, args ...any) {
+		line := time.Now().Format("2006-01-02 15:04:05") + " [embeddings] " + fmt.Sprintf(format, args...) + "\n"
+		if dir == "" {
+			fmt.Fprint(os.Stderr, line)
+			return
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			fmt.Fprint(os.Stderr, line)
+			return
+		}
+		f, err := os.OpenFile(filepath.Join(dir, "embeddings.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			fmt.Fprint(os.Stderr, line)
+			return
+		}
+		defer f.Close()
+		_, _ = f.WriteString(line)
+	}
 }

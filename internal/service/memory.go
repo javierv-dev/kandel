@@ -42,6 +42,11 @@ type SaveInput struct {
 type SaveResult struct {
 	Memory  domain.Memory
 	Outcome SaveOutcome
+	// EmbeddingDeferred indica que la memoria se guardó SIN vector porque el embebedor no estaba
+	// disponible (p. ej. Ollama caído). La memoria es válida y accesible por lecturas directas; solo
+	// queda pendiente de aparecer en la búsqueda semántica hasta que un backfill posterior le calcule
+	// el vector. Las capas de presentación (MCP/HTTP/CLI) lo reflejan en su respuesta.
+	EmbeddingDeferred bool
 }
 
 // UpdateInput son los campos editables de una memoria; los nil no se tocan.
@@ -72,13 +77,28 @@ type MemoryService struct {
 	embedder     ports.Embedder
 	vectors      ports.VectorIndex
 	dedupeWindow time.Duration
+	warnf        func(format string, args ...any)
+}
+
+// MemoryOption configura un MemoryService opcionalmente (sin romper a quienes ya llaman al
+// constructor sin opciones).
+type MemoryOption func(*MemoryService)
+
+// WithWarnLogger inyecta un destino para los avisos del servicio (p. ej. "memoria guardada sin
+// vector porque el embebedor está caído"). Por defecto es no-op, así los tests no necesitan logger.
+func WithWarnLogger(warnf func(format string, args ...any)) MemoryOption {
+	return func(m *MemoryService) {
+		if warnf != nil {
+			m.warnf = warnf
+		}
+	}
 }
 
 // NewMemoryService construye el servicio con sus dependencias inyectadas. El embedder y el índice
-// vectorial son obligatorios: el guardado calcula y persiste el vector en la misma transacción,
-// y la búsqueda semántica los necesita.
-func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.UnitOfWork, clock ports.Clock, embedder ports.Embedder, vectors ports.VectorIndex) *MemoryService {
-	return &MemoryService{
+// vectorial son obligatorios para la búsqueda semántica; el guardado, en cambio, es TOLERANTE: si el
+// embebedor falla, la memoria se guarda igual (sin vector) y queda pendiente de backfill.
+func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.UnitOfWork, clock ports.Clock, embedder ports.Embedder, vectors ports.VectorIndex, opts ...MemoryOption) *MemoryService {
+	m := &MemoryService{
 		memories:     memories,
 		sync:         sync,
 		uow:          uow,
@@ -86,7 +106,12 @@ func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.
 		embedder:     embedder,
 		vectors:      vectors,
 		dedupeWindow: defaultDedupeWindow,
+		warnf:        func(string, ...any) {}, // no-op por defecto
 	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
 }
 
 // Save guarda una memoria curada. Reglas, en orden:
@@ -163,11 +188,13 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 				if err != nil {
 					return err
 				}
-				// El contenido cambió con la revisión → recalcular su vector.
-				if err := m.indexVector(ctx, updated.ID, updated.Content); err != nil {
+				// El contenido cambió con la revisión → recalcular su vector (tolerante: si el
+				// embebedor falla, la revisión se guarda igual y queda pendiente de backfill).
+				deferred, err := m.indexVectorTolerant(ctx, updated.ID, updated.Content)
+				if err != nil {
 					return err
 				}
-				result = SaveResult{Memory: *updated, Outcome: SaveMerged}
+				result = SaveResult{Memory: *updated, Outcome: SaveMerged, EmbeddingDeferred: deferred}
 				return m.enqueueUpsert(ctx, *updated)
 			}
 		}
@@ -197,12 +224,13 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 			return err
 		}
 		candidate.ID = id
-		// El embedder es obligatorio: si falla, la transacción revierte y no queda una memoria
-		// sin vector buscable (§6.bis del plan).
-		if err := m.indexVector(ctx, id, candidate.Content); err != nil {
+		// Save es tolerante: si el embebedor falla, la memoria se guarda igual (sin vector) y queda
+		// pendiente de backfill (§6.bis del plan, "Tolerancia a embebedor caído").
+		deferred, err := m.indexVectorTolerant(ctx, id, candidate.Content)
+		if err != nil {
 			return err
 		}
-		result = SaveResult{Memory: candidate, Outcome: SaveCreated}
+		result = SaveResult{Memory: candidate, Outcome: SaveCreated, EmbeddingDeferred: deferred}
 		return m.enqueueUpsert(ctx, candidate)
 	})
 	if err != nil {
@@ -247,6 +275,23 @@ func (m *MemoryService) indexVector(ctx context.Context, memoryID int64, content
 		return err
 	}
 	return m.vectors.Upsert(ctx, memoryID, vector, m.embedder.Model())
+}
+
+// indexVectorTolerant intenta calcular y persistir el vector, pero NO aborta la transacción si el
+// embebedor falla: la memoria se conserva sin vector (válida y accesible por lecturas directas) y
+// queda pendiente de backfill, que un proceso posterior resolverá. Devuelve true si el embebedor
+// falló (vector diferido), registrando un aviso. Un error de la propia escritura del vector (la DB,
+// no el embebedor) sí se propaga: ahí no hay tolerancia que aplicar.
+func (m *MemoryService) indexVectorTolerant(ctx context.Context, memoryID int64, content string) (deferred bool, err error) {
+	vector, embErr := m.embedder.Embed(ctx, content)
+	if embErr != nil {
+		m.warnf("memoria #%d guardada SIN vector (embebedor no disponible: %v); pendiente de backfill", memoryID, embErr)
+		return true, nil
+	}
+	if err := m.vectors.Upsert(ctx, memoryID, vector, m.embedder.Model()); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 // Update aplica cambios parciales a una memoria viva y reencola su mutación. Si cambia el

@@ -58,5 +58,8 @@ func (saveCmd) Run(ctx context.Context, args []string, app *App) error {
 		return err
 	}
 	fmt.Fprintf(app.Out, "%s memoria #%d: %s\n", res.Outcome, res.Memory.ID, res.Memory.Title)
+	if res.EmbeddingDeferred {
+		fmt.Fprintln(app.Err, "aviso: guardada SIN vector (embebedor no disponible); quedará pendiente de backfill")
+	}
 	return nil
 }
