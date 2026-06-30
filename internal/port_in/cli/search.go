@@ -22,7 +22,7 @@ func (searchCmd) Run(ctx context.Context, args []string, app *App) error {
 	fs.SetOutput(app.Err)
 	typ := fs.String("type", "", "filtrar por tipo")
 	project := fs.String("project", "", "filtrar por proyecto (por defecto KANDEL_PROJECT)")
-	scope := fs.String("scope", "", "filtrar por alcance (project|personal|global)")
+	scope := fs.String("scope", "", "filtrar por alcance (project|global)")
 	limit := fs.Int("limit", 10, "número máximo de resultados")
 	fs.Usage = func() {
 		fmt.Fprintln(app.Err, "uso: kandel search <consulta> [--type T] [--project P] [--scope S] [--limit N]")

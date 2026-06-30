@@ -2,15 +2,15 @@ package domain
 
 import "strings"
 
-// Scope indica el alcance de privacidad de una memoria. Vive pegado al dato (no en una
-// configuración aparte) porque decide qué se comparte al sincronizar.
+// Scope indica el alcance de una memoria. Vive pegado al dato para determinar
+// visibilidad y sincronización. Dos valores reconocidos:
+//   - ScopeProject (por defecto): memoria del proyecto, candidata a compartirse con el equipo.
+//   - ScopeGlobal: memoria del usuario que cruza todos los proyectos.
 type Scope string
 
 const (
 	// ScopeProject es el valor por defecto: memoria del proyecto, candidata a compartirse.
 	ScopeProject Scope = "project"
-	// ScopePersonal es memoria privada que no se replica.
-	ScopePersonal Scope = "personal"
 	// ScopeGlobal es memoria del usuario que cruza todos los proyectos.
 	ScopeGlobal Scope = "global"
 )
@@ -18,7 +18,7 @@ const (
 // Valid indica si el alcance es uno de los reconocidos.
 func (s Scope) Valid() bool {
 	switch s {
-	case ScopeProject, ScopePersonal, ScopeGlobal:
+	case ScopeProject, ScopeGlobal:
 		return true
 	default:
 		return false

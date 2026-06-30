@@ -72,7 +72,7 @@ func TestHandleSaveTranslatesArgs(t *testing.T) {
 	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 5, Title: "T"}, Outcome: service.SaveCreated}}
 	svc := Services{Memory: mem, DefaultProject: "kandel"}
 	res, err := handleSave(svc)(context.Background(), callWith(map[string]any{
-		"title": "T", "content": "C", "type": "decision", "scope": "personal", "topic_key": "auth/login",
+		"title": "T", "content": "C", "type": "decision", "scope": "global", "topic_key": "auth/login",
 	}))
 	if err != nil {
 		t.Fatalf("handleSave error: %v", err)
@@ -83,7 +83,7 @@ func TestHandleSaveTranslatesArgs(t *testing.T) {
 	if mem.lastSave.Title != "T" || mem.lastSave.Content != "C" {
 		t.Errorf("título/contenido mal traducidos: %+v", mem.lastSave)
 	}
-	if mem.lastSave.Type != domain.TypeDecision || mem.lastSave.Scope != domain.ScopePersonal {
+	if mem.lastSave.Type != domain.TypeDecision || mem.lastSave.Scope != domain.ScopeGlobal {
 		t.Errorf("type/scope mal traducidos: %+v", mem.lastSave)
 	}
 	if mem.lastSave.Project != "kandel" {

@@ -38,11 +38,11 @@ func TestHealth(t *testing.T) {
 func TestSaveMemory(t *testing.T) {
 	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 9, Title: "T"}, Outcome: service.SaveCreated}}
 	rec := do(t, Services{Memory: mem}, http.MethodPost, "/memories",
-		`{"title":"T","content":"C","type":"decision","scope":"personal","project":"kandel","topic_key":"auth/login"}`)
+		`{"title":"T","content":"C","type":"decision","scope":"global","project":"kandel","topic_key":"auth/login"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, se esperaba 201; body=%s", rec.Code, rec.Body.String())
 	}
-	if mem.lastSave.Title != "T" || mem.lastSave.Type != domain.TypeDecision || mem.lastSave.Scope != domain.ScopePersonal {
+	if mem.lastSave.Title != "T" || mem.lastSave.Type != domain.TypeDecision || mem.lastSave.Scope != domain.ScopeGlobal {
 		t.Errorf("cuerpo mal traducido: %+v", mem.lastSave)
 	}
 	if mem.lastSave.TopicKey != "auth/login" || mem.lastSave.Project != "kandel" {
@@ -160,11 +160,11 @@ func TestSavePrompt(t *testing.T) {
 
 func TestContext(t *testing.T) {
 	cx := &fakeContext{result: "## Memoria\n- algo\n"}
-	rec := do(t, Services{Context: cx}, http.MethodGet, "/context?project=Kandel&scope=personal", "")
+	rec := do(t, Services{Context: cx}, http.MethodGet, "/context?project=Kandel&scope=global", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, se esperaba 200; body=%s", rec.Code, rec.Body.String())
 	}
-	if cx.gotProject != "Kandel" || cx.gotScope != domain.ScopePersonal {
+	if cx.gotProject != "Kandel" || cx.gotScope != domain.ScopeGlobal {
 		t.Errorf("argumentos mal traducidos: project=%q scope=%v", cx.gotProject, cx.gotScope)
 	}
 	if !strings.Contains(rec.Body.String(), "Memoria") {

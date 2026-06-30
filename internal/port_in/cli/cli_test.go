@@ -205,7 +205,7 @@ func TestDispatchHelpListsRegisteredCommands(t *testing.T) {
 
 func TestSaveParsesFlagsAndArgs(t *testing.T) {
 	app, mem, _, _, _ := newTestApp()
-	args := []string{"save", "--type", "decision", "--project", "kandel", "--scope", "personal",
+	args := []string{"save", "--type", "decision", "--project", "kandel", "--scope", "global",
 		"--topic", "auth/login", "Mi título", "Mi contenido"}
 	if err := Dispatch(context.Background(), args, app); err != nil {
 		t.Fatalf("save devolvió error: %v", err)
@@ -219,8 +219,8 @@ func TestSaveParsesFlagsAndArgs(t *testing.T) {
 	if mem.saveInput.Project != "kandel" {
 		t.Errorf("project = %q, se esperaba kandel", mem.saveInput.Project)
 	}
-	if mem.saveInput.Scope != domain.ScopePersonal {
-		t.Errorf("scope = %q, se esperaba personal", mem.saveInput.Scope)
+	if mem.saveInput.Scope != domain.ScopeGlobal {
+		t.Errorf("scope = %q, se esperaba global", mem.saveInput.Scope)
 	}
 	if mem.saveInput.TopicKey != "auth/login" {
 		t.Errorf("topic = %q, se esperaba auth/login", mem.saveInput.TopicKey)

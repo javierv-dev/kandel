@@ -22,7 +22,7 @@ func (saveCmd) Run(ctx context.Context, args []string, app *App) error {
 	fs.SetOutput(app.Err)
 	typ := fs.String("type", "", "tipo de memoria (decision|architecture|bugfix|pattern|config|discovery|learning)")
 	project := fs.String("project", "", "proyecto (por defecto KANDEL_PROJECT)")
-	scope := fs.String("scope", "", "alcance (project|personal|global)")
+	scope := fs.String("scope", "", "alcance (project|global)")
 	topic := fs.String("topic", "", "topic_key para fusionar revisiones del mismo tema")
 	session := fs.String("session", "", "id de sesión asociada")
 	tool := fs.String("tool", "", "herramienta que originó la memoria")

@@ -22,7 +22,7 @@ func (recentCmd) Run(ctx context.Context, args []string, app *App) error {
 	fs := flag.NewFlagSet("recent", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
 	project := fs.String("project", "", "filtrar por proyecto (por defecto KANDEL_PROJECT)")
-	scope := fs.String("scope", "", "filtrar por alcance (project|personal|global)")
+	scope := fs.String("scope", "", "filtrar por alcance (project|global)")
 	limit := fs.Int("limit", 20, "número máximo de memorias")
 	fs.Usage = func() {
 		fmt.Fprintln(app.Err, "uso: kandel recent [--project P] [--scope S] [--limit N]")

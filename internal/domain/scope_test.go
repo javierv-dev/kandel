@@ -15,10 +15,10 @@ func TestParseScope(t *testing.T) {
 		{"vacío usa por defecto", "", ScopeProject, nil},
 		{"espacios usan por defecto", "   ", ScopeProject, nil},
 		{"project explícito", "project", ScopeProject, nil},
-		{"personal", "personal", ScopePersonal, nil},
 		{"global", "global", ScopeGlobal, nil},
-		{"mayúsculas se normalizan", "PERSONAL", ScopePersonal, nil},
+		{"mayúsculas se normalizan", "GLOBAL", ScopeGlobal, nil},
 		{"con espacios alrededor", "  global  ", ScopeGlobal, nil},
+		{"personal ya no es válido", "personal", "", ErrInvalidScope},
 		{"inválido", "equipo", "", ErrInvalidScope},
 	}
 	for _, tc := range tests {
@@ -35,7 +35,7 @@ func TestParseScope(t *testing.T) {
 }
 
 func TestScopeValid(t *testing.T) {
-	valid := []Scope{ScopeProject, ScopePersonal, ScopeGlobal}
+	valid := []Scope{ScopeProject, ScopeGlobal}
 	for _, s := range valid {
 		if !s.Valid() {
 			t.Errorf("%q debería ser válido", s)

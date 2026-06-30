@@ -15,7 +15,7 @@ QUÉ NO EXTRAER (ignóralo):
 
 Para CADA decisión produce un objeto con estos campos:
 - "type": uno de "decision", "architecture", "config", "pattern" (el más ajustado).
-- "scope": casi siempre "project". Usa "personal" o "global" solo si es una preferencia transversal
+- "scope": casi siempre "project". Usa "global" solo si es una preferencia transversal
   a varios proyectos (raro en este contexto).
 - "title": título corto y buscable (máx. ~80 caracteres), sin relleno.
 - "content": el cuerpo en Markdown con el formato **What** / **Why** / **Where** / **Learned**
