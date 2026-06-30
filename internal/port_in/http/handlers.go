@@ -170,27 +170,6 @@ func handleDeleteMemory(svc Services) http.HandlerFunc {
 	}
 }
 
-// handlePin fija o desfija una memoria.
-func handlePin(svc Services, pinned bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, ok := pathID(w, r)
-		if !ok {
-			return
-		}
-		var err error
-		if pinned {
-			err = svc.Lifecycle.Pin(r.Context(), id)
-		} else {
-			err = svc.Lifecycle.Unpin(r.Context(), id)
-		}
-		if err != nil {
-			writeError(w, statusForError(err), err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"id": id, "pinned": pinned})
-	}
-}
-
 // handleSearch es la búsqueda semántica del agente.
 func handleSearch(svc Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

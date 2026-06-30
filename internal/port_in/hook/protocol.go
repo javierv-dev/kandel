@@ -11,7 +11,7 @@ Los esquemas de las tools mem_* NO se cargan por defecto: llamar una sin cargarl
 conjunto principal con UN SOLO ToolSearch (hazlo la primera vez que la memoria sea relevante en la sesión):
   ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context,mcp__kandel__mem_session_summary,mcp__kandel__mem_get,mcp__kandel__mem_save_prompt
 
-Otras tools (cárgalas con ToolSearch cuando las necesites): mem_update, mem_suggest_topic_key, mem_session_start, mem_session_end, mem_capture_passive, mem_pin, mem_unpin, mem_review, mem_compare, mem_judge, mem_delete (lógico/reversible), mem_restore
+Otras tools (cárgalas con ToolSearch cuando las necesites): mem_update, mem_suggest_topic_key, mem_session_start, mem_session_end, mem_capture_passive, mem_review, mem_compare, mem_judge, mem_delete (lógico/reversible), mem_restore
 
 ### GUARDADO PROACTIVO — no esperes a que el usuario lo pida
 Llama a ` + "`mem_save`" + ` INMEDIATAMENTE después de CUALQUIERA de estos:

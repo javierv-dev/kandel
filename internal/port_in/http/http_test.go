@@ -121,23 +121,6 @@ func TestUpdateMemoryPartial(t *testing.T) {
 	}
 }
 
-func TestPinAndUnpin(t *testing.T) {
-	life := &fakeLifecycle{}
-	svc := Services{Lifecycle: life}
-	if rec := do(t, svc, http.MethodPost, "/memories/5/pin", ""); rec.Code != http.StatusOK {
-		t.Fatalf("pin status = %d", rec.Code)
-	}
-	if life.pinnedID != 5 {
-		t.Errorf("pinnedID = %d, se esperaba 5", life.pinnedID)
-	}
-	if rec := do(t, svc, http.MethodPost, "/memories/5/unpin", ""); rec.Code != http.StatusOK {
-		t.Fatalf("unpin status = %d", rec.Code)
-	}
-	if life.unpinnedID != 5 {
-		t.Errorf("unpinnedID = %d, se esperaba 5", life.unpinnedID)
-	}
-}
-
 func TestStartSession(t *testing.T) {
 	sess := &fakeSession{}
 	rec := do(t, Services{Session: sess}, http.MethodPost, "/sessions", `{"id":"s1","project":"kandel"}`)
@@ -335,13 +318,8 @@ func (f *fakeSession) Get(_ context.Context, id string) (*domain.Session, error)
 	return &domain.Session{ID: id}, nil
 }
 
-type fakeLifecycle struct {
-	pinnedID   int64
-	unpinnedID int64
-}
+type fakeLifecycle struct{}
 
-func (f *fakeLifecycle) Pin(_ context.Context, id int64) error   { f.pinnedID = id; return nil }
-func (f *fakeLifecycle) Unpin(_ context.Context, id int64) error { f.unpinnedID = id; return nil }
 func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }

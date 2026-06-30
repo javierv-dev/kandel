@@ -52,8 +52,6 @@ type MemoryRepo interface {
 	FindByHash(ctx context.Context, project string, scope domain.Scope, hash string) (*domain.Memory, error)
 	// LatestByTopicKey devuelve la memoria viva más reciente de un mismo tema.
 	LatestByTopicKey(ctx context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Memory, error)
-	// SetPinned fija o desfija una memoria (estado local, no se sincroniza).
-	SetPinned(ctx context.Context, id int64, pinned bool) error
 	// NeedingReview lista memorias cuya fecha de revisión ya venció.
 	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 	// UpdateProject renombra el proyecto de todas las memorias que lo tengan; devuelve cuántas

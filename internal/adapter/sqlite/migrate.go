@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS memories (
 	normalized_hash TEXT,
 	revision_count  INTEGER NOT NULL DEFAULT 1,
 	duplicate_count INTEGER NOT NULL DEFAULT 1,
-	pinned          INTEGER NOT NULL DEFAULT 0,
 	created_at      TEXT NOT NULL,
 	updated_at      TEXT NOT NULL,
 	last_seen_at    TEXT,

@@ -31,8 +31,6 @@ type SessionPort interface {
 
 // LifecyclePort es la cara de los casos de uso de ciclo de vida que la API consume.
 type LifecyclePort interface {
-	Pin(ctx context.Context, id int64) error
-	Unpin(ctx context.Context, id int64) error
 	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 
@@ -83,8 +81,6 @@ func NewHandler(svc Services) http.Handler {
 	mux.HandleFunc("GET /memories/{id}", handleGetMemory(svc))
 	mux.HandleFunc("PATCH /memories/{id}", handleUpdateMemory(svc))
 	mux.HandleFunc("DELETE /memories/{id}", handleDeleteMemory(svc))
-	mux.HandleFunc("POST /memories/{id}/pin", handlePin(svc, true))
-	mux.HandleFunc("POST /memories/{id}/unpin", handlePin(svc, false))
 
 	mux.HandleFunc("GET /search", handleSearch(svc))
 	mux.HandleFunc("GET /review", handleReview(svc))

@@ -34,14 +34,14 @@ func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
 	const q = `
 		INSERT INTO memories (
 			sync_id, session_id, type, title, content, tool_name, project, scope,
-			topic_key, normalized_hash, revision_count, duplicate_count, pinned,
+			topic_key, normalized_hash, revision_count, duplicate_count,
 			created_at, updated_at, last_seen_at, review_after, deleted_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		nullString(o.SyncID), nullString(o.SessionID), string(o.Type), o.Title, o.Content,
 		nullString(o.ToolName), nullString(o.Project), string(o.Scope),
 		nullString(string(o.TopicKey)), nullString(o.NormalizedHash),
-		o.RevisionCount, o.DuplicateCount, boolToInt(o.Pinned),
+		o.RevisionCount, o.DuplicateCount,
 		formatTime(o.CreatedAt), formatTime(o.UpdatedAt),
 		nullTime(o.LastSeenAt), nullTime(o.ReviewAfter), nullTime(deletedAtValue(o)),
 	)
@@ -227,14 +227,6 @@ func (r *MemoryRepo) LatestByTopicKey(ctx context.Context, project string, scope
 	return r.queryOne(ctx, q, string(key), project, string(scope))
 }
 
-// SetPinned fija o desfija una memoria (estado local).
-func (r *MemoryRepo) SetPinned(ctx context.Context, id int64, pinned bool) error {
-	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `UPDATE memories SET pinned = ? WHERE id = ?`, boolToInt(pinned), id); err != nil {
-		return fmt.Errorf("sqlite: fijar memoria: %w", err)
-	}
-	return nil
-}
-
 // NeedingReview lista memorias vivas cuya fecha de revisión ya venció (review_after en el
 // pasado), de la más antigua a la más nueva.
 func (r *MemoryRepo) NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error) {
@@ -285,13 +277,6 @@ func (r *MemoryRepo) queryMany(ctx context.Context, query string, args ...any) (
 		return nil, fmt.Errorf("sqlite: consultar memorias: %w", err)
 	}
 	return scanMemories(rows)
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 // deletedAtValue devuelve el tiempo de borrado o el cero si la memoria está viva, para

@@ -155,17 +155,6 @@ func TestHandleRestore(t *testing.T) {
 	}
 }
 
-func TestHandlePin(t *testing.T) {
-	life := &fakeLifecycle{}
-	svc := Services{Lifecycle: life}
-	if _, err := handlePin(svc, true)(context.Background(), callWith(map[string]any{"id": float64(7)})); err != nil {
-		t.Fatalf("handlePin error: %v", err)
-	}
-	if life.pinnedID != 7 {
-		t.Errorf("pinnedID = %d, se esperaba 7", life.pinnedID)
-	}
-}
-
 func TestHandleSessionSummaryRequiresSummary(t *testing.T) {
 	svc := Services{Session: &fakeSession{}}
 	res, _ := handleSessionEnd(svc, true)(context.Background(), callWith(map[string]any{"id": "s1"}))
@@ -418,13 +407,8 @@ func (f *fakeSession) MostRecentActive(_ context.Context, _ string) (string, boo
 	return "", false, nil
 }
 
-type fakeLifecycle struct {
-	pinnedID   int64
-	unpinnedID int64
-}
+type fakeLifecycle struct{}
 
-func (f *fakeLifecycle) Pin(_ context.Context, id int64) error   { f.pinnedID = id; return nil }
-func (f *fakeLifecycle) Unpin(_ context.Context, id int64) error { f.unpinnedID = id; return nil }
 func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }

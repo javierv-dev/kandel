@@ -54,7 +54,7 @@ type rowScanner interface {
 // Las columnas anulables se normalizan con ifnull para escanear a string sin sql.Null*.
 const memoryColumns = `id, ifnull(sync_id, ''), ifnull(session_id, ''), type, title, content,
 	ifnull(tool_name, ''), ifnull(project, ''), scope, ifnull(topic_key, ''),
-	ifnull(normalized_hash, ''), revision_count, duplicate_count, pinned,
+	ifnull(normalized_hash, ''), revision_count, duplicate_count,
 	created_at, updated_at, last_seen_at, review_after, deleted_at`
 
 // scanMemory escanea una fila al modelo de dominio. Centraliza la conversión de tipos
@@ -64,14 +64,13 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 		o                                 domain.Memory
 		typ, scope                        string
 		toolName, project, topicKey, hash string
-		pinned                            int
 		createdAt, updatedAt              string
 		lastSeen, reviewAfter, deletedAt  sql.NullString
 	)
 	if err := sc.Scan(
 		&o.ID, &o.SyncID, &o.SessionID, &typ, &o.Title, &o.Content,
 		&toolName, &project, &scope, &topicKey, &hash,
-		&o.RevisionCount, &o.DuplicateCount, &pinned,
+		&o.RevisionCount, &o.DuplicateCount,
 		&createdAt, &updatedAt, &lastSeen, &reviewAfter, &deletedAt,
 	); err != nil {
 		return domain.Memory{}, err
@@ -83,7 +82,6 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 	o.Project = project
 	o.TopicKey = domain.TopicKey(topicKey)
 	o.NormalizedHash = hash
-	o.Pinned = pinned != 0
 
 	var err error
 	if o.CreatedAt, err = parseTime(createdAt); err != nil {

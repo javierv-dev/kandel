@@ -79,8 +79,6 @@ type Memory struct {
 	RevisionCount  int      // número de revisiones del mismo tema
 	DuplicateCount int      // número de llegadas idénticas
 
-	Pinned bool // fijada arriba en el contexto; local, NO se sincroniza
-
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	LastSeenAt  time.Time

@@ -187,16 +187,6 @@ func (f *fakeObs) LatestByTopicKey(_ context.Context, project string, scope doma
 	return best, nil
 }
 
-func (f *fakeObs) SetPinned(_ context.Context, id int64, pinned bool) error {
-	o, ok := f.items[id]
-	if !ok {
-		return nil
-	}
-	o.Pinned = pinned
-	f.items[id] = o
-	return nil
-}
-
 func (f *fakeObs) NeedingReview(_ context.Context, project string, limit int) ([]domain.Memory, error) {
 	now := time.Now().UTC()
 	var out []domain.Memory

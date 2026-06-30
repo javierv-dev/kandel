@@ -66,14 +66,9 @@ func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error)
 	return domain.Memory{ID: id}, nil
 }
 
-// fakeLifecycle registra pin/unpin/review.
-type fakeLifecycle struct {
-	pinnedID   int64
-	unpinnedID int64
-}
+// fakeLifecycle registra las llamadas de ciclo de vida.
+type fakeLifecycle struct{}
 
-func (f *fakeLifecycle) Pin(_ context.Context, id int64) error   { f.pinnedID = id; return nil }
-func (f *fakeLifecycle) Unpin(_ context.Context, id int64) error { f.unpinnedID = id; return nil }
 func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
@@ -201,7 +196,7 @@ func TestDispatchHelpListsRegisteredCommands(t *testing.T) {
 	if err := Dispatch(context.Background(), nil, app); err != nil {
 		t.Fatalf("ayuda devolvió error: %v", err)
 	}
-	for _, name := range []string{"save", "search", "recent", "get", "delete", "pin"} {
+	for _, name := range []string{"save", "search", "recent", "get", "delete", "review"} {
 		if !strings.Contains(out.String(), name) {
 			t.Errorf("la ayuda no lista el comando %q:\n%s", name, out.String())
 		}
@@ -290,22 +285,6 @@ func TestDeleteInvalidIDFails(t *testing.T) {
 	err := Dispatch(context.Background(), []string{"delete", "no-numero"}, app)
 	if err == nil {
 		t.Fatal("se esperaba error por id inválido")
-	}
-}
-
-func TestPinAndUnpin(t *testing.T) {
-	app, _, life, _, _ := newTestApp()
-	if err := Dispatch(context.Background(), []string{"pin", "5"}, app); err != nil {
-		t.Fatalf("pin devolvió error: %v", err)
-	}
-	if life.pinnedID != 5 {
-		t.Errorf("pinnedID = %d, se esperaba 5", life.pinnedID)
-	}
-	if err := Dispatch(context.Background(), []string{"unpin", "5"}, app); err != nil {
-		t.Fatalf("unpin devolvió error: %v", err)
-	}
-	if life.unpinnedID != 5 {
-		t.Errorf("unpinnedID = %d, se esperaba 5", life.unpinnedID)
 	}
 }
 

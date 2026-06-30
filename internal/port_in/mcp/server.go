@@ -32,8 +32,6 @@ type SessionPort interface {
 
 // LifecyclePort es la cara de los casos de uso de ciclo de vida que el MCP consume.
 type LifecyclePort interface {
-	Pin(ctx context.Context, id int64) error
-	Unpin(ctx context.Context, id int64) error
 	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 

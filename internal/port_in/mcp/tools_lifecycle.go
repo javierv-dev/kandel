@@ -7,30 +7,8 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// registerLifecycleTools registra las herramientas de ciclo de vida (pin/unpin/review).
+// registerLifecycleTools registra las herramientas de ciclo de vida (review).
 func registerLifecycleTools(srv *server.MCPServer, svc Services, allowlist map[string]bool) {
-	if shouldRegister("mem_pin", allowlist) {
-		srv.AddTool(
-			mcp.NewTool("mem_pin",
-				mcp.WithDescription("Fija una memoria arriba en el contexto (estado local, no se sincroniza)."),
-				mcp.WithTitleAnnotation("Fijar memoria"),
-				mcp.WithNumber("id", mcp.Required(), mcp.Description("Id de la memoria")),
-			),
-			handlePin(svc, true),
-		)
-	}
-
-	if shouldRegister("mem_unpin", allowlist) {
-		srv.AddTool(
-			mcp.NewTool("mem_unpin",
-				mcp.WithDescription("Desfija una memoria."),
-				mcp.WithTitleAnnotation("Desfijar memoria"),
-				mcp.WithNumber("id", mcp.Required(), mcp.Description("Id de la memoria")),
-			),
-			handlePin(svc, false),
-		)
-	}
-
 	if shouldRegister("mem_review", allowlist) {
 		srv.AddTool(
 			mcp.NewTool("mem_review",
@@ -42,26 +20,6 @@ func registerLifecycleTools(srv *server.MCPServer, svc Services, allowlist map[s
 			),
 			handleReview(svc),
 		)
-	}
-}
-
-// handlePin traduce mem_pin / mem_unpin a Lifecycle.Pin/Unpin.
-func handlePin(svc Services, pinned bool) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		id := int64(argInt(req, "id", 0))
-		if id <= 0 {
-			return mcp.NewToolResultError("id es obligatorio"), nil
-		}
-		var err error
-		if pinned {
-			err = svc.Lifecycle.Pin(ctx, id)
-		} else {
-			err = svc.Lifecycle.Unpin(ctx, id)
-		}
-		if err != nil {
-			return mcp.NewToolResultError("error al cambiar el estado de fijado: " + err.Error()), nil
-		}
-		return jsonResult(map[string]any{"id": id, "pinned": pinned})
 	}
 }
 

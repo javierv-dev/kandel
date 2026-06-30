@@ -312,22 +312,6 @@ func TestSearchEmptyNeighbors(t *testing.T) {
 	}
 }
 
-func TestSetPinned(t *testing.T) {
-	db := newTestDB(t)
-	seedSession(t, db, "s1")
-	repo := NewMemoryRepo(db)
-	ctx := context.Background()
-
-	id, _ := repo.Add(ctx, sampleMemory())
-	if err := repo.SetPinned(ctx, id, true); err != nil {
-		t.Fatalf("SetPinned: %v", err)
-	}
-	got, _ := repo.Get(ctx, id)
-	if got == nil || !got.Pinned {
-		t.Errorf("la memoria debió quedar fijada, fue %+v", got)
-	}
-}
-
 func TestNeedingReview(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

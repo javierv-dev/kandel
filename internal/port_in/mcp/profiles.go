@@ -23,8 +23,6 @@ var ProfileAgent = map[string]bool{
 	"mem_suggest_topic_key": true,
 	"mem_update":            true,
 	"mem_review":            true,
-	"mem_pin":               true,
-	"mem_unpin":             true,
 	"mem_save_prompt":       true,
 	"mem_capture_passive":   true,
 	"mem_current_project":   true,
