@@ -48,7 +48,7 @@ func genFactory(g ports.AgentGenerator) func(string, string) ports.AgentGenerato
 
 func TestSeedGenerateParsesAndFiltersCandidates(t *testing.T) {
 	gen := &seedFakeGenerator{out: `[
-		{"type":"decision","scope":"project","title":"Motor de BD","content":"**What** Postgres","topic_key":"architecture/db-engine"},
+		{"type":"decision","scope":"project","title":"Motor de BD","content":"**What** Postgres"},
 		{"type":"learning","scope":"project","title":"trivial","content":"se descarta por tipo"},
 		{"type":"architecture","title":"Hexagonal","content":"capas domain/ports/service"},
 		{"type":"config","scope":"project","title":"","content":"sin título, se descarta"}
@@ -142,7 +142,7 @@ func TestSeedSaveBatch(t *testing.T) {
 	saver := &seedFakeSaver{outcome: SaveCreated}
 	svc := NewSeedService(saver, genFactory(&seedFakeGenerator{}))
 	cands := []SeedCandidate{
-		{Type: "decision", Scope: "project", Title: "A", Content: "a", TopicKey: "architecture/x"},
+		{Type: "decision", Scope: "project", Title: "A", Content: "a"},
 		{Type: "architecture", Scope: "project", Title: "B", Content: "b"},
 	}
 	res, err := svc.Save(context.Background(), cands, "kandel")

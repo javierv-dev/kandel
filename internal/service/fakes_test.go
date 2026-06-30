@@ -173,20 +173,6 @@ func (f *fakeObs) FindByHash(_ context.Context, project string, scope domain.Sco
 	return best, nil
 }
 
-func (f *fakeObs) LatestByTopicKey(_ context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Memory, error) {
-	var best *domain.Memory
-	for _, o := range f.items {
-		if o.IsDeleted() || o.TopicKey != key || o.Project != project || o.Scope != scope {
-			continue
-		}
-		c := o
-		if best == nil || c.UpdatedAt.After(best.UpdatedAt) {
-			best = &c
-		}
-	}
-	return best, nil
-}
-
 func (f *fakeObs) NeedingReview(_ context.Context, project string, limit int) ([]domain.Memory, error) {
 	now := time.Now().UTC()
 	var out []domain.Memory

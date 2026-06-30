@@ -74,10 +74,9 @@ type Memory struct {
 	Content   string
 	ToolName  string // herramienta que originó la memoria, si aplica
 
-	TopicKey       TopicKey // tema al que pertenece; vacío = ninguno
-	NormalizedHash string   // huella del contenido normalizado, para dedupe
-	RevisionCount  int      // número de revisiones del mismo tema
-	DuplicateCount int      // número de llegadas idénticas
+	NormalizedHash string // huella del contenido normalizado, para dedupe
+	RevisionCount  int    // número de veces que se actualizó esta memoria
+	DuplicateCount int    // número de llegadas idénticas
 
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -104,8 +103,7 @@ func (o Memory) IsDeleted() bool {
 
 // Validate comprueba las invariantes de la entidad. La estructura What/Why/Where/Learned
 // del contenido es una convención que se cuida en la capa de servicio, no aquí: el dominio
-// solo exige título y contenido no vacíos, tipo y alcance válidos, y topic_key bien formado
-// cuando está presente.
+// solo exige título y contenido no vacíos, y tipo y alcance válidos.
 func (o Memory) Validate() error {
 	if strings.TrimSpace(o.Title) == "" {
 		return ErrEmptyTitle
@@ -118,11 +116,6 @@ func (o Memory) Validate() error {
 	}
 	if !o.Scope.Valid() {
 		return ErrInvalidScope
-	}
-	if !o.TopicKey.IsZero() {
-		if _, err := ParseTopicKey(string(o.TopicKey)); err != nil {
-			return err
-		}
 	}
 	return nil
 }

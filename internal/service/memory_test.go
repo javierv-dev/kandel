@@ -103,41 +103,6 @@ func TestSaveDuplicateOutsideWindowCreatesNew(t *testing.T) {
 	}
 }
 
-func TestSaveMergesByTopicKey(t *testing.T) {
-	svc, obs, sync := newMemoryFixture()
-	ctx := context.Background()
-
-	first := baseSaveInput()
-	first.TopicKey = "architecture/auth"
-	first.Content = "primera versión"
-	if _, err := svc.Save(ctx, first); err != nil {
-		t.Fatalf("Save 1: %v", err)
-	}
-
-	second := baseSaveInput()
-	second.TopicKey = "architecture/auth"
-	second.Content = "versión revisada"
-	res, err := svc.Save(ctx, second)
-	if err != nil {
-		t.Fatalf("Save 2: %v", err)
-	}
-	if res.Outcome != SaveMerged {
-		t.Errorf("mismo topic_key debe fusionar, fue %v", res.Outcome)
-	}
-	if len(obs.items) != 1 {
-		t.Errorf("la fusión no crea fila nueva, hay %d", len(obs.items))
-	}
-	if res.Memory.RevisionCount != 2 {
-		t.Errorf("revision_count debe ser 2, fue %d", res.Memory.RevisionCount)
-	}
-	if res.Memory.Content != "versión revisada" {
-		t.Errorf("el contenido debe actualizarse, fue %q", res.Memory.Content)
-	}
-	if len(sync.enqueued) != 2 {
-		t.Errorf("cada Save encola una mutación, hubo %d", len(sync.enqueued))
-	}
-}
-
 func TestSaveRequiresProjectForProjectScope(t *testing.T) {
 	svc, _, _ := newMemoryFixture()
 	in := baseSaveInput()
@@ -159,16 +124,6 @@ func TestSaveGlobalScopeAllowsEmptyProject(t *testing.T) {
 	}
 	if res.Outcome != SaveCreated {
 		t.Errorf("scope global sin proyecto debe crearse, fue %v", res.Outcome)
-	}
-}
-
-func TestSaveInvalidTopicKey(t *testing.T) {
-	svc, _, _ := newMemoryFixture()
-	in := baseSaveInput()
-	in.TopicKey = "Mal/Topic/Tres/Niveles"
-	_, err := svc.Save(context.Background(), in)
-	if err == nil {
-		t.Error("un topic_key inválido debe fallar")
 	}
 }
 

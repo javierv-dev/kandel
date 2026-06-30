@@ -113,11 +113,7 @@ func (seedCmd) Run(ctx context.Context, args []string, app *App) error {
 func printCandidates(app *App, candidates []service.SeedCandidate) {
 	fmt.Fprintf(app.Out, "\nCandidatos propuestos (%d):\n", len(candidates))
 	for i, c := range candidates {
-		topic := ""
-		if c.TopicKey != "" {
-			topic = " [" + c.TopicKey + "]"
-		}
-		fmt.Fprintf(app.Out, "  %d. (%s/%s) %s%s\n", i+1, c.Type, c.Scope, c.Title, topic)
+		fmt.Fprintf(app.Out, "  %d. (%s/%s) %s\n", i+1, c.Type, c.Scope, c.Title)
 	}
 }
 

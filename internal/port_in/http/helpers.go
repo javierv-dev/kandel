@@ -76,7 +76,7 @@ func statusForError(err error) int {
 func isValidationError(err error) bool {
 	for _, ve := range []error{
 		domain.ErrEmptyTitle, domain.ErrEmptyContent, domain.ErrInvalidType,
-		domain.ErrInvalidScope, domain.ErrInvalidTopicKey,
+		domain.ErrInvalidScope,
 	} {
 		if errors.Is(err, ve) {
 			return true

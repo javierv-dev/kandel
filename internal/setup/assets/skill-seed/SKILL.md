@@ -37,8 +37,8 @@ Si el comando no está disponible o el usuario prefiere control fino, hazlo a ma
    estilo de arquitectura, convenciones, configuración clave, patrones establecidos. **Ignora** estado
    transitorio (TODOs, "siguiente paso", bugs abiertos) y trivialidades.
 3. Por cada una, llama a `mem_save` con `type` adecuado (decision/architecture/config/pattern),
-   `scope` normalmente `project`, contenido en formato **What/Why/Where/Learned**, un `topic_key`
-   estable cuando agrupe un tema, y `tool: "kandel-seed"` para marcar la procedencia.
+   `scope` normalmente `project`, contenido en formato **What/Why/Where/Learned**, y
+   `tool: "kandel-seed"` para marcar la procedencia.
 
 Calidad sobre cantidad: pocas memorias densas y correctas valen más que muchas triviales. No inventes
 decisiones que no estén en la documentación.

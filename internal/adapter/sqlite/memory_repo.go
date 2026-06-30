@@ -13,9 +13,8 @@ import (
 )
 
 // MemoryRepo implementa ports.MemoryRepo sobre SQLite. Es persistencia pura: no
-// decide dedupe ni topic_key (eso vive en service/memory). Aquí solo se guarda y se recupera;
-// los métodos de consulta (FindByHash, LatestByTopicKey) le dan al servicio lo que necesita
-// para tomar esas decisiones.
+// decide dedupe (eso vive en service/memory). Aquí solo se guarda y se recupera;
+// el método FindByHash le da al servicio lo que necesita para tomar esas decisiones.
 type MemoryRepo struct {
 	db execer
 }
@@ -34,13 +33,13 @@ func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
 	const q = `
 		INSERT INTO memories (
 			sync_id, session_id, type, title, content, tool_name, project, scope,
-			topic_key, normalized_hash, revision_count, duplicate_count,
+			normalized_hash, revision_count, duplicate_count,
 			created_at, updated_at, last_seen_at, review_after, deleted_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		nullString(o.SyncID), nullString(o.SessionID), string(o.Type), o.Title, o.Content,
 		nullString(o.ToolName), nullString(o.Project), string(o.Scope),
-		nullString(string(o.TopicKey)), nullString(o.NormalizedHash),
+		nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount,
 		formatTime(o.CreatedAt), formatTime(o.UpdatedAt),
 		nullTime(o.LastSeenAt), nullTime(o.ReviewAfter), nullTime(deletedAtValue(o)),
@@ -75,12 +74,12 @@ func (r *MemoryRepo) Update(ctx context.Context, id int64, o domain.Memory) (*do
 	const q = `
 		UPDATE memories SET
 			type = ?, title = ?, content = ?, tool_name = ?, project = ?, scope = ?,
-			topic_key = ?, normalized_hash = ?, revision_count = ?, duplicate_count = ?,
+			normalized_hash = ?, revision_count = ?, duplicate_count = ?,
 			updated_at = ?, last_seen_at = ?, review_after = ?
 		WHERE id = ? AND deleted_at IS NULL`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		string(o.Type), o.Title, o.Content, nullString(o.ToolName), nullString(o.Project),
-		string(o.Scope), nullString(string(o.TopicKey)), nullString(o.NormalizedHash),
+		string(o.Scope), nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount,
 		formatTime(o.UpdatedAt), nullTime(o.LastSeenAt), nullTime(o.ReviewAfter),
 		id,
@@ -213,18 +212,6 @@ func (r *MemoryRepo) FindByHash(ctx context.Context, project string, scope domai
 		  AND deleted_at IS NULL
 		ORDER BY datetime(created_at) DESC, id DESC LIMIT 1`
 	return r.queryOne(ctx, q, hash, project, string(scope))
-}
-
-// LatestByTopicKey devuelve la memoria viva más reciente de un mismo tema dentro del mismo
-// proyecto y alcance (base de la fusión por topic_key). (nil, nil) si no hay ninguna.
-func (r *MemoryRepo) LatestByTopicKey(ctx context.Context, project string, scope domain.Scope, key domain.TopicKey) (*domain.Memory, error) {
-	q := `SELECT ` + memoryColumns + ` FROM memories
-		WHERE topic_key = ?
-		  AND ifnull(project, '') = ?
-		  AND scope = ?
-		  AND deleted_at IS NULL
-		ORDER BY datetime(updated_at) DESC, datetime(created_at) DESC LIMIT 1`
-	return r.queryOne(ctx, q, string(key), project, string(scope))
 }
 
 // NeedingReview lista memorias vivas cuya fecha de revisión ya venció (review_after en el

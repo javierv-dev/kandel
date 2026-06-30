@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
@@ -25,7 +24,6 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("content", mcp.Required(), mcp.Description("Contenido, idealmente con formato **What**/**Why**/**Where**/**Learned**")),
 				mcp.WithString("type", mcp.Description("Tipo: decision, architecture, bugfix, pattern, config, discovery, learning")),
 				mcp.WithString("scope", mcp.Description("Alcance: project (def.) o global")),
-				mcp.WithString("topic_key", mcp.Description("topic_key opcional para fusionar revisiones del mismo tema (p. ej. architecture/auth-model)")),
 				mcp.WithString("project", mcp.Description("Proyecto explícito; si se omite, se usa el del proceso")),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
 				mcp.WithString("tool", mcp.Description("Herramienta que originó la memoria (procedencia), p. ej. kandel-seed")),
@@ -87,22 +85,8 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("content", mcp.Description("Nuevo contenido")),
 				mcp.WithString("type", mcp.Description("Nuevo tipo")),
 				mcp.WithString("scope", mcp.Description("Nuevo alcance")),
-				mcp.WithString("topic_key", mcp.Description("Nuevo topic_key (cadena vacía lo quita)")),
 			),
 			handleUpdate(svc),
-		)
-	}
-
-	if shouldRegister("mem_suggest_topic_key", allowlist) {
-		srv.AddTool(
-			mcp.NewTool("mem_suggest_topic_key",
-				mcp.WithDescription("Sugiere un topic_key estable (kebab-case, familia/descripción) a partir del tipo y el título, para usarlo en upserts con mem_save."),
-				mcp.WithTitleAnnotation("Sugerir topic_key"),
-				mcp.WithReadOnlyHintAnnotation(true),
-				mcp.WithString("type", mcp.Description("Tipo de la memoria")),
-				mcp.WithString("title", mcp.Required(), mcp.Description("Título de la memoria")),
-			),
-			handleSuggestTopicKey(),
 		)
 	}
 
@@ -153,7 +137,6 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 			Scope:     scope,
 			Title:     title,
 			Content:   content,
-			TopicKey:  argString(req, "topic_key"),
 			ToolName:  argString(req, "tool"),
 		})
 		if err != nil {
@@ -258,13 +241,12 @@ func handleGet(svc Services) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("memoria #%d no encontrada", id)), nil
 		}
 		return jsonResult(map[string]any{
-			"id":        m.ID,
-			"type":      string(m.Type),
-			"scope":     string(m.Scope),
-			"project":   m.Project,
-			"topic_key": string(m.TopicKey),
-			"title":     m.Title,
-			"content":   m.Content,
+			"id":      m.ID,
+			"type":    string(m.Type),
+			"scope":   string(m.Scope),
+			"project": m.Project,
+			"title":   m.Title,
+			"content": m.Content,
 		})
 	}
 }
@@ -299,11 +281,6 @@ func handleUpdate(svc Services) server.ToolHandlerFunc {
 				return mcp.NewToolResultError("scope inválido: " + err.Error()), nil
 			}
 			in.Scope = &s
-			got = true
-		}
-		if _, ok := req.GetArguments()["topic_key"]; ok {
-			v := argString(req, "topic_key")
-			in.TopicKey = &v
 			got = true
 		}
 		if !got {
@@ -345,50 +322,4 @@ func handleRestore(svc Services) server.ToolHandlerFunc {
 		}
 		return jsonResult(map[string]any{"id": m.ID, "title": m.Title, "restored": true})
 	}
-}
-
-// handleSuggestTopicKey deriva un topic_key válido a partir del tipo y el título, sin tocar la
-// base de datos. Es una utilidad pura: kebab-case con familia (el tipo) y descripción (el título).
-func handleSuggestTopicKey() server.ToolHandlerFunc {
-	return func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		title := argString(req, "title")
-		if title == "" {
-			return mcp.NewToolResultError("title es obligatorio para sugerir un topic_key"), nil
-		}
-		family := slugify(argString(req, "type"))
-		if family == "" {
-			family = "topic"
-		}
-		desc := slugify(title)
-		if desc == "" {
-			return mcp.NewToolResultError("no se pudo derivar un topic_key del título"), nil
-		}
-		candidate := family + "/" + desc
-		tk, err := domain.ParseTopicKey(candidate)
-		if err != nil {
-			return mcp.NewToolResultError("topic_key derivado inválido: " + err.Error()), nil
-		}
-		return jsonResult(map[string]any{"topic_key": string(tk)})
-	}
-}
-
-// slugify convierte un texto en un segmento kebab-case: minúsculas, espacios y signos a guiones,
-// sin guiones repetidos ni en los extremos.
-func slugify(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	var b strings.Builder
-	prevDash := false
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			prevDash = false
-		default:
-			if !prevDash && b.Len() > 0 {
-				b.WriteByte('-')
-				prevDash = true
-			}
-		}
-	}
-	return strings.Trim(b.String(), "-")
 }

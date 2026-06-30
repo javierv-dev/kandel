@@ -64,8 +64,6 @@ func TestMemoryValidate(t *testing.T) {
 		{"contenido vacío", func(o *Memory) { o.Content = "" }, ErrEmptyContent},
 		{"tipo inválido", func(o *Memory) { o.Type = "otro" }, ErrInvalidType},
 		{"scope inválido", func(o *Memory) { o.Scope = "equipo" }, ErrInvalidScope},
-		{"topic_key válido", func(o *Memory) { o.TopicKey = "architecture/auth" }, nil},
-		{"topic_key inválido", func(o *Memory) { o.TopicKey = "MAL/Formato" }, ErrInvalidTopicKey},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

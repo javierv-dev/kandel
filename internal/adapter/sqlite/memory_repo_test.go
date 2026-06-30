@@ -67,7 +67,6 @@ func TestAddAndGet(t *testing.T) {
 
 	in := sampleMemory()
 	in.ToolName = "claude"
-	in.TopicKey = domain.TopicKey("architecture/auth")
 	in.LastSeenAt = baseTime
 	in.ReviewAfter = baseTime.AddDate(0, 6, 0)
 
@@ -92,8 +91,8 @@ func TestAddAndGet(t *testing.T) {
 	if got.Type != in.Type || got.Scope != in.Scope {
 		t.Errorf("tipo/scope no coinciden: %v / %v", got.Type, got.Scope)
 	}
-	if got.ToolName != "claude" || got.TopicKey != in.TopicKey {
-		t.Errorf("tool_name/topic_key no coinciden: %q / %q", got.ToolName, got.TopicKey)
+	if got.ToolName != "claude" {
+		t.Errorf("tool_name no coincide: %q", got.ToolName)
 	}
 	if !got.CreatedAt.Equal(baseTime) || !got.ReviewAfter.Equal(in.ReviewAfter) {
 		t.Errorf("timestamps no coinciden: created=%v review=%v", got.CreatedAt, got.ReviewAfter)
@@ -192,38 +191,6 @@ func TestFindByHash(t *testing.T) {
 	}
 	if miss != nil {
 		t.Errorf("FindByHash con hash inexistente debe ser nil")
-	}
-}
-
-func TestLatestByTopicKey(t *testing.T) {
-	db := newTestDB(t)
-	seedSession(t, db, "s1")
-	repo := NewMemoryRepo(db)
-	ctx := context.Background()
-
-	older := sampleMemory()
-	older.TopicKey = domain.TopicKey("config")
-	older.Content = "vieja"
-	older.UpdatedAt = baseTime
-	if _, err := repo.Add(ctx, older); err != nil {
-		t.Fatalf("Add older: %v", err)
-	}
-
-	newer := sampleMemory()
-	newer.SyncID = "mem-2"
-	newer.TopicKey = domain.TopicKey("config")
-	newer.Content = "nueva"
-	newer.UpdatedAt = baseTime.Add(time.Hour)
-	if _, err := repo.Add(ctx, newer); err != nil {
-		t.Fatalf("Add newer: %v", err)
-	}
-
-	got, err := repo.LatestByTopicKey(ctx, "proj", domain.ScopeProject, domain.TopicKey("config"))
-	if err != nil {
-		t.Fatalf("LatestByTopicKey: %v", err)
-	}
-	if got == nil || got.Content != "nueva" {
-		t.Errorf("LatestByTopicKey debió devolver la más reciente, fue %+v", got)
 	}
 }
 

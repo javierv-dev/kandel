@@ -49,9 +49,6 @@ func (m Model) detailView() string {
 	mem := m.memories[m.cursor]
 	var b strings.Builder
 	fmt.Fprintf(&b, "#%d  [%s/%s]  %s\n", mem.ID, mem.Type, mem.Scope, mem.Title)
-	if mem.TopicKey != "" {
-		fmt.Fprintf(&b, "topic: %s\n", mem.TopicKey)
-	}
 	fmt.Fprintf(&b, "proyecto: %s\n\n%s\n", mem.Project, mem.Content)
 	b.WriteString("\nesc volver · q salir\n")
 	return b.String()

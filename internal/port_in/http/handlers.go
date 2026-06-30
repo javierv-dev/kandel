@@ -20,7 +20,6 @@ type saveMemoryRequest struct {
 	Title     string `json:"title"`
 	Content   string `json:"content"`
 	ToolName  string `json:"tool_name"`
-	TopicKey  string `json:"topic_key"`
 }
 
 // handleSaveMemory crea una memoria nueva.
@@ -43,7 +42,6 @@ func handleSaveMemory(svc Services) http.HandlerFunc {
 			Title:     body.Title,
 			Content:   body.Content,
 			ToolName:  body.ToolName,
-			TopicKey:  body.TopicKey,
 		})
 		if err != nil {
 			writeError(w, statusForError(err), err.Error())
@@ -105,11 +103,10 @@ func handleRecent(svc Services) http.HandlerFunc {
 
 // updateMemoryRequest es el cuerpo de PATCH /memories/{id}. Los punteros nil no se tocan.
 type updateMemoryRequest struct {
-	Type     *string `json:"type"`
-	Title    *string `json:"title"`
-	Content  *string `json:"content"`
-	Scope    *string `json:"scope"`
-	TopicKey *string `json:"topic_key"`
+	Type    *string `json:"type"`
+	Title   *string `json:"title"`
+	Content *string `json:"content"`
+	Scope   *string `json:"scope"`
 }
 
 // handleUpdateMemory aplica cambios parciales a una memoria.
@@ -129,9 +126,6 @@ func handleUpdateMemory(svc Services) http.HandlerFunc {
 		}
 		if body.Content != nil {
 			in.Content = body.Content
-		}
-		if body.TopicKey != nil {
-			in.TopicKey = body.TopicKey
 		}
 		if body.Type != nil {
 			t := domain.MemoryType(*body.Type)

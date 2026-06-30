@@ -53,7 +53,7 @@ type rowScanner interface {
 // todas las consultas de lectura de memorias para que columna y destino no se desalineen.
 // Las columnas anulables se normalizan con ifnull para escanear a string sin sql.Null*.
 const memoryColumns = `id, ifnull(sync_id, ''), ifnull(session_id, ''), type, title, content,
-	ifnull(tool_name, ''), ifnull(project, ''), scope, ifnull(topic_key, ''),
+	ifnull(tool_name, ''), ifnull(project, ''), scope,
 	ifnull(normalized_hash, ''), revision_count, duplicate_count,
 	created_at, updated_at, last_seen_at, review_after, deleted_at`
 
@@ -61,15 +61,15 @@ const memoryColumns = `id, ifnull(sync_id, ''), ifnull(session_id, ''), type, ti
 // (TEXT→time.Time, INTEGER→bool, columnas anulables) en un único sitio.
 func scanMemory(sc rowScanner) (domain.Memory, error) {
 	var (
-		o                                 domain.Memory
-		typ, scope                        string
-		toolName, project, topicKey, hash string
-		createdAt, updatedAt              string
-		lastSeen, reviewAfter, deletedAt  sql.NullString
+		o                                domain.Memory
+		typ, scope                       string
+		toolName, project, hash          string
+		createdAt, updatedAt             string
+		lastSeen, reviewAfter, deletedAt sql.NullString
 	)
 	if err := sc.Scan(
 		&o.ID, &o.SyncID, &o.SessionID, &typ, &o.Title, &o.Content,
-		&toolName, &project, &scope, &topicKey, &hash,
+		&toolName, &project, &scope, &hash,
 		&o.RevisionCount, &o.DuplicateCount,
 		&createdAt, &updatedAt, &lastSeen, &reviewAfter, &deletedAt,
 	); err != nil {
@@ -80,7 +80,6 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 	o.Scope = domain.Scope(scope)
 	o.ToolName = toolName
 	o.Project = project
-	o.TopicKey = domain.TopicKey(topicKey)
 	o.NormalizedHash = hash
 
 	var err error

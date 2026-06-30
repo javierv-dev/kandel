@@ -20,7 +20,7 @@ ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem
 
 Tools principales:
 - `mem_save`, `mem_search`, `mem_context`, `mem_session_summary`
-- `mem_get`, `mem_suggest_topic_key`, `mem_update`
+- `mem_get`, `mem_update`
 - `mem_session_start`, `mem_session_end`, `mem_save_prompt`
 
 **Plan B**: si las tools no están disponibles inesperadamente, ejecuta `kandel install claude-code`
@@ -71,18 +71,15 @@ Formato para `mem_save`:
 - **title**: Verbo + qué — corto y buscable (p. ej. "Arreglado N+1 en UserList", "Elegido Zustand sobre Redux")
 - **type**: bugfix | decision | architecture | discovery | pattern | config | learning
 - **scope**: `project` (def.) | `personal`
-- **topic_key** (opcional pero recomendado para temas que evolucionan): clave estable como `architecture/auth-model`
 - **content**:
   **What**: Una frase — qué se hizo
   **Why**: Qué lo motivó (petición del usuario, bug, rendimiento, etc.)
   **Where**: Archivos o rutas afectadas
   **Learned**: Gotchas, casos límite, cosas que te sorprendieron (omite si no hay)
 
-### Reglas de actualización por tema (obligatorio)
+### Reglas de actualización
 
 - Temas distintos NO deben sobrescribirse entre sí (ejemplo: decisión de arquitectura vs bugfix)
-- Si el mismo tema evoluciona, llama a `mem_save` con el mismo `topic_key` para que la memoria se actualice (upsert) en vez de crear una nueva
-- Si dudas de la clave, llama primero a `mem_suggest_topic_key` y luego reutiliza esa clave de forma consistente
 - Si ya conoces el ID exacto que corregir, usa `mem_update`
 
 ## CUÁNDO BUSCAR EN LA MEMORIA

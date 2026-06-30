@@ -206,7 +206,7 @@ func TestDispatchHelpListsRegisteredCommands(t *testing.T) {
 func TestSaveParsesFlagsAndArgs(t *testing.T) {
 	app, mem, _, _, _ := newTestApp()
 	args := []string{"save", "--type", "decision", "--project", "kandel", "--scope", "global",
-		"--topic", "auth/login", "Mi título", "Mi contenido"}
+		"Mi título", "Mi contenido"}
 	if err := Dispatch(context.Background(), args, app); err != nil {
 		t.Fatalf("save devolvió error: %v", err)
 	}
@@ -221,9 +221,6 @@ func TestSaveParsesFlagsAndArgs(t *testing.T) {
 	}
 	if mem.saveInput.Scope != domain.ScopeGlobal {
 		t.Errorf("scope = %q, se esperaba global", mem.saveInput.Scope)
-	}
-	if mem.saveInput.TopicKey != "auth/login" {
-		t.Errorf("topic = %q, se esperaba auth/login", mem.saveInput.TopicKey)
 	}
 }
 
@@ -413,7 +410,7 @@ func writeSeedRepo(t *testing.T) string {
 func TestSeedDryRunDoesNotSave(t *testing.T) {
 	app, _, _, out, _ := newTestApp()
 	seed := &fakeSeed{candidates: []service.SeedCandidate{
-		{Type: "decision", Scope: "project", Title: "Motor de BD", Content: "Postgres", TopicKey: "architecture/db-engine"},
+		{Type: "decision", Scope: "project", Title: "Motor de BD", Content: "Postgres"},
 	}}
 	app.Seed = seed
 	dir := writeSeedRepo(t)

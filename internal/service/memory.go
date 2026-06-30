@@ -20,8 +20,6 @@ type SaveOutcome string
 const (
 	// SaveCreated indica que se creó una memoria nueva.
 	SaveCreated SaveOutcome = "created"
-	// SaveMerged indica que se actualizó una memoria existente del mismo tema (topic_key).
-	SaveMerged SaveOutcome = "merged"
 	// SaveDuplicate indica que llegó un duplicado exacto reciente; solo se contó.
 	SaveDuplicate SaveOutcome = "duplicate"
 )
@@ -35,7 +33,6 @@ type SaveInput struct {
 	Title     string
 	Content   string
 	ToolName  string
-	TopicKey  string // crudo; se normaliza y valida
 }
 
 // SaveResult es el resultado de Save: la memoria resultante y qué ocurrió.
@@ -51,11 +48,10 @@ type SaveResult struct {
 
 // UpdateInput son los campos editables de una memoria; los nil no se tocan.
 type UpdateInput struct {
-	Type     *domain.MemoryType
-	Title    *string
-	Content  *string
-	Scope    *domain.Scope
-	TopicKey *string
+	Type    *domain.MemoryType
+	Title   *string
+	Content *string
+	Scope   *domain.Scope
 }
 
 // MemoryService implementa los casos de uso sobre memorias. Aquí vive la lógica de dedupe
@@ -115,11 +111,9 @@ func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.
 }
 
 // Save guarda una memoria curada. Reglas, en orden:
-//  1. Si trae topic_key y ya existe una memoria viva de ese tema, la actualiza en su lugar
-//     (sube revision_count) en vez de crear un duplicado.
-//  2. Si no, y existe una memoria idéntica (mismo hash) creada dentro de la ventana de dedupe,
+//  1. Si existe una memoria idéntica (mismo hash) creada dentro de la ventana de dedupe,
 //     solo incrementa su duplicate_count.
-//  3. En otro caso crea una memoria nueva, fijando su review_after según el decaimiento del tipo.
+//  2. En otro caso crea una memoria nueva, fijando su review_after según el decaimiento del tipo.
 //
 // Todo ocurre dentro de una transacción junto con el encolado de la mutación de sync.
 func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, error) {
@@ -131,15 +125,6 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 	// Escritura estricta: una memoria de proyecto necesita proyecto resoluble.
 	if scope == domain.ScopeProject && project == "" {
 		return SaveResult{}, domain.ErrAmbiguousProject
-	}
-
-	var topic domain.TopicKey
-	if strings.TrimSpace(in.TopicKey) != "" {
-		tk, err := domain.ParseTopicKey(normalizeTopicKey(in.TopicKey))
-		if err != nil {
-			return SaveResult{}, err
-		}
-		topic = tk
 	}
 
 	now := m.clock.Now().UTC()
@@ -155,7 +140,6 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 		Title:          title,
 		Content:        content,
 		ToolName:       in.ToolName,
-		TopicKey:       topic,
 		NormalizedHash: hash,
 		RevisionCount:  1,
 		DuplicateCount: 1,
@@ -169,37 +153,7 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 
 	var result SaveResult
 	err := m.uow.Do(ctx, func(ctx context.Context) error {
-		// 1. Fusión por tema.
-		if !topic.IsZero() {
-			existing, err := m.memories.LatestByTopicKey(ctx, project, scope, topic)
-			if err != nil {
-				return err
-			}
-			if existing != nil {
-				existing.Type = in.Type
-				existing.Title = title
-				existing.Content = content
-				existing.ToolName = in.ToolName
-				existing.NormalizedHash = hash
-				existing.RevisionCount++
-				existing.UpdatedAt = now
-				existing.LastSeenAt = now
-				updated, err := m.memories.Update(ctx, existing.ID, *existing)
-				if err != nil {
-					return err
-				}
-				// El contenido cambió con la revisión → recalcular su vector (tolerante: si el
-				// embebedor falla, la revisión se guarda igual y queda pendiente de backfill).
-				deferred, err := m.indexVectorTolerant(ctx, updated.ID, updated.Content)
-				if err != nil {
-					return err
-				}
-				result = SaveResult{Memory: *updated, Outcome: SaveMerged, EmbeddingDeferred: deferred}
-				return m.enqueueUpsert(ctx, *updated)
-			}
-		}
-
-		// 2. Dedupe exacto dentro de la ventana.
+		// 1. Dedupe exacto dentro de la ventana.
 		dup, err := m.memories.FindByHash(ctx, project, scope, hash)
 		if err != nil {
 			return err
@@ -216,7 +170,7 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 			return m.enqueueUpsert(ctx, *updated)
 		}
 
-		// 3. Memoria nueva.
+		// 2. Memoria nueva.
 		candidate.SyncID = newSyncID("mem")
 		candidate.ReviewAfter = domain.ReviewAfterFor(in.Type, now)
 		id, err := m.memories.Add(ctx, candidate)
@@ -319,17 +273,6 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		}
 		if in.Scope != nil {
 			o.Scope = *in.Scope
-		}
-		if in.TopicKey != nil {
-			if strings.TrimSpace(*in.TopicKey) == "" {
-				o.TopicKey = ""
-			} else {
-				tk, err := domain.ParseTopicKey(normalizeTopicKey(*in.TopicKey))
-				if err != nil {
-					return err
-				}
-				o.TopicKey = tk
-			}
 		}
 		o.UpdatedAt = now
 		if err := o.Validate(); err != nil {

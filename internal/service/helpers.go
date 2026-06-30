@@ -31,16 +31,6 @@ func normalizeProject(project string) string {
 	return n
 }
 
-// normalizeTopicKey prepara una clave de tema para validarla: minúsculas, espacios convertidos a
-// guiones. La validación de formato (kebab-case, niveles) la hace domain.ParseTopicKey después.
-func normalizeTopicKey(topic string) string {
-	v := strings.TrimSpace(strings.ToLower(topic))
-	if v == "" {
-		return ""
-	}
-	return strings.Join(strings.Fields(v), "-")
-}
-
 // hashContent calcula la huella del contenido normalizado (minúsculas, espacios colapsados a uno).
 // Detecta duplicados exactos sin importar variaciones triviales de formato.
 func hashContent(content string) string {

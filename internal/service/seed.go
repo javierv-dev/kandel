@@ -32,11 +32,10 @@ var allowedSeedTypes = map[domain.MemoryType]bool{
 
 // SeedCandidate es una decisión propuesta por el LLM, antes de guardarse como memoria.
 type SeedCandidate struct {
-	Type     string `json:"type"`
-	Scope    string `json:"scope"`
-	Title    string `json:"title"`
-	Content  string `json:"content"`
-	TopicKey string `json:"topic_key"`
+	Type    string `json:"type"`
+	Scope   string `json:"scope"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
 }
 
 // SeedGenerateInput son los datos para generar candidatos: la documentación ya reunida y el agente/
@@ -140,7 +139,6 @@ func (s *SeedService) Save(ctx context.Context, candidates []SeedCandidate, proj
 			Scope:    scope,
 			Title:    c.Title,
 			Content:  c.Content,
-			TopicKey: c.TopicKey,
 			ToolName: seedToolName,
 		})
 		if err != nil {
@@ -151,8 +149,6 @@ func (s *SeedService) Save(ctx context.Context, candidates []SeedCandidate, proj
 		switch out.Outcome {
 		case SaveCreated:
 			res.Created++
-		case SaveMerged:
-			res.Merged++
 		case SaveDuplicate:
 			res.Duplicate++
 		}
@@ -187,7 +183,6 @@ func parseSeedCandidates(raw string) ([]SeedCandidate, error) {
 		c.Scope = strings.TrimSpace(strings.ToLower(c.Scope))
 		c.Title = strings.TrimSpace(c.Title)
 		c.Content = strings.TrimSpace(c.Content)
-		c.TopicKey = strings.TrimSpace(c.TopicKey)
 		if c.Title == "" || c.Content == "" {
 			continue
 		}

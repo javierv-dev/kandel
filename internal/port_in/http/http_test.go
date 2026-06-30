@@ -38,15 +38,15 @@ func TestHealth(t *testing.T) {
 func TestSaveMemory(t *testing.T) {
 	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 9, Title: "T"}, Outcome: service.SaveCreated}}
 	rec := do(t, Services{Memory: mem}, http.MethodPost, "/memories",
-		`{"title":"T","content":"C","type":"decision","scope":"global","project":"kandel","topic_key":"auth/login"}`)
+		`{"title":"T","content":"C","type":"decision","scope":"global","project":"kandel"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, se esperaba 201; body=%s", rec.Code, rec.Body.String())
 	}
 	if mem.lastSave.Title != "T" || mem.lastSave.Type != domain.TypeDecision || mem.lastSave.Scope != domain.ScopeGlobal {
 		t.Errorf("cuerpo mal traducido: %+v", mem.lastSave)
 	}
-	if mem.lastSave.TopicKey != "auth/login" || mem.lastSave.Project != "kandel" {
-		t.Errorf("topic/project mal traducidos: %+v", mem.lastSave)
+	if mem.lastSave.Project != "kandel" {
+		t.Errorf("project mal traducido: %+v", mem.lastSave)
 	}
 }
 

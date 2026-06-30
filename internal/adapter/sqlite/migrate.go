@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS memories (
 	tool_name       TEXT,
 	project         TEXT,
 	scope           TEXT NOT NULL DEFAULT 'project',
-	topic_key       TEXT,
 	normalized_hash TEXT,
 	revision_count  INTEGER NOT NULL DEFAULT 1,
 	duplicate_count INTEGER NOT NULL DEFAULT 1,
@@ -49,7 +48,6 @@ CREATE INDEX IF NOT EXISTS idx_mem_project ON memories(project);
 CREATE INDEX IF NOT EXISTS idx_mem_created ON memories(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mem_scope   ON memories(scope);
 CREATE INDEX IF NOT EXISTS idx_mem_sync_id ON memories(sync_id);
-CREATE INDEX IF NOT EXISTS idx_mem_topic   ON memories(topic_key, project, scope, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mem_deleted ON memories(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_mem_dedupe  ON memories(normalized_hash, project, scope, type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mem_review  ON memories(review_after);

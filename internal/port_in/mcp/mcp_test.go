@@ -72,7 +72,7 @@ func TestHandleSaveTranslatesArgs(t *testing.T) {
 	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 5, Title: "T"}, Outcome: service.SaveCreated}}
 	svc := Services{Memory: mem, DefaultProject: "kandel"}
 	res, err := handleSave(svc)(context.Background(), callWith(map[string]any{
-		"title": "T", "content": "C", "type": "decision", "scope": "global", "topic_key": "auth/login",
+		"title": "T", "content": "C", "type": "decision", "scope": "global",
 	}))
 	if err != nil {
 		t.Fatalf("handleSave error: %v", err)
@@ -88,9 +88,6 @@ func TestHandleSaveTranslatesArgs(t *testing.T) {
 	}
 	if mem.lastSave.Project != "kandel" {
 		t.Errorf("debe usar el proyecto del proceso: %q", mem.lastSave.Project)
-	}
-	if mem.lastSave.TopicKey != "auth/login" {
-		t.Errorf("topic_key mal traducido: %q", mem.lastSave.TopicKey)
 	}
 }
 
@@ -160,25 +157,6 @@ func TestHandleSessionSummaryRequiresSummary(t *testing.T) {
 	res, _ := handleSessionEnd(svc, true)(context.Background(), callWith(map[string]any{"id": "s1"}))
 	if !res.IsError {
 		t.Error("mem_session_summary sin summary debe devolver error de tool")
-	}
-}
-
-func TestHandleSuggestTopicKey(t *testing.T) {
-	res, err := handleSuggestTopicKey()(context.Background(), callWith(map[string]any{
-		"type": "Architecture", "title": "Auth Model V2",
-	}))
-	if err != nil {
-		t.Fatalf("suggest error: %v", err)
-	}
-	got := textOf(t, res)
-	var parsed struct {
-		TopicKey string `json:"topic_key"`
-	}
-	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
-		t.Fatalf("respuesta no es JSON: %q", got)
-	}
-	if parsed.TopicKey != "architecture/auth-model-v2" {
-		t.Errorf("topic_key = %q, se esperaba architecture/auth-model-v2", parsed.TopicKey)
 	}
 }
 

@@ -23,11 +23,10 @@ func (saveCmd) Run(ctx context.Context, args []string, app *App) error {
 	typ := fs.String("type", "", "tipo de memoria (decision|architecture|bugfix|pattern|config|discovery|learning)")
 	project := fs.String("project", "", "proyecto (por defecto KANDEL_PROJECT)")
 	scope := fs.String("scope", "", "alcance (project|global)")
-	topic := fs.String("topic", "", "topic_key para fusionar revisiones del mismo tema")
 	session := fs.String("session", "", "id de sesión asociada")
 	tool := fs.String("tool", "", "herramienta que originó la memoria")
 	fs.Usage = func() {
-		fmt.Fprintln(app.Err, "uso: kandel save <título> <contenido> [--type TIPO] [--project P] [--scope S] [--topic K]")
+		fmt.Fprintln(app.Err, "uso: kandel save <título> <contenido> [--type TIPO] [--project P] [--scope S]")
 		fs.PrintDefaults()
 	}
 	positionals, err := parseFlags(fs, args)
@@ -52,7 +51,6 @@ func (saveCmd) Run(ctx context.Context, args []string, app *App) error {
 		Title:     positionals[0],
 		Content:   positionals[1],
 		ToolName:  *tool,
-		TopicKey:  *topic,
 	})
 	if err != nil {
 		return err

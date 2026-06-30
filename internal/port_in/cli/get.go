@@ -41,9 +41,6 @@ func (getCmd) Run(ctx context.Context, args []string, app *App) error {
 		return domain.ErrNotFound
 	}
 	fmt.Fprintf(app.Out, "#%d  [%s/%s]  %s\n", m.ID, m.Type, m.Scope, m.Title)
-	if m.TopicKey != "" {
-		fmt.Fprintf(app.Out, "topic: %s\n", m.TopicKey)
-	}
 	fmt.Fprintf(app.Out, "proyecto: %s\n\n%s\n", m.Project, m.Content)
 	return nil
 }
