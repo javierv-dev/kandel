@@ -189,8 +189,8 @@ func TestPassiveCapture(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"saved":2`) {
 		t.Errorf("se esperaban 2 guardados: %s", rec.Body.String())
 	}
-	if mem.lastSave.Type != domain.TypeLearning {
-		t.Errorf("la captura pasiva debe guardar tipo learning, fue %v", mem.lastSave.Type)
+	if mem.lastSave.Type != domain.TypeDiscovery {
+		t.Errorf("la captura pasiva debe guardar tipo discovery, fue %v", mem.lastSave.Type)
 	}
 }
 

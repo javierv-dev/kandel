@@ -121,7 +121,7 @@ func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.
 func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, error) {
 	scope := in.Scope
 	if scope == "" {
-		scope = domain.ScopeProject
+		scope = domain.DefaultScopeForType(in.Type)
 	}
 	project := normalizeProject(in.Project)
 	// Escritura estricta: una memoria de proyecto necesita proyecto resoluble.

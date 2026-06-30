@@ -9,24 +9,36 @@ import (
 type MemoryType string
 
 const (
-	TypeDecision     MemoryType = "decision"
+	// TypeDecision: una decisión tomada (incluye restricciones y orientación del proyecto).
+	TypeDecision MemoryType = "decision"
+	// TypePreference: un gusto o convención del usuario (idioma, estilo). Suele ser global.
+	TypePreference MemoryType = "preference"
+	// TypeArchitecture: estructura del sistema y patrones/idiomas de código recurrentes.
 	TypeArchitecture MemoryType = "architecture"
-	TypeBugfix       MemoryType = "bugfix"
-	TypePattern      MemoryType = "pattern"
-	TypeConfig       MemoryType = "config"
-	TypeDiscovery    MemoryType = "discovery"
-	TypeLearning     MemoryType = "learning"
+	// TypeBugfix: causa raíz de un bug resuelto.
+	TypeBugfix MemoryType = "bugfix"
+	// TypeDiscovery: un hecho del sistema/entorno, aprendizaje o configuración (catch-all).
+	TypeDiscovery MemoryType = "discovery"
 )
 
 // Valid indica si el tipo es uno de los reconocidos.
 func (t MemoryType) Valid() bool {
 	switch t {
-	case TypeDecision, TypeArchitecture, TypeBugfix,
-		TypePattern, TypeConfig, TypeDiscovery, TypeLearning:
+	case TypeDecision, TypePreference, TypeArchitecture, TypeBugfix, TypeDiscovery:
 		return true
 	default:
 		return false
 	}
+}
+
+// DefaultScopeForType devuelve el scope por defecto cuando el llamante no lo especifica: una
+// preferencia es del usuario y vale en todos sus proyectos (global); el resto pertenece al
+// proyecto actual (project). El agente puede sobrescribirlo según el contexto.
+func DefaultScopeForType(t MemoryType) Scope {
+	if t == TypePreference {
+		return ScopeGlobal
+	}
+	return ScopeProject
 }
 
 // Resolution marca si una memoria es un pendiente por resolver y en qué fase está. Es ESTADO,

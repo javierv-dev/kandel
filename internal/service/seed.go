@@ -26,8 +26,7 @@ var seedPrompt string
 var allowedSeedTypes = map[domain.MemoryType]bool{
 	domain.TypeDecision:     true,
 	domain.TypeArchitecture: true,
-	domain.TypeConfig:       true,
-	domain.TypePattern:      true,
+	domain.TypePreference:   true,
 }
 
 // SeedCandidate es una decisión propuesta por el LLM, antes de guardarse como memoria.

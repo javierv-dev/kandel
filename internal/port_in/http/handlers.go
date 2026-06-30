@@ -366,7 +366,7 @@ func handlePassiveCapture(svc Services) http.HandlerFunc {
 			res, err := svc.Memory.Save(r.Context(), service.SaveInput{
 				SessionID: body.SessionID,
 				Project:   body.Project,
-				Type:      domain.TypeLearning,
+				Type:      domain.TypeDiscovery,
 				Scope:     domain.ScopeProject,
 				Title:     learnings.Truncate(text, 80),
 				Content:   text,

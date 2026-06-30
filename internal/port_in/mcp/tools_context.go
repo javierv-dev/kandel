@@ -93,7 +93,7 @@ func handleCapturePassive(svc Services) server.ToolHandlerFunc {
 			_, err := svc.Memory.Save(ctx, service.SaveInput{
 				SessionID: sessionID,
 				Project:   project,
-				Type:      domain.TypeLearning,
+				Type:      domain.TypeDiscovery,
 				Scope:     domain.ScopeProject,
 				Title:     learnings.Truncate(text, 80),
 				Content:   text,

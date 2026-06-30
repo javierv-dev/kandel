@@ -26,7 +26,7 @@ func sampleMemories() []domain.Memory {
 	return []domain.Memory{
 		{ID: 1, Type: domain.TypeDecision, Title: "Uno", Content: "contenido uno"},
 		{ID: 2, Type: domain.TypeBugfix, Title: "Dos", Content: "contenido dos"},
-		{ID: 3, Type: domain.TypePattern, Title: "Tres", Content: "contenido tres"},
+		{ID: 3, Type: domain.TypeArchitecture, Title: "Tres", Content: "contenido tres"},
 	}
 }
 

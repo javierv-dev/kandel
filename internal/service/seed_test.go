@@ -49,9 +49,9 @@ func genFactory(g ports.AgentGenerator) func(string, string) ports.AgentGenerato
 func TestSeedGenerateParsesAndFiltersCandidates(t *testing.T) {
 	gen := &seedFakeGenerator{out: `[
 		{"type":"decision","scope":"project","title":"Motor de BD","content":"**What** Postgres"},
-		{"type":"learning","scope":"project","title":"trivial","content":"se descarta por tipo"},
+		{"type":"discovery","scope":"project","title":"trivial","content":"se descarta por tipo"},
 		{"type":"architecture","title":"Hexagonal","content":"capas domain/ports/service"},
-		{"type":"config","scope":"project","title":"","content":"sin título, se descarta"}
+		{"type":"discovery","scope":"project","title":"","content":"sin título, se descarta"}
 	]`}
 	svc := NewSeedService(&seedFakeSaver{}, genFactory(gen))
 

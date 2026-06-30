@@ -22,7 +22,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Título corto y buscable")),
 				mcp.WithString("content", mcp.Required(), mcp.Description("Contenido, idealmente con formato **What**/**Why**/**Where**/**Learned**")),
-				mcp.WithString("type", mcp.Description("Tipo: decision, architecture, bugfix, pattern, config, discovery, learning")),
+				mcp.WithString("type", mcp.Description("Tipo: decision, preference, architecture, bugfix, discovery")),
 				mcp.WithString("scope", mcp.Description("Alcance: project (def.) o global")),
 				mcp.WithString("project", mcp.Description("Proyecto explícito; si se omite, se usa el del proceso")),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
@@ -130,7 +130,7 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 		}
 		typ := domain.MemoryType(argString(req, "type"))
 		if typ == "" {
-			typ = domain.TypeLearning
+			typ = domain.TypeDiscovery
 		}
 		resolution := domain.Resolution(argString(req, "resolution"))
 		if !resolution.Valid() {

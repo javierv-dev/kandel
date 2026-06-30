@@ -14,14 +14,12 @@ QUÉ NO EXTRAER (ignóralo):
 - Narrativa de la bitácora que no fije una decisión duradera.
 
 Para CADA decisión produce un objeto con estos campos:
-- "type": uno de "decision", "architecture", "config", "pattern" (el más ajustado).
+- "type": uno de "decision", "architecture", "preference" (el más ajustado).
 - "scope": casi siempre "project". Usa "global" solo si es una preferencia transversal
   a varios proyectos (raro en este contexto).
 - "title": título corto y buscable (máx. ~80 caracteres), sin relleno.
 - "content": el cuerpo en Markdown con el formato **What** / **Why** / **Where** / **Learned**
   (Qué se decidió, Por qué, Dónde aplica/archivos, Qué se aprendió). Sé concreto y conciso.
-- "topic_key": opcional, en kebab-case con forma familia/descripcion (p. ej. "architecture/db-engine").
-  Úsalo para agrupar decisiones del mismo tema.
 
 REGLAS DE SALIDA (obligatorias):
 - Responde ÚNICAMENTE con un array JSON. Sin prosa antes ni después. Sin vallas de código.

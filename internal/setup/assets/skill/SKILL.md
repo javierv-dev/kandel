@@ -69,7 +69,7 @@ Llama a `mem_save` INMEDIATAMENTE y SIN QUE TE LO PIDAN tras cualquiera de estos
 
 Formato para `mem_save`:
 - **title**: Verbo + qué — corto y buscable (p. ej. "Arreglado N+1 en UserList", "Elegido Zustand sobre Redux")
-- **type**: bugfix | decision | architecture | discovery | pattern | config | learning
+- **type**: bugfix | decision | preference | architecture | discovery
 - **scope**: `project` (def.) | `personal`
 - **content**:
   **What**: Una frase — qué se hizo
