@@ -126,6 +126,16 @@ func (r *MemoryRepo) HardDelete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// supersededClause excluye memorias reemplazadas: una memoria queda fuera si es el target_id de
+// una relación 'supersedes' ya juzgada (su source, más reciente, la reemplaza). Maneja cadenas
+// A→B→C solo (cada eslabón anterior es target de un supersedes juzgado). Las memorias con sync_id
+// NULL nunca casan, así que no se excluyen. Se apoya en idx_memrel_target(target_id, judgment_status).
+const supersededClause = ` AND NOT EXISTS (
+		SELECT 1 FROM memory_relations r
+		WHERE r.target_id = memories.sync_id
+		  AND r.relation = 'supersedes'
+		  AND r.judgment_status = 'judged')`
+
 // Recent lista memorias vivas por recencia (camino de navegación del usuario).
 func (r *MemoryRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
 	query := `SELECT ` + memoryColumns + ` FROM memories WHERE deleted_at IS NULL`
@@ -137,6 +147,9 @@ func (r *MemoryRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.
 	if q.Scope != "" {
 		query += ` AND scope = ?`
 		args = append(args, string(q.Scope))
+	}
+	if q.ExcludeSuperseded {
+		query += supersededClause
 	}
 	query += ` ORDER BY datetime(created_at) DESC, id DESC LIMIT ?`
 	args = append(args, normalizeLimit(q.Limit))
@@ -174,6 +187,9 @@ func (r *MemoryRepo) Search(ctx context.Context, q ports.SearchQuery, neighbors 
 	if q.Scope != "" {
 		query += ` AND scope = ?`
 		args = append(args, string(q.Scope))
+	}
+	if !q.IncludeSuperseded {
+		query += supersededClause
 	}
 
 	found, err := r.queryMany(ctx, query, args...)

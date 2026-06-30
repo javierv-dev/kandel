@@ -45,6 +45,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("project", mcp.Description("Filtrar por proyecto; si se omite, el del proceso")),
 				mcp.WithString("scope", mcp.Description("Filtrar por alcance: project o global")),
 				mcp.WithNumber("limit", mcp.Description("Máximo de resultados (def. 10)")),
+				mcp.WithBoolean("include_superseded", mcp.Description("Incluir memorias reemplazadas; por defecto se ocultan")),
 			),
 			handleSearch(svc),
 		)
@@ -180,11 +181,12 @@ func handleSearch(svc Services) server.ToolHandlerFunc {
 			scope = s
 		}
 		results, err := svc.Memory.Search(ctx, ports.SearchQuery{
-			Query:   query,
-			Type:    domain.MemoryType(argString(req, "type")),
-			Project: svc.resolveProject(argString(req, "project")),
-			Scope:   scope,
-			Limit:   argInt(req, "limit", 10),
+			Query:             query,
+			Type:              domain.MemoryType(argString(req, "type")),
+			Project:           svc.resolveProject(argString(req, "project")),
+			Scope:             scope,
+			Limit:             argInt(req, "limit", 10),
+			IncludeSuperseded: argBool(req, "include_superseded", false),
 		})
 		if err != nil {
 			return mcp.NewToolResultError("error de búsqueda: " + err.Error()), nil

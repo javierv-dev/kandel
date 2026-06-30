@@ -40,7 +40,7 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 	if err != nil {
 		return "", err
 	}
-	memories, err := c.memories.Recent(ctx, ports.RecentQuery{Project: project, Scope: scope, Limit: contextMemories})
+	memories, err := c.memories.Recent(ctx, ports.RecentQuery{Project: project, Scope: scope, Limit: contextMemories, ExcludeSuperseded: true})
 	if err != nil {
 		return "", err
 	}

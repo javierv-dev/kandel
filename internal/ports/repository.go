@@ -12,6 +12,10 @@ type RecentQuery struct {
 	Project string
 	Scope   domain.Scope // vacío = sin filtrar por alcance
 	Limit   int
+	// ExcludeSuperseded omite las memorias reemplazadas (target de una relación 'supersedes'
+	// juzgada). Lo activa la inyección de contexto; la navegación cruda del usuario lo deja en
+	// false (ve toda la historia).
+	ExcludeSuperseded bool
 }
 
 // SearchQuery describe una búsqueda semántica. La consulta en texto se convierte en vector
@@ -22,6 +26,10 @@ type SearchQuery struct {
 	Project string
 	Scope   domain.Scope // vacío = sin filtrar por alcance
 	Limit   int
+	// IncludeSuperseded, si es true, NO oculta las memorias reemplazadas. Por defecto (false) la
+	// búsqueda semántica las esconde; se activa para no ocultar la historia cuando se busca a
+	// propósito (flag include_superseded en mem_search).
+	IncludeSuperseded bool
 }
 
 // MemoryRepo persiste y recupera memorias. Interfaz cohesiva (no un God Object):

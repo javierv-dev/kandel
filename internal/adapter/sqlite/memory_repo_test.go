@@ -232,6 +232,102 @@ func TestRecentOrderingAndFilters(t *testing.T) {
 	}
 }
 
+// seedSupersede inserta una relación 'supersedes' juzgada: source reemplaza a target.
+func seedSupersede(t *testing.T, db *DB, source, target string) {
+	t.Helper()
+	rel := domain.MemoryRelation{
+		SyncID:    "rel-" + source + "-" + target,
+		SourceID:  source,
+		TargetID:  target,
+		Kind:      domain.RelationSupersedes,
+		Status:    domain.JudgmentJudged,
+		CreatedAt: baseTime,
+		UpdatedAt: baseTime,
+	}
+	if _, err := NewRelationRepo(db).Insert(context.Background(), rel); err != nil {
+		t.Fatalf("Insert relación supersede: %v", err)
+	}
+}
+
+func TestRecentExcludesSuperseded(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	old := sampleMemory() // mem-1, será reemplazada (target)
+	old.Content = "vieja"
+	if _, err := repo.Add(ctx, old); err != nil {
+		t.Fatalf("Add old: %v", err)
+	}
+	current := sampleMemory()
+	current.SyncID = "mem-2" // reemplaza a mem-1 (source, más reciente)
+	current.Content = "nueva"
+	current.CreatedAt = baseTime.Add(time.Hour)
+	if _, err := repo.Add(ctx, current); err != nil {
+		t.Fatalf("Add current: %v", err)
+	}
+	seedSupersede(t, db, "mem-2", "mem-1")
+
+	// Sin el flag: navegación cruda ve toda la historia (ambas).
+	all, err := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("sin ExcludeSuperseded esperaba 2, obtuve %d", len(all))
+	}
+
+	// Con el flag: la reemplazada (mem-1) desaparece.
+	got, err := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10, ExcludeSuperseded: true})
+	if err != nil {
+		t.Fatalf("Recent ExcludeSuperseded: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("con ExcludeSuperseded esperaba 1, obtuve %d", len(got))
+	}
+	if got[0].SyncID != "mem-2" {
+		t.Errorf("debe quedar la reemplazante mem-2, quedó %q", got[0].SyncID)
+	}
+}
+
+func TestSearchExcludesSupersededUnlessIncluded(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	old := sampleMemory() // mem-1, target reemplazado
+	idOld, _ := repo.Add(ctx, old)
+	current := sampleMemory()
+	current.SyncID = "mem-2"
+	idNew, _ := repo.Add(ctx, current)
+	seedSupersede(t, db, "mem-2", "mem-1")
+
+	neighbors := []ports.Neighbor{
+		{MemoryID: idNew, Score: 0.9},
+		{MemoryID: idOld, Score: 0.8},
+	}
+
+	// Por defecto la búsqueda oculta la reemplazada.
+	got, err := repo.Search(ctx, ports.SearchQuery{Limit: 10}, neighbors)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != 1 || got[0].Memory.ID != idNew {
+		t.Fatalf("por defecto esperaba solo mem-2, obtuve %d resultados", len(got))
+	}
+
+	// Con include_superseded vuelve a verse toda la historia.
+	withHistory, err := repo.Search(ctx, ports.SearchQuery{Limit: 10, IncludeSuperseded: true}, neighbors)
+	if err != nil {
+		t.Fatalf("Search IncludeSuperseded: %v", err)
+	}
+	if len(withHistory) != 2 {
+		t.Fatalf("con IncludeSuperseded esperaba 2, obtuve %d", len(withHistory))
+	}
+}
+
 func TestSearchPreservesNeighborOrderAndScore(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
