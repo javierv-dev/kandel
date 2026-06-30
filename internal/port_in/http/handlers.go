@@ -13,13 +13,14 @@ import (
 
 // saveMemoryRequest es el cuerpo de POST /memories.
 type saveMemoryRequest struct {
-	SessionID string `json:"session_id"`
-	Project   string `json:"project"`
-	Type      string `json:"type"`
-	Scope     string `json:"scope"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	ToolName  string `json:"tool_name"`
+	SessionID  string `json:"session_id"`
+	Project    string `json:"project"`
+	Type       string `json:"type"`
+	Scope      string `json:"scope"`
+	Title      string `json:"title"`
+	Content    string `json:"content"`
+	ToolName   string `json:"tool_name"`
+	Resolution string `json:"resolution"`
 }
 
 // handleSaveMemory crea una memoria nueva.
@@ -34,14 +35,20 @@ func handleSaveMemory(svc Services) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		resolution := domain.Resolution(body.Resolution)
+		if !resolution.Valid() {
+			writeError(w, http.StatusBadRequest, "resolution inválida: usa open, resolved o vacío")
+			return
+		}
 		res, err := svc.Memory.Save(r.Context(), service.SaveInput{
-			SessionID: body.SessionID,
-			Project:   body.Project,
-			Type:      domain.MemoryType(body.Type),
-			Scope:     scope,
-			Title:     body.Title,
-			Content:   body.Content,
-			ToolName:  body.ToolName,
+			SessionID:  body.SessionID,
+			Project:    body.Project,
+			Type:       domain.MemoryType(body.Type),
+			Scope:      scope,
+			Title:      body.Title,
+			Content:    body.Content,
+			ToolName:   body.ToolName,
+			Resolution: resolution,
 		})
 		if err != nil {
 			writeError(w, statusForError(err), err.Error())
@@ -103,10 +110,11 @@ func handleRecent(svc Services) http.HandlerFunc {
 
 // updateMemoryRequest es el cuerpo de PATCH /memories/{id}. Los punteros nil no se tocan.
 type updateMemoryRequest struct {
-	Type    *string `json:"type"`
-	Title   *string `json:"title"`
-	Content *string `json:"content"`
-	Scope   *string `json:"scope"`
+	Type       *string `json:"type"`
+	Title      *string `json:"title"`
+	Content    *string `json:"content"`
+	Scope      *string `json:"scope"`
+	Resolution *string `json:"resolution"`
 }
 
 // handleUpdateMemory aplica cambios parciales a una memoria.
@@ -138,6 +146,14 @@ func handleUpdateMemory(svc Services) http.HandlerFunc {
 				return
 			}
 			in.Scope = &s
+		}
+		if body.Resolution != nil {
+			res := domain.Resolution(*body.Resolution)
+			if !res.Valid() {
+				writeError(w, http.StatusBadRequest, "resolution inválida: usa open, resolved o vacío")
+				return
+			}
+			in.Resolution = &res
 		}
 		m, err := svc.Memory.Update(r.Context(), id, in)
 		if err != nil {
@@ -196,10 +212,10 @@ func handleSearch(svc Services) http.HandlerFunc {
 	}
 }
 
-// handleReview lista las memorias cuya fecha de revisión venció (decaimiento).
-func handleReview(svc Services) http.HandlerFunc {
+// handlePending lista las memorias pendientes por resolver (resolution = open).
+func handlePending(svc Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		memories, err := svc.Lifecycle.NeedingReview(r.Context(), r.URL.Query().Get("project"), queryInt(r, "limit", 20))
+		memories, err := svc.Lifecycle.PendingResolution(r.Context(), r.URL.Query().Get("project"), queryInt(r, "limit", 20))
 		if err != nil {
 			writeError(w, statusForError(err), err.Error())
 			return

@@ -43,10 +43,6 @@ func TestSaveCreatesNew(t *testing.T) {
 	if res.Memory.SyncID == "" {
 		t.Error("una memoria nueva debe recibir sync_id")
 	}
-	// decisión decae a 6 meses.
-	if !res.Memory.ReviewAfter.Equal(clockNow.AddDate(0, 6, 0)) {
-		t.Errorf("review_after de decision debe ser +6 meses, fue %v", res.Memory.ReviewAfter)
-	}
 	if len(obs.items) != 1 {
 		t.Errorf("debe haber 1 memoria, hay %d", len(obs.items))
 	}

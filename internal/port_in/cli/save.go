@@ -25,6 +25,7 @@ func (saveCmd) Run(ctx context.Context, args []string, app *App) error {
 	scope := fs.String("scope", "", "alcance (project|global)")
 	session := fs.String("session", "", "id de sesión asociada")
 	tool := fs.String("tool", "", "herramienta que originó la memoria")
+	resolution := fs.String("resolution", "", "estado de pendiente (open|resolved); vacío = normal")
 	fs.Usage = func() {
 		fmt.Fprintln(app.Err, "uso: kandel save <título> <contenido> [--type TIPO] [--project P] [--scope S]")
 		fs.PrintDefaults()
@@ -43,14 +44,20 @@ func (saveCmd) Run(ctx context.Context, args []string, app *App) error {
 		return err
 	}
 
+	parsedResolution := domain.Resolution(*resolution)
+	if !parsedResolution.Valid() {
+		return fmt.Errorf("save: resolution inválida %q (usa open, resolved o vacío)", *resolution)
+	}
+
 	res, err := app.Memory.Save(ctx, service.SaveInput{
-		SessionID: *session,
-		Project:   resolveProject(*project),
-		Type:      domain.MemoryType(*typ),
-		Scope:     parsedScope,
-		Title:     positionals[0],
-		Content:   positionals[1],
-		ToolName:  *tool,
+		SessionID:  *session,
+		Project:    resolveProject(*project),
+		Type:       domain.MemoryType(*typ),
+		Scope:      parsedScope,
+		Title:      positionals[0],
+		Content:    positionals[1],
+		ToolName:   *tool,
+		Resolution: parsedResolution,
 	})
 	if err != nil {
 		return err

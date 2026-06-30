@@ -68,7 +68,6 @@ func TestAddAndGet(t *testing.T) {
 	in := sampleMemory()
 	in.ToolName = "claude"
 	in.LastSeenAt = baseTime
-	in.ReviewAfter = baseTime.AddDate(0, 6, 0)
 
 	id, err := repo.Add(ctx, in)
 	if err != nil {
@@ -94,8 +93,8 @@ func TestAddAndGet(t *testing.T) {
 	if got.ToolName != "claude" {
 		t.Errorf("tool_name no coincide: %q", got.ToolName)
 	}
-	if !got.CreatedAt.Equal(baseTime) || !got.ReviewAfter.Equal(in.ReviewAfter) {
-		t.Errorf("timestamps no coinciden: created=%v review=%v", got.CreatedAt, got.ReviewAfter)
+	if !got.CreatedAt.Equal(baseTime) {
+		t.Errorf("timestamps no coinciden: created=%v", got.CreatedAt)
 	}
 	if got.DeletedAt != nil {
 		t.Errorf("memoria recién creada no debe estar borrada")
@@ -279,32 +278,38 @@ func TestSearchEmptyNeighbors(t *testing.T) {
 	}
 }
 
-func TestNeedingReview(t *testing.T) {
+func TestPendingResolution(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")
 	repo := NewMemoryRepo(db)
 	ctx := context.Background()
 
-	due := sampleMemory()
-	due.Content = "vencida"
-	due.ReviewAfter = time.Now().UTC().Add(-time.Hour)
-	if _, err := repo.Add(ctx, due); err != nil {
-		t.Fatalf("Add due: %v", err)
+	pending := sampleMemory()
+	pending.Content = "pendiente"
+	pending.Resolution = domain.ResolutionOpen
+	if _, err := repo.Add(ctx, pending); err != nil {
+		t.Fatalf("Add pending: %v", err)
 	}
-	future := sampleMemory()
-	future.SyncID = "mem-2"
-	future.Content = "futura"
-	future.ReviewAfter = time.Now().UTC().Add(time.Hour)
-	if _, err := repo.Add(ctx, future); err != nil {
-		t.Fatalf("Add future: %v", err)
+	normal := sampleMemory()
+	normal.SyncID = "mem-2"
+	normal.Content = "normal"
+	if _, err := repo.Add(ctx, normal); err != nil {
+		t.Fatalf("Add normal: %v", err)
+	}
+	resolved := sampleMemory()
+	resolved.SyncID = "mem-3"
+	resolved.Content = "resuelta"
+	resolved.Resolution = domain.ResolutionResolved
+	if _, err := repo.Add(ctx, resolved); err != nil {
+		t.Fatalf("Add resolved: %v", err)
 	}
 
-	got, err := repo.NeedingReview(ctx, "proj", 10)
+	got, err := repo.PendingResolution(ctx, "proj", 10)
 	if err != nil {
-		t.Fatalf("NeedingReview: %v", err)
+		t.Fatalf("PendingResolution: %v", err)
 	}
-	if len(got) != 1 || got[0].Content != "vencida" {
-		t.Errorf("solo la vencida debe necesitar revisión, obtuve %+v", got)
+	if len(got) != 1 || got[0].Content != "pendiente" {
+		t.Errorf("solo la pendiente (open) debe aparecer, obtuve %+v", got)
 	}
 }
 

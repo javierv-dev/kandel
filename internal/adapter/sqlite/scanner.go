@@ -55,23 +55,24 @@ type rowScanner interface {
 const memoryColumns = `id, ifnull(sync_id, ''), ifnull(session_id, ''), type, title, content,
 	ifnull(tool_name, ''), ifnull(project, ''), scope,
 	ifnull(normalized_hash, ''), revision_count, duplicate_count,
-	created_at, updated_at, last_seen_at, review_after, deleted_at`
+	created_at, updated_at, last_seen_at, ifnull(resolution, ''), deleted_at`
 
 // scanMemory escanea una fila al modelo de dominio. Centraliza la conversión de tipos
 // (TEXT→time.Time, INTEGER→bool, columnas anulables) en un único sitio.
 func scanMemory(sc rowScanner) (domain.Memory, error) {
 	var (
-		o                                domain.Memory
-		typ, scope                       string
-		toolName, project, hash          string
-		createdAt, updatedAt             string
-		lastSeen, reviewAfter, deletedAt sql.NullString
+		o                       domain.Memory
+		typ, scope              string
+		toolName, project, hash string
+		resolution              string
+		createdAt, updatedAt    string
+		lastSeen, deletedAt     sql.NullString
 	)
 	if err := sc.Scan(
 		&o.ID, &o.SyncID, &o.SessionID, &typ, &o.Title, &o.Content,
 		&toolName, &project, &scope, &hash,
 		&o.RevisionCount, &o.DuplicateCount,
-		&createdAt, &updatedAt, &lastSeen, &reviewAfter, &deletedAt,
+		&createdAt, &updatedAt, &lastSeen, &resolution, &deletedAt,
 	); err != nil {
 		return domain.Memory{}, err
 	}
@@ -81,6 +82,7 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 	o.ToolName = toolName
 	o.Project = project
 	o.NormalizedHash = hash
+	o.Resolution = domain.Resolution(resolution)
 
 	var err error
 	if o.CreatedAt, err = parseTime(createdAt); err != nil {
@@ -91,11 +93,6 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 	}
 	if lastSeen.Valid {
 		if o.LastSeenAt, err = parseTime(lastSeen.String); err != nil {
-			return domain.Memory{}, err
-		}
-	}
-	if reviewAfter.Valid {
-		if o.ReviewAfter, err = parseTime(reviewAfter.String); err != nil {
 			return domain.Memory{}, err
 		}
 	}

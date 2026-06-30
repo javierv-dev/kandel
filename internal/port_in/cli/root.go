@@ -43,7 +43,7 @@ type SessionUseCases interface {
 
 // LifecycleUseCases es la cara de los casos de uso de ciclo de vida que la CLI consume.
 type LifecycleUseCases interface {
-	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
+	PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 
 // EmbeddingUseCases es la cara del mantenimiento de vectores que la CLI consume. Incluye las

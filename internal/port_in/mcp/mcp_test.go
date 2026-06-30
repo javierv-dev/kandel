@@ -387,7 +387,7 @@ func (f *fakeSession) MostRecentActive(_ context.Context, _ string) (string, boo
 
 type fakeLifecycle struct{}
 
-func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
+func (f *fakeLifecycle) PendingResolution(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
 

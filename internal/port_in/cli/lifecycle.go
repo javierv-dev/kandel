@@ -7,33 +7,33 @@ import (
 )
 
 func init() {
-	register(reviewCmd{})
+	register(pendingCmd{})
 }
 
-// reviewCmd lista las memorias cuya fecha de revisión ya venció (decaimiento).
-type reviewCmd struct{}
+// pendingCmd lista las memorias pendientes por resolver (resolution = open).
+type pendingCmd struct{}
 
-func (reviewCmd) Name() string     { return "review" }
-func (reviewCmd) Synopsis() string { return "lista memorias que piden revisión (decaimiento)" }
+func (pendingCmd) Name() string     { return "pending" }
+func (pendingCmd) Synopsis() string { return "lista memorias pendientes por resolver" }
 
-func (reviewCmd) Run(ctx context.Context, args []string, app *App) error {
-	fs := flag.NewFlagSet("review", flag.ContinueOnError)
+func (pendingCmd) Run(ctx context.Context, args []string, app *App) error {
+	fs := flag.NewFlagSet("pending", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
 	project := fs.String("project", "", "proyecto (por defecto KANDEL_PROJECT)")
 	limit := fs.Int("limit", 20, "número máximo de memorias")
 	fs.Usage = func() {
-		fmt.Fprintln(app.Err, "uso: kandel review [--project P] [--limit N]")
+		fmt.Fprintln(app.Err, "uso: kandel pending [--project P] [--limit N]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	memories, err := app.Lifecycle.NeedingReview(ctx, resolveProject(*project), *limit)
+	memories, err := app.Lifecycle.PendingResolution(ctx, resolveProject(*project), *limit)
 	if err != nil {
 		return err
 	}
 	if len(memories) == 0 {
-		fmt.Fprintln(app.Out, "ninguna memoria pide revisión")
+		fmt.Fprintln(app.Out, "ninguna memoria pendiente")
 		return nil
 	}
 	for _, m := range memories {

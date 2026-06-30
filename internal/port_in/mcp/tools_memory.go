@@ -27,6 +27,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("project", mcp.Description("Proyecto explícito; si se omite, se usa el del proceso")),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
 				mcp.WithString("tool", mcp.Description("Herramienta que originó la memoria (procedencia), p. ej. kandel-seed")),
+				mcp.WithString("resolution", mcp.Description("Estado de pendiente: open (pendiente) o resolved; vacío = normal")),
 			),
 			handleSave(svc),
 		)
@@ -85,6 +86,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("content", mcp.Description("Nuevo contenido")),
 				mcp.WithString("type", mcp.Description("Nuevo tipo")),
 				mcp.WithString("scope", mcp.Description("Nuevo alcance")),
+				mcp.WithString("resolution", mcp.Description("Estado de pendiente: open (pendiente) o resolved; vacío = normal")),
 			),
 			handleUpdate(svc),
 		)
@@ -130,14 +132,19 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 		if typ == "" {
 			typ = domain.TypeLearning
 		}
+		resolution := domain.Resolution(argString(req, "resolution"))
+		if !resolution.Valid() {
+			return mcp.NewToolResultError("resolution inválida: usa open, resolved o vacío"), nil
+		}
 		res, err := svc.Memory.Save(ctx, service.SaveInput{
-			SessionID: argString(req, "session_id"),
-			Project:   svc.resolveProject(argString(req, "project")),
-			Type:      typ,
-			Scope:     scope,
-			Title:     title,
-			Content:   content,
-			ToolName:  argString(req, "tool"),
+			SessionID:  argString(req, "session_id"),
+			Project:    svc.resolveProject(argString(req, "project")),
+			Type:       typ,
+			Scope:      scope,
+			Title:      title,
+			Content:    content,
+			ToolName:   argString(req, "tool"),
+			Resolution: resolution,
 		})
 		if err != nil {
 			return mcp.NewToolResultError("error al guardar: " + err.Error()), nil
@@ -281,6 +288,14 @@ func handleUpdate(svc Services) server.ToolHandlerFunc {
 				return mcp.NewToolResultError("scope inválido: " + err.Error()), nil
 			}
 			in.Scope = &s
+			got = true
+		}
+		if _, ok := req.GetArguments()["resolution"]; ok {
+			res := domain.Resolution(argString(req, "resolution"))
+			if !res.Valid() {
+				return mcp.NewToolResultError("resolution inválida: usa open, resolved o vacío"), nil
+			}
+			in.Resolution = &res
 			got = true
 		}
 		if !got {

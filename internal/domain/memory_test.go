@@ -15,41 +15,24 @@ func baseMemory() Memory {
 	}
 }
 
-func TestMemoryState(t *testing.T) {
-	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+func TestMemoryIsPending(t *testing.T) {
 	tests := []struct {
-		name        string
-		reviewAfter time.Time
-		want        LifecycleState
+		name       string
+		resolution Resolution
+		want       bool
 	}{
-		{"sin fecha está activa", time.Time{}, StateActive},
-		{"fecha futura está activa", now.AddDate(0, 1, 0), StateActive},
-		{"fecha pasada necesita revisión", now.AddDate(0, -1, 0), StateNeedsReview},
-		{"fecha justo ahora no necesita revisión todavía", now, StateActive},
+		{"open es un pendiente", ResolutionOpen, true},
+		{"vacío no es un pendiente", ResolutionNone, false},
+		{"resolved no es un pendiente", ResolutionResolved, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			o := baseMemory()
-			o.ReviewAfter = tc.reviewAfter
-			if got := o.State(now); got != tc.want {
-				t.Fatalf("State = %q, se esperaba %q", got, tc.want)
+			o.Resolution = tc.resolution
+			if got := o.IsPending(); got != tc.want {
+				t.Fatalf("IsPending = %v, se esperaba %v", got, tc.want)
 			}
 		})
-	}
-}
-
-func TestReviewAfterFor(t *testing.T) {
-	from := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
-
-	got := ReviewAfterFor(TypeDecision, from)
-	want := from.AddDate(0, 6, 0)
-	if !got.Equal(want) {
-		t.Errorf("decision: ReviewAfterFor = %v, se esperaba %v", got, want)
-	}
-
-	// Los tipos sin política de decaimiento devuelven el tiempo cero.
-	if got := ReviewAfterFor(TypeLearning, from); !got.IsZero() {
-		t.Errorf("learning no debería decaer, se obtuvo %v", got)
 	}
 }
 

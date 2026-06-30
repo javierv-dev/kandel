@@ -32,7 +32,7 @@ type SessionPort interface {
 
 // LifecyclePort es la cara de los casos de uso de ciclo de vida que el MCP consume.
 type LifecyclePort interface {
-	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
+	PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 
 // PromptPort es la cara de los casos de uso de prompts que el MCP consume.

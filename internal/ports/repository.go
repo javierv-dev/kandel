@@ -50,8 +50,8 @@ type MemoryRepo interface {
 	Search(ctx context.Context, q SearchQuery, neighbors []Neighbor) ([]domain.SearchResult, error)
 	// FindByHash busca una memoria viva con el mismo hash normalizado (dedupe exacto).
 	FindByHash(ctx context.Context, project string, scope domain.Scope, hash string) (*domain.Memory, error)
-	// NeedingReview lista memorias cuya fecha de revisión ya venció.
-	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
+	// PendingResolution lista memorias pendientes por resolver (resolution = open).
+	PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 	// UpdateProject renombra el proyecto de todas las memorias que lo tengan; devuelve cuántas
 	// filas cambió. Lo usa la migración de proyecto (renombrado por cambio de remoto git).
 	UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error)

@@ -320,7 +320,7 @@ func (f *fakeSession) Get(_ context.Context, id string) (*domain.Session, error)
 
 type fakeLifecycle struct{}
 
-func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
+func (f *fakeLifecycle) PendingResolution(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
 

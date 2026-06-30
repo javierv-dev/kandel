@@ -69,7 +69,7 @@ func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error)
 // fakeLifecycle registra las llamadas de ciclo de vida.
 type fakeLifecycle struct{}
 
-func (f *fakeLifecycle) NeedingReview(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
+func (f *fakeLifecycle) PendingResolution(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
 
@@ -196,7 +196,7 @@ func TestDispatchHelpListsRegisteredCommands(t *testing.T) {
 	if err := Dispatch(context.Background(), nil, app); err != nil {
 		t.Fatalf("ayuda devolvió error: %v", err)
 	}
-	for _, name := range []string{"save", "search", "recent", "get", "delete", "review"} {
+	for _, name := range []string{"save", "search", "recent", "get", "delete", "pending"} {
 		if !strings.Contains(out.String(), name) {
 			t.Errorf("la ayuda no lista el comando %q:\n%s", name, out.String())
 		}

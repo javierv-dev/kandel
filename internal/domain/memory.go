@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// MemoryType clasifica una memoria curada. El tipo influye en el decaimiento
-// (cada cuánto la memoria pide revisión).
+// MemoryType clasifica una memoria curada.
 type MemoryType string
 
 const (
@@ -30,35 +29,27 @@ func (t MemoryType) Valid() bool {
 	}
 }
 
-// LifecycleState es el estado de ciclo de vida derivado (no se almacena: se calcula al leer).
-type LifecycleState string
+// Resolution marca si una memoria es un pendiente por resolver y en qué fase está. Es ESTADO,
+// no tipo: cualquier tipo de memoria puede llevarlo. Vacío = memoria normal (no es un pendiente).
+type Resolution string
 
 const (
-	// StateActive indica una memoria vigente.
-	StateActive LifecycleState = "active"
-	// StateNeedsReview indica una memoria cuya fecha de revisión ya venció.
-	StateNeedsReview LifecycleState = "needs_review"
+	// ResolutionNone es el valor por defecto: la memoria no es un pendiente.
+	ResolutionNone Resolution = ""
+	// ResolutionOpen marca un pendiente sin resolver (aparece en la bandeja "Pendientes").
+	ResolutionOpen Resolution = "open"
+	// ResolutionResolved marca un pendiente ya resuelto que se conserva como registro.
+	ResolutionResolved Resolution = "resolved"
 )
 
-// reviewMonthsByType define el decaimiento por tipo: meses que se suman a la fecha de
-// creación para fijar review_after. Los tipos ausentes no decaen (review_after queda en
-// su valor cero).
-//
-// Nota: el proyecto viejo definía el decaimiento sobre tipos "decision/policy/preference",
-// pero solo "decision" coincide con los tipos reales. Aquí se porta ese único caso fiable;
-// el resto de la política de decaimiento queda pendiente de confirmar (ver BITACORA).
-var reviewMonthsByType = map[MemoryType]int{
-	TypeDecision: 6,
-}
-
-// ReviewAfterFor calcula la fecha de revisión para un tipo dado a partir de un instante.
-// Devuelve el tiempo cero si el tipo no decae.
-func ReviewAfterFor(t MemoryType, from time.Time) time.Time {
-	months, ok := reviewMonthsByType[t]
-	if !ok {
-		return time.Time{}
+// Valid indica si la resolución es una de las reconocidas.
+func (r Resolution) Valid() bool {
+	switch r {
+	case ResolutionNone, ResolutionOpen, ResolutionResolved:
+		return true
+	default:
+		return false
 	}
-	return from.AddDate(0, months, 0)
 }
 
 // Memory es la unidad central de conocimiento: una memoria curada que sobrevive entre
@@ -78,22 +69,18 @@ type Memory struct {
 	RevisionCount  int    // número de veces que se actualizó esta memoria
 	DuplicateCount int    // número de llegadas idénticas
 
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	LastSeenAt  time.Time
-	ReviewAfter time.Time  // tras esta fecha la memoria pide revisión; cero = no decae
-	DeletedAt   *time.Time // soft delete; nil = viva
+	Resolution Resolution // estado de pendiente; vacío = memoria normal
+
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	LastSeenAt time.Time
+	DeletedAt  *time.Time // soft delete; nil = viva
 }
 
-// State devuelve el estado de ciclo de vida virtual respecto a un instante de referencia.
-// Sin fecha de revisión, o mientras la fecha no haya quedado en el pasado, la memoria está
-// activa. Solo pide revisión cuando review_after ya pasó (estrictamente antes de "now"),
-// coherente con su nombre: la revisión llega *tras* esa fecha.
-func (o Memory) State(now time.Time) LifecycleState {
-	if o.ReviewAfter.IsZero() || !o.ReviewAfter.Before(now) {
-		return StateActive
-	}
-	return StateNeedsReview
+// IsPending indica si la memoria es un pendiente sin resolver (resolution=open). Lo consume
+// la bandeja "Pendientes" del contexto que se inyecta al agente.
+func (o Memory) IsPending() bool {
+	return o.Resolution == ResolutionOpen
 }
 
 // IsDeleted indica si la memoria fue borrada (soft delete).
@@ -103,7 +90,7 @@ func (o Memory) IsDeleted() bool {
 
 // Validate comprueba las invariantes de la entidad. La estructura What/Why/Where/Learned
 // del contenido es una convención que se cuida en la capa de servicio, no aquí: el dominio
-// solo exige título y contenido no vacíos, y tipo y alcance válidos.
+// solo exige título y contenido no vacíos, y tipo, alcance y resolución válidos.
 func (o Memory) Validate() error {
 	if strings.TrimSpace(o.Title) == "" {
 		return ErrEmptyTitle
@@ -116,6 +103,9 @@ func (o Memory) Validate() error {
 	}
 	if !o.Scope.Valid() {
 		return ErrInvalidScope
+	}
+	if !o.Resolution.Valid() {
+		return ErrInvalidResolution
 	}
 	return nil
 }

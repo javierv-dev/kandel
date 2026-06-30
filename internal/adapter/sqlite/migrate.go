@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS memories (
 	created_at      TEXT NOT NULL,
 	updated_at      TEXT NOT NULL,
 	last_seen_at    TEXT,
-	review_after    TEXT,
+	resolution      TEXT NOT NULL DEFAULT '',
 	deleted_at      TEXT,
 	FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_mem_scope   ON memories(scope);
 CREATE INDEX IF NOT EXISTS idx_mem_sync_id ON memories(sync_id);
 CREATE INDEX IF NOT EXISTS idx_mem_deleted ON memories(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_mem_dedupe  ON memories(normalized_hash, project, scope, type, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_mem_review  ON memories(review_after);
+CREATE INDEX IF NOT EXISTS idx_mem_resolution ON memories(resolution);
 
 CREATE TABLE IF NOT EXISTS prompts (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,

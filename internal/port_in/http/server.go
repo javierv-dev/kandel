@@ -31,7 +31,7 @@ type SessionPort interface {
 
 // LifecyclePort es la cara de los casos de uso de ciclo de vida que la API consume.
 type LifecyclePort interface {
-	NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error)
+	PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error)
 }
 
 // PromptPort es la cara del guardado de prompts que la API consume.
@@ -83,7 +83,7 @@ func NewHandler(svc Services) http.Handler {
 	mux.HandleFunc("DELETE /memories/{id}", handleDeleteMemory(svc))
 
 	mux.HandleFunc("GET /search", handleSearch(svc))
-	mux.HandleFunc("GET /review", handleReview(svc))
+	mux.HandleFunc("GET /pending", handlePending(svc))
 
 	mux.HandleFunc("POST /sessions", handleStartSession(svc))
 	mux.HandleFunc("POST /sessions/{id}/end", handleEndSession(svc))

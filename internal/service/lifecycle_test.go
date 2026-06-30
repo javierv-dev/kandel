@@ -3,27 +3,26 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 )
 
-func TestLifecycleNeedingReview(t *testing.T) {
+func TestLifecyclePendingResolution(t *testing.T) {
 	obs := newFakeObs()
 	svc := NewLifecycleService(obs)
 	ctx := context.Background()
 
-	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "vencida", Content: "c",
-		ReviewAfter: time.Now().UTC().Add(-time.Hour)})
-	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "futura", Content: "c",
-		ReviewAfter: time.Now().UTC().Add(time.Hour)})
-	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "sin decay", Content: "c"})
+	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "pendiente", Content: "c",
+		Resolution: domain.ResolutionOpen})
+	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "resuelta", Content: "c",
+		Resolution: domain.ResolutionResolved})
+	_, _ = obs.Add(ctx, domain.Memory{Project: "proj", Title: "normal", Content: "c"})
 
-	got, err := svc.NeedingReview(ctx, "Proj", 10)
+	got, err := svc.PendingResolution(ctx, "Proj", 10)
 	if err != nil {
-		t.Fatalf("NeedingReview: %v", err)
+		t.Fatalf("PendingResolution: %v", err)
 	}
-	if len(got) != 1 || got[0].Title != "vencida" {
-		t.Errorf("solo la vencida debe necesitar revisión, fue %+v", got)
+	if len(got) != 1 || got[0].Title != "pendiente" {
+		t.Errorf("solo la pendiente (open) debe aparecer, fue %+v", got)
 	}
 }

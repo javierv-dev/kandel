@@ -34,7 +34,7 @@ func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
 		INSERT INTO memories (
 			sync_id, session_id, type, title, content, tool_name, project, scope,
 			normalized_hash, revision_count, duplicate_count,
-			created_at, updated_at, last_seen_at, review_after, deleted_at
+			created_at, updated_at, last_seen_at, resolution, deleted_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		nullString(o.SyncID), nullString(o.SessionID), string(o.Type), o.Title, o.Content,
@@ -42,7 +42,7 @@ func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
 		nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount,
 		formatTime(o.CreatedAt), formatTime(o.UpdatedAt),
-		nullTime(o.LastSeenAt), nullTime(o.ReviewAfter), nullTime(deletedAtValue(o)),
+		nullTime(o.LastSeenAt), string(o.Resolution), nullTime(deletedAtValue(o)),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("sqlite: insertar memoria: %w", err)
@@ -75,13 +75,13 @@ func (r *MemoryRepo) Update(ctx context.Context, id int64, o domain.Memory) (*do
 		UPDATE memories SET
 			type = ?, title = ?, content = ?, tool_name = ?, project = ?, scope = ?,
 			normalized_hash = ?, revision_count = ?, duplicate_count = ?,
-			updated_at = ?, last_seen_at = ?, review_after = ?
+			updated_at = ?, last_seen_at = ?, resolution = ?
 		WHERE id = ? AND deleted_at IS NULL`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		string(o.Type), o.Title, o.Content, nullString(o.ToolName), nullString(o.Project),
 		string(o.Scope), nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount,
-		formatTime(o.UpdatedAt), nullTime(o.LastSeenAt), nullTime(o.ReviewAfter),
+		formatTime(o.UpdatedAt), nullTime(o.LastSeenAt), string(o.Resolution),
 		id,
 	)
 	if err != nil {
@@ -214,19 +214,18 @@ func (r *MemoryRepo) FindByHash(ctx context.Context, project string, scope domai
 	return r.queryOne(ctx, q, hash, project, string(scope))
 }
 
-// NeedingReview lista memorias vivas cuya fecha de revisión ya venció (review_after en el
-// pasado), de la más antigua a la más nueva.
-func (r *MemoryRepo) NeedingReview(ctx context.Context, project string, limit int) ([]domain.Memory, error) {
+// PendingResolution lista memorias vivas pendientes por resolver (resolution = 'open'), de la
+// más antigua a la más nueva (como una cola de TODO: lo más viejo primero).
+func (r *MemoryRepo) PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error) {
 	query := `SELECT ` + memoryColumns + ` FROM memories
 		WHERE deleted_at IS NULL
-		  AND review_after IS NOT NULL
-		  AND datetime(review_after) < datetime('now')`
+		  AND resolution = 'open'`
 	args := []any{}
 	if project != "" {
 		query += ` AND project = ?`
 		args = append(args, project)
 	}
-	query += ` ORDER BY datetime(review_after) ASC LIMIT ?`
+	query += ` ORDER BY datetime(created_at) ASC LIMIT ?`
 	args = append(args, normalizeLimit(limit))
 	return r.queryMany(ctx, query, args...)
 }

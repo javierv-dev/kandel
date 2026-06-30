@@ -13,6 +13,8 @@ var (
 	ErrInvalidType = errors.New("domain: tipo de memoria inválido")
 	// ErrInvalidScope indica un alcance no reconocido.
 	ErrInvalidScope = errors.New("domain: alcance (scope) inválido")
+	// ErrInvalidResolution indica un estado de resolución no reconocido.
+	ErrInvalidResolution = errors.New("domain: resolución inválida")
 	// ErrAmbiguousProject indica que el proyecto no se pudo resolver sin ambigüedad.
 	ErrAmbiguousProject = errors.New("domain: proyecto ambiguo")
 	// ErrNotFound indica que la entidad solicitada no existe.

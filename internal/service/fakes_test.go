@@ -173,14 +173,13 @@ func (f *fakeObs) FindByHash(_ context.Context, project string, scope domain.Sco
 	return best, nil
 }
 
-func (f *fakeObs) NeedingReview(_ context.Context, project string, limit int) ([]domain.Memory, error) {
-	now := time.Now().UTC()
+func (f *fakeObs) PendingResolution(_ context.Context, project string, limit int) ([]domain.Memory, error) {
 	var out []domain.Memory
 	for _, o := range f.items {
 		if o.IsDeleted() || (project != "" && o.Project != project) {
 			continue
 		}
-		if !o.ReviewAfter.IsZero() && o.ReviewAfter.Before(now) {
+		if o.Resolution == domain.ResolutionOpen {
 			out = append(out, o)
 		}
 	}

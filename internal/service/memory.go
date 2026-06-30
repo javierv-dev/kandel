@@ -26,13 +26,14 @@ const (
 
 // SaveInput son los datos crudos de una memoria a guardar. El servicio los normaliza y valida.
 type SaveInput struct {
-	SessionID string
-	Project   string
-	Type      domain.MemoryType
-	Scope     domain.Scope
-	Title     string
-	Content   string
-	ToolName  string
+	SessionID  string
+	Project    string
+	Type       domain.MemoryType
+	Scope      domain.Scope
+	Title      string
+	Content    string
+	ToolName   string
+	Resolution domain.Resolution
 }
 
 // SaveResult es el resultado de Save: la memoria resultante y qué ocurrió.
@@ -48,10 +49,11 @@ type SaveResult struct {
 
 // UpdateInput son los campos editables de una memoria; los nil no se tocan.
 type UpdateInput struct {
-	Type    *domain.MemoryType
-	Title   *string
-	Content *string
-	Scope   *domain.Scope
+	Type       *domain.MemoryType
+	Title      *string
+	Content    *string
+	Scope      *domain.Scope
+	Resolution *domain.Resolution
 }
 
 // MemoryService implementa los casos de uso sobre memorias. Aquí vive la lógica de dedupe
@@ -113,7 +115,7 @@ func NewMemoryService(memories ports.MemoryRepo, sync ports.SyncRepo, uow ports.
 // Save guarda una memoria curada. Reglas, en orden:
 //  1. Si existe una memoria idéntica (mismo hash) creada dentro de la ventana de dedupe,
 //     solo incrementa su duplicate_count.
-//  2. En otro caso crea una memoria nueva, fijando su review_after según el decaimiento del tipo.
+//  2. En otro caso crea una memoria nueva, con el estado de pendiente (resolution) indicado.
 //
 // Todo ocurre dentro de una transacción junto con el encolado de la mutación de sync.
 func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, error) {
@@ -146,6 +148,7 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastSeenAt:     now,
+		Resolution:     in.Resolution,
 	}
 	if err := candidate.Validate(); err != nil {
 		return SaveResult{}, err
@@ -172,7 +175,6 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 
 		// 2. Memoria nueva.
 		candidate.SyncID = newSyncID("mem")
-		candidate.ReviewAfter = domain.ReviewAfterFor(in.Type, now)
 		id, err := m.memories.Add(ctx, candidate)
 		if err != nil {
 			return err
@@ -273,6 +275,9 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		}
 		if in.Scope != nil {
 			o.Scope = *in.Scope
+		}
+		if in.Resolution != nil {
+			o.Resolution = *in.Resolution
 		}
 		o.UpdatedAt = now
 		if err := o.Validate(); err != nil {
