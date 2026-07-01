@@ -232,6 +232,53 @@ func TestRecentOrderingAndFilters(t *testing.T) {
 	}
 }
 
+func TestConflictCheckedRoundtripAndSweepQuery(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	// Una normativa (decision) nace sin verificar (conflict_checked = 0).
+	norm := sampleMemory() // TypeDecision
+	idNorm, err := repo.Add(ctx, norm)
+	if err != nil {
+		t.Fatalf("Add normativa: %v", err)
+	}
+	got, _ := repo.Get(ctx, idNorm)
+	if got == nil || got.ConflictChecked {
+		t.Fatalf("una memoria nueva debe nacer sin verificar: %+v", got)
+	}
+
+	// Una factual (discovery) no debe aparecer en la cola del barrido aunque esté sin verificar.
+	fact := sampleMemory()
+	fact.SyncID = "mem-fact"
+	fact.Type = domain.TypeDiscovery
+	if _, err := repo.Add(ctx, fact); err != nil {
+		t.Fatalf("Add factual: %v", err)
+	}
+
+	pending, err := repo.UncheckedNormatives(ctx, 10)
+	if err != nil {
+		t.Fatalf("UncheckedNormatives: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != idNorm {
+		t.Fatalf("solo la normativa sin verificar debe estar pendiente: %+v", pending)
+	}
+
+	// Marcarla la saca de la cola y persiste el flag.
+	if err := repo.SetConflictChecked(ctx, idNorm); err != nil {
+		t.Fatalf("SetConflictChecked: %v", err)
+	}
+	got, _ = repo.Get(ctx, idNorm)
+	if got == nil || !got.ConflictChecked {
+		t.Errorf("tras marcar debe quedar verificada: %+v", got)
+	}
+	pending, _ = repo.UncheckedNormatives(ctx, 10)
+	if len(pending) != 0 {
+		t.Errorf("una normativa verificada no debe seguir pendiente: %+v", pending)
+	}
+}
+
 // seedSupersede inserta una relación 'supersedes' juzgada: source reemplaza a target.
 func seedSupersede(t *testing.T, db *DB, source, target string) {
 	t.Helper()

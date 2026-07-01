@@ -55,7 +55,7 @@ type rowScanner interface {
 const memoryColumns = `id, ifnull(sync_id, ''), ifnull(session_id, ''), type, title, content,
 	ifnull(tool_name, ''), ifnull(project, ''), scope,
 	ifnull(normalized_hash, ''), revision_count, duplicate_count,
-	created_at, updated_at, last_seen_at, ifnull(resolution, ''), deleted_at`
+	created_at, updated_at, last_seen_at, ifnull(resolution, ''), conflict_checked, deleted_at`
 
 // scanMemory escanea una fila al modelo de dominio. Centraliza la conversión de tipos
 // (TEXT→time.Time, INTEGER→bool, columnas anulables) en un único sitio.
@@ -65,6 +65,7 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 		typ, scope              string
 		toolName, project, hash string
 		resolution              string
+		conflictChecked         int
 		createdAt, updatedAt    string
 		lastSeen, deletedAt     sql.NullString
 	)
@@ -72,7 +73,7 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 		&o.ID, &o.SyncID, &o.SessionID, &typ, &o.Title, &o.Content,
 		&toolName, &project, &scope, &hash,
 		&o.RevisionCount, &o.DuplicateCount,
-		&createdAt, &updatedAt, &lastSeen, &resolution, &deletedAt,
+		&createdAt, &updatedAt, &lastSeen, &resolution, &conflictChecked, &deletedAt,
 	); err != nil {
 		return domain.Memory{}, err
 	}
@@ -83,6 +84,7 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 	o.Project = project
 	o.NormalizedHash = hash
 	o.Resolution = domain.Resolution(resolution)
+	o.ConflictChecked = conflictChecked != 0
 
 	var err error
 	if o.CreatedAt, err = parseTime(createdAt); err != nil {

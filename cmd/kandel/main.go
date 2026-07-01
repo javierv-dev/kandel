@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -70,9 +71,13 @@ func run(args []string) error {
 		service.WithWarnLogger(embeddingWarnLogger()))
 	sessionService := service.NewSessionService(sessionRepo, syncRepo, uow, clk)
 	lifecycleService := service.NewLifecycleService(memoryRepo)
-	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex)
 	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)
-	conflictService := service.NewConflictService(memoryRepo, vectorIndex, embedder, relationRepo, agentRunner, uow, clk)
+	conflictService := service.NewConflictService(memoryRepo, vectorIndex, embedder, relationRepo, agentRunner, uow, clk,
+		service.WithDetectionTuning(conflictCutoff(), conflictTopK()))
+	// El backfill de vectores engancha la detección de conflictos diferida: al ponerse al día los
+	// vectores, se barren las normativas sin verificar (§20.F). Acoplamiento flojo vía callback.
+	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex,
+		service.WithPostBackfill(detectionSweep(conflictService)))
 	syncService := service.NewSyncService(syncRepo, git.New(syncDir()), memoryRepo, uow, clk, "")
 	contextService := service.NewContextService(sessionRepo, memoryRepo, promptRepo)
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
@@ -129,6 +134,48 @@ func syncDir() string {
 		return d
 	}
 	return ".kandel"
+}
+
+// detectionSweep envuelve el barrido de detección de conflictos como el callback que dispara el
+// backfill de vectores. Registra el resultado; nunca propaga error (es best-effort).
+func detectionSweep(c *service.ConflictService) func(context.Context) {
+	return func(ctx context.Context) {
+		n, err := c.SweepDetection(ctx)
+		switch {
+		case err != nil:
+			log.Printf("detección de conflictos: error tras %d normativa(s): %v", n, err)
+		case n > 0:
+			log.Printf("detección de conflictos: %d normativa(s) verificada(s)", n)
+		}
+	}
+}
+
+// conflictCutoff lee el corte de similitud de la detección de KANDEL_CONFLICT_SIM_CUTOFF; 0 (o
+// inválido) deja el valor por defecto del servicio.
+func conflictCutoff() float64 {
+	raw := strings.TrimSpace(os.Getenv("KANDEL_CONFLICT_SIM_CUTOFF"))
+	if raw == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil || f <= 0 {
+		return 0
+	}
+	return f
+}
+
+// conflictTopK lee el top-K de la detección de KANDEL_CONFLICT_TOPK; 0 (o inválido) deja el valor
+// por defecto del servicio.
+func conflictTopK() int {
+	raw := strings.TrimSpace(os.Getenv("KANDEL_CONFLICT_TOPK"))
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
 }
 
 // embedDimensions lee la dimensión del vector de KANDEL_EMBED_DIMENSIONS; 0 deja que el

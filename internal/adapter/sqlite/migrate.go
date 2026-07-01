@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS memories (
 	updated_at      TEXT NOT NULL,
 	last_seen_at    TEXT,
 	resolution      TEXT NOT NULL DEFAULT '',
+	conflict_checked INTEGER NOT NULL DEFAULT 0,
 	deleted_at      TEXT,
 	FOREIGN KEY (session_id) REFERENCES sessions(id)
 );

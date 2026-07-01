@@ -24,15 +24,37 @@ type EmbeddingService struct {
 	// mu serializa los backfills: el barrido del daemon, los disparos por hook y el comando manual
 	// pueden coincidir; sin esto correrían a la vez y reembeberían las mismas memorias dos veces.
 	mu sync.Mutex
+	// postBackfill se invoca tras un backfill exitoso. Es el enganche flojo con la detección de
+	// conflictos (§20.F): una vez que los vectores diferidos están al día, corre el barrido de
+	// detección sobre las normativas sin verificar. Opcional (nil = no hacer nada); no fusiona
+	// servicios (main lo cablea a ConflictService.SweepDetection).
+	postBackfill func(ctx context.Context)
 }
 
 // NewEmbeddingService construye el servicio con sus dependencias inyectadas.
-func NewEmbeddingService(memories ports.MemoryRepo, embedder ports.Embedder, vectors ports.VectorIndex) *EmbeddingService {
-	return &EmbeddingService{
+func NewEmbeddingService(memories ports.MemoryRepo, embedder ports.Embedder, vectors ports.VectorIndex, opts ...EmbeddingOption) *EmbeddingService {
+	s := &EmbeddingService{
 		memories: memories,
 		embedder: embedder,
 		vectors:  vectors,
 		batch:    defaultBackfillBatch,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// EmbeddingOption configura un EmbeddingService opcionalmente.
+type EmbeddingOption func(*EmbeddingService)
+
+// WithPostBackfill inyecta el enganche que corre tras un backfill exitoso (la detección de
+// conflictos diferida). Un hook nil se ignora.
+func WithPostBackfill(hook func(ctx context.Context)) EmbeddingOption {
+	return func(s *EmbeddingService) {
+		if hook != nil {
+			s.postBackfill = hook
+		}
 	}
 }
 
@@ -50,7 +72,9 @@ type BackfillResult struct {
 func (s *EmbeddingService) Backfill(ctx context.Context) (BackfillResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.backfill(ctx)
+	r, err := s.backfill(ctx)
+	s.runPostBackfill(ctx, err)
+	return r, err
 }
 
 // SweepBackfill es la variante para los disparadores AUTOMÁTICOS (barrido periódico del daemon y
@@ -62,7 +86,18 @@ func (s *EmbeddingService) SweepBackfill(ctx context.Context) (BackfillResult, b
 	}
 	defer s.mu.Unlock()
 	r, err := s.backfill(ctx)
+	s.runPostBackfill(ctx, err)
 	return r, false, err
+}
+
+// runPostBackfill dispara el enganche posterior al backfill (detección de conflictos diferida) solo
+// si el backfill no falló: si el embebedor está caído, la detección tampoco podría correr. Es
+// best-effort y no altera el resultado del backfill.
+func (s *EmbeddingService) runPostBackfill(ctx context.Context, backfillErr error) {
+	if backfillErr != nil || s.postBackfill == nil {
+		return
+	}
+	s.postBackfill(ctx)
 }
 
 // Warmup fuerza una petición de embeddings de sondeo ("ping") para que el modelo quede cargado en

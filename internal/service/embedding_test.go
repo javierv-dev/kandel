@@ -183,6 +183,45 @@ func TestSweepBackfillSkipsWhenBusy(t *testing.T) {
 	}
 }
 
+// TestBackfillRunsPostHook verifica que tras un backfill exitoso corre el enganche posterior (la
+// detección de conflictos diferida, §20.F).
+func TestBackfillRunsPostHook(t *testing.T) {
+	repo := newFakeObs()
+	a := seedMemory(t, repo, "uno")
+	emb := newFakeEmbedder()
+	idx := newPendingIndex([]int64{a})
+	svc := newBackfillService(idx, repo, emb)
+	called := 0
+	svc.postBackfill = func(context.Context) { called++ }
+
+	if _, err := svc.Backfill(context.Background()); err != nil {
+		t.Fatalf("backfill devolvió error: %v", err)
+	}
+	if called != 1 {
+		t.Errorf("el enganche posterior debe correr una vez, corrió %d", called)
+	}
+}
+
+// TestBackfillSkipsPostHookOnError verifica que si el backfill falla (embebedor caído) NO corre el
+// enganche: sin embebedor, la detección tampoco podría.
+func TestBackfillSkipsPostHookOnError(t *testing.T) {
+	repo := newFakeObs()
+	seedMemory(t, repo, "uno")
+	emb := newFakeEmbedder()
+	emb.failWith = errors.New("ollama caído")
+	idx := newPendingIndex([]int64{1})
+	svc := newBackfillService(idx, repo, emb)
+	called := 0
+	svc.postBackfill = func(context.Context) { called++ }
+
+	if _, err := svc.Backfill(context.Background()); err == nil {
+		t.Fatal("se esperaba error del embebedor")
+	}
+	if called != 0 {
+		t.Errorf("el enganche no debe correr si el backfill falló, corrió %d", called)
+	}
+}
+
 // TestWarmupCallsEmbedder verifica que el warm-up dispara una petición al embebedor y propaga su
 // error (para que el handler lo registre).
 func TestWarmupCallsEmbedder(t *testing.T) {

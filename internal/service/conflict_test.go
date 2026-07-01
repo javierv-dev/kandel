@@ -103,6 +103,193 @@ func TestCompareRunnerErrorPropagates(t *testing.T) {
 	}
 }
 
+// seedNormative inserta una memoria normativa con vector y los campos dados; devuelve su id.
+func seedNormative(t *testing.T, obs *fakeObs, vecs *fakeVectorIndex, m domain.Memory) int64 {
+	t.Helper()
+	id, err := obs.Add(context.Background(), m)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	vecs.vecs[id] = []float32{1, 0, 0}
+	return id
+}
+
+func TestSweepDetectionSameScopeConflict(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationConflictsWith, Confidence: 0.9, Reasoning: "chocan"}}
+	a := seedConflictMemory(t, obs, vecs, "A", "usar JWT")
+	b := seedConflictMemory(t, obs, vecs, "B", "usar sesiones")
+	// B ya verificada: el barrido solo debe procesar A (evita el doble juicio del par).
+	_ = obs.SetConflictChecked(context.Background(), b)
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	n, err := svc.SweepDetection(context.Background())
+	if err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("esperaba 1 normativa verificada, obtuve %d", n)
+	}
+	if len(rels.items) != 1 {
+		t.Fatalf("esperaba 1 relación, hay %d", len(rels.items))
+	}
+	rel := rels.items[0]
+	if rel.Kind != domain.RelationConflictsWith || rel.Status != domain.JudgmentJudged {
+		t.Errorf("mismo scope debe dar conflicts_with juzgado: %+v", rel)
+	}
+	if rel.SourceID != "mem-A" || rel.TargetID != "mem-B" {
+		t.Errorf("source debe ser la recién verificada (A): %+v", rel)
+	}
+	if ma, _ := obs.Get(context.Background(), a); ma == nil || !ma.ConflictChecked {
+		t.Error("A debe quedar marcada como verificada")
+	}
+}
+
+func TestSweepDetectionCrossScopeCascade(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationConflictsWith, Confidence: 0.8, Reasoning: "chocan"}}
+	global := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-G", Type: domain.TypeDecision, Scope: domain.ScopeGlobal, Title: "G", Content: "regla global",
+	})
+	proj := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-P", Type: domain.TypeDecision, Scope: domain.ScopeProject, Project: "proj", Title: "P", Content: "regla de proyecto",
+	})
+	_ = obs.SetConflictChecked(context.Background(), proj) // se detecta la global
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	if _, err := svc.SweepDetection(context.Background()); err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if len(rels.items) != 1 {
+		t.Fatalf("esperaba 1 relación, hay %d", len(rels.items))
+	}
+	rel := rels.items[0]
+	// Cross-scope: la de proyecto reemplaza a la global (cascada project > global).
+	if rel.Kind != domain.RelationSupersedes || rel.SourceID != "mem-P" || rel.TargetID != "mem-G" {
+		t.Errorf("cross-scope debe dar supersedes proyecto→global: %+v", rel)
+	}
+	_ = global
+}
+
+func TestSweepDetectionSupersedesByRecency(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationSupersedes, Confidence: 0.9}}
+	older := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-Old", Type: domain.TypeDecision, Scope: domain.ScopeProject, Project: "proj",
+		Title: "Old", Content: "regla vieja", CreatedAt: time.Unix(1000, 0).UTC(),
+	})
+	newer := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-New", Type: domain.TypeDecision, Scope: domain.ScopeProject, Project: "proj",
+		Title: "New", Content: "regla nueva", CreatedAt: time.Unix(2000, 0).UTC(),
+	})
+	_ = obs.SetConflictChecked(context.Background(), newer) // se detecta la vieja
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	if _, err := svc.SweepDetection(context.Background()); err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if len(rels.items) != 1 {
+		t.Fatalf("esperaba 1 relación, hay %d", len(rels.items))
+	}
+	rel := rels.items[0]
+	// Mismo scope + supersedes: la más reciente reemplaza a la más antigua.
+	if rel.Kind != domain.RelationSupersedes || rel.SourceID != "mem-New" || rel.TargetID != "mem-Old" {
+		t.Errorf("supersedes debe dirigir reciente→antigua: %+v", rel)
+	}
+	_ = older
+}
+
+func TestSweepDetectionNonConflictMarksCheckedWithoutRelation(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationCompatible, Confidence: 0.7}}
+	a := seedConflictMemory(t, obs, vecs, "A", "x")
+	b := seedConflictMemory(t, obs, vecs, "B", "y")
+	_ = obs.SetConflictChecked(context.Background(), b)
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	n, err := svc.SweepDetection(context.Background())
+	if err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("esperaba 1 verificada, obtuve %d", n)
+	}
+	if len(rels.items) != 0 {
+		t.Errorf("un veredicto no conflictivo no debe persistir relación: %+v", rels.items)
+	}
+	if ma, _ := obs.Get(context.Background(), a); ma == nil || !ma.ConflictChecked {
+		t.Error("A debe quedar verificada aunque no haya conflicto")
+	}
+}
+
+func TestSweepDetectionIgnoresFactual(t *testing.T) {
+	obs, vecs, emb, rels, runner := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}, &fakeRunner{}
+	// Un descubrimiento (factual) no es normativo: el barrido no debe tocarlo ni juzgar nada.
+	_ = seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-D", Type: domain.TypeDiscovery, Scope: domain.ScopeProject, Project: "proj", Title: "D", Content: "un hecho",
+	})
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	n, err := svc.SweepDetection(context.Background())
+	if err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("no debe verificar factuales, verificó %d", n)
+	}
+	if runner.lastPrompt != "" {
+		t.Error("no debe invocarse el juez para una memoria factual")
+	}
+}
+
+func TestSweepDetectionAbortsWhenEmbedderDown(t *testing.T) {
+	obs, vecs, emb, rels, runner := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}, &fakeRunner{}
+	emb.failWith = errors.New("ollama caído")
+	a := seedConflictMemory(t, obs, vecs, "A", "x")
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	if _, err := svc.SweepDetection(context.Background()); err == nil {
+		t.Fatal("un embebedor caído debe abortar el barrido")
+	}
+	if ma, _ := obs.Get(context.Background(), a); ma == nil || ma.ConflictChecked {
+		t.Error("A debe quedar SIN verificar para reintentar")
+	}
+}
+
+func TestSweepDetectionAbortsWhenRunnerDown(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{failWith: errors.New("agente caído")}
+	a := seedConflictMemory(t, obs, vecs, "A", "x")
+	b := seedConflictMemory(t, obs, vecs, "B", "y")
+	_ = obs.SetConflictChecked(context.Background(), b)
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	if _, err := svc.SweepDetection(context.Background()); err == nil {
+		t.Fatal("un juez caído debe abortar el barrido")
+	}
+	if len(rels.items) != 0 {
+		t.Error("no debe persistir relación si el juicio falla")
+	}
+	if ma, _ := obs.Get(context.Background(), a); ma == nil || ma.ConflictChecked {
+		t.Error("A debe quedar SIN verificar para reintentar")
+	}
+}
+
+func TestSweepDetectionCoalesces(t *testing.T) {
+	obs, vecs, emb, rels, runner := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}, &fakeRunner{}
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+	svc.mu.Lock() // simula un barrido en curso
+	defer svc.mu.Unlock()
+
+	n, err := svc.SweepDetection(context.Background())
+	if err != nil {
+		t.Fatalf("SweepDetection no debe fallar al coalescer: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("si ya hay un barrido en curso debe omitirse (0), dio %d", n)
+	}
+}
+
 func TestRecordVerdictValidatesRelation(t *testing.T) {
 	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
 	a := seedConflictMemory(t, obs, vecs, "A", "x")

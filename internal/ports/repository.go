@@ -60,6 +60,11 @@ type MemoryRepo interface {
 	FindByHash(ctx context.Context, project string, scope domain.Scope, hash string) (*domain.Memory, error)
 	// PendingResolution lista memorias pendientes por resolver (resolution = open).
 	PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error)
+	// UncheckedNormatives lista las normativas (decision/preference) vivas cuya detección de
+	// conflictos aún no corrió (conflict_checked = 0). Es la cola del barrido de detección.
+	UncheckedNormatives(ctx context.Context, limit int) ([]domain.Memory, error)
+	// SetConflictChecked marca una memoria como ya verificada por la detección de conflictos.
+	SetConflictChecked(ctx context.Context, id int64) error
 	// UpdateProject renombra el proyecto de todas las memorias que lo tengan; devuelve cuántas
 	// filas cambió. Lo usa la migración de proyecto (renombrado por cambio de remoto git).
 	UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error)

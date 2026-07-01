@@ -36,6 +36,24 @@ func TestMemoryIsPending(t *testing.T) {
 	}
 }
 
+func TestMemoryTypeIsNormative(t *testing.T) {
+	tests := []struct {
+		typ  MemoryType
+		want bool
+	}{
+		{TypeDecision, true},
+		{TypePreference, true},
+		{TypeArchitecture, false},
+		{TypeBugfix, false},
+		{TypeDiscovery, false},
+	}
+	for _, tc := range tests {
+		if got := tc.typ.IsNormative(); got != tc.want {
+			t.Errorf("%q.IsNormative() = %v, se esperaba %v", tc.typ, got, tc.want)
+		}
+	}
+}
+
 func TestMemoryValidate(t *testing.T) {
 	tests := []struct {
 		name    string

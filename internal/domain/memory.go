@@ -41,6 +41,13 @@ func DefaultScopeForType(t MemoryType) Scope {
 	return ScopeProject
 }
 
+// IsNormative indica si el tipo es normativo (decisión o preferencia): manda cómo debe
+// comportarse el proyecto o el agente. Solo estas memorias entran a la bandeja "Siempre" y son
+// las únicas sobre las que corre la detección automática de conflictos (el resto son factuales).
+func (t MemoryType) IsNormative() bool {
+	return t == TypeDecision || t == TypePreference
+}
+
 // Resolution marca si una memoria es un pendiente por resolver y en qué fase está. Es ESTADO,
 // no tipo: cualquier tipo de memoria puede llevarlo. Vacío = memoria normal (no es un pendiente).
 type Resolution string
@@ -82,6 +89,11 @@ type Memory struct {
 	DuplicateCount int    // número de llegadas idénticas
 
 	Resolution Resolution // estado de pendiente; vacío = memoria normal
+
+	// ConflictChecked indica que la detección automática de conflictos ya corrió sobre esta
+	// memoria (solo aplica a las normativas). Nace en false; el barrido lo pone en true tras
+	// juzgar sus candidatas. Alimenta el banner "normativas sin verificar" cuando sigue en false.
+	ConflictChecked bool
 
 	CreatedAt  time.Time
 	UpdatedAt  time.Time

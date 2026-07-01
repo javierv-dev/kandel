@@ -279,6 +279,11 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		if in.Resolution != nil {
 			o.Resolution = *in.Resolution
 		}
+		// Si cambió el contenido de una normativa, su análisis de conflictos quedó obsoleto: se
+		// marca para re-verificar en el próximo barrido de detección.
+		if in.Content != nil && o.Type.IsNormative() {
+			o.ConflictChecked = false
+		}
 		o.UpdatedAt = now
 		if err := o.Validate(); err != nil {
 			return err

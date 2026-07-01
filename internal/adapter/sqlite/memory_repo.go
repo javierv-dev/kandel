@@ -34,15 +34,15 @@ func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
 		INSERT INTO memories (
 			sync_id, session_id, type, title, content, tool_name, project, scope,
 			normalized_hash, revision_count, duplicate_count,
-			created_at, updated_at, last_seen_at, resolution, deleted_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			created_at, updated_at, last_seen_at, resolution, conflict_checked, deleted_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		nullString(o.SyncID), nullString(o.SessionID), string(o.Type), o.Title, o.Content,
 		nullString(o.ToolName), nullString(o.Project), string(o.Scope),
 		nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount,
 		formatTime(o.CreatedAt), formatTime(o.UpdatedAt),
-		nullTime(o.LastSeenAt), string(o.Resolution), nullTime(deletedAtValue(o)),
+		nullTime(o.LastSeenAt), string(o.Resolution), boolToInt(o.ConflictChecked), nullTime(deletedAtValue(o)),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("sqlite: insertar memoria: %w", err)
@@ -75,13 +75,13 @@ func (r *MemoryRepo) Update(ctx context.Context, id int64, o domain.Memory) (*do
 		UPDATE memories SET
 			type = ?, title = ?, content = ?, tool_name = ?, project = ?, scope = ?,
 			normalized_hash = ?, revision_count = ?, duplicate_count = ?,
-			updated_at = ?, last_seen_at = ?, resolution = ?
+			updated_at = ?, last_seen_at = ?, resolution = ?, conflict_checked = ?
 		WHERE id = ? AND deleted_at IS NULL`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		string(o.Type), o.Title, o.Content, nullString(o.ToolName), nullString(o.Project),
 		string(o.Scope), nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount,
-		formatTime(o.UpdatedAt), nullTime(o.LastSeenAt), string(o.Resolution),
+		formatTime(o.UpdatedAt), nullTime(o.LastSeenAt), string(o.Resolution), boolToInt(o.ConflictChecked),
 		id,
 	)
 	if err != nil {
@@ -246,6 +246,28 @@ func (r *MemoryRepo) PendingResolution(ctx context.Context, project string, limi
 	return r.queryMany(ctx, query, args...)
 }
 
+// UncheckedNormatives lista las normativas vivas (decision/preference) sobre las que la detección
+// automática de conflictos aún no corrió (conflict_checked = 0), de la más antigua a la más nueva.
+// Es la cola de trabajo del barrido de detección.
+func (r *MemoryRepo) UncheckedNormatives(ctx context.Context, limit int) ([]domain.Memory, error) {
+	const q = `SELECT ` + memoryColumns + ` FROM memories
+		WHERE deleted_at IS NULL
+		  AND conflict_checked = 0
+		  AND type IN ('decision', 'preference')
+		ORDER BY id ASC LIMIT ?`
+	return r.queryMany(ctx, q, normalizeLimit(limit))
+}
+
+// SetConflictChecked marca una memoria como ya verificada por la detección de conflictos. Es
+// idempotente: volver a marcarla no tiene efecto adicional.
+func (r *MemoryRepo) SetConflictChecked(ctx context.Context, id int64) error {
+	const q = `UPDATE memories SET conflict_checked = 1 WHERE id = ?`
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, id); err != nil {
+		return fmt.Errorf("sqlite: marcar conflict_checked: %w", err)
+	}
+	return nil
+}
+
 // UpdateProject renombra el proyecto de todas las memorias vivas que lo tengan; devuelve cuántas
 // filas cambió. Lo usa la migración de proyecto (renombrado por cambio de remoto git).
 func (r *MemoryRepo) UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error) {
@@ -288,6 +310,14 @@ func deletedAtValue(o domain.Memory) time.Time {
 		return *o.DeletedAt
 	}
 	return time.Time{}
+}
+
+// boolToInt convierte un bool al 0/1 que SQLite guarda en columnas INTEGER booleanas.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // normalizeLimit aplica un límite por defecto razonable cuando el solicitado no es positivo.
