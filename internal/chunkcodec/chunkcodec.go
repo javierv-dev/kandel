@@ -14,6 +14,13 @@ import (
 )
 
 // formatVersion identifica el formato del chunk; se persiste para poder evolucionarlo.
+//
+// Política de compatibilidad de sync (§21 Eje 4 del plan): Decode RECHAZA cualquier chunk cuya
+// versión no sea exactamente formatVersion. Es decir, no hay compatibilidad hacia atrás ni hacia
+// adelante entre formatos distintos: un binario solo importa chunks de su misma versión de formato.
+// Por tanto, **subir formatVersion es un cambio incompatible y obliga a subir el MAJOR del producto
+// (SemVer, §21 Eje 1)**. Leer versiones menores hacia atrás queda como mejora futura (no urge); si
+// se implementa, relaja la comparación estricta de Decode y deja de forzar el bump de MAJOR.
 const formatVersion = 1
 
 // chunk es la forma serializada: una versión y la lista ordenada de mutaciones.
