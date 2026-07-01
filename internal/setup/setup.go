@@ -21,10 +21,14 @@ var assets embed.FS
 type Agent interface {
 	// Name es el identificador del agente en la CLI (p. ej. "claude-code").
 	Name() string
-	// Install escribe los artefactos en la config del usuario (home = directorio del usuario).
-	Install(home string, out io.Writer) error
+	// Install escribe los artefactos en la config del usuario (home = directorio del usuario) y
+	// estampa la versión del binario que instala (§21 Eje 3), para detectar assets desalineados.
+	Install(home, version string, out io.Writer) error
 	// Uninstall retira los artefactos de kandel sin pisar el resto de la config del usuario.
 	Uninstall(home string, out io.Writer) error
+	// InstalledVersion devuelve la versión estampada en la última instalación. present es false si
+	// no hay marca (agente no instalado por esta vía).
+	InstalledVersion(home string) (version string, present bool, err error)
 }
 
 // registry mapea nombre → agente soportado.
@@ -48,13 +52,14 @@ func Names() []string {
 	return names
 }
 
-// Install instala el agente indicado. Devuelve un error si el nombre no está soportado.
-func Install(name, home string, out io.Writer) error {
+// Install instala el agente indicado, estampando version. Devuelve un error si el nombre no está
+// soportado.
+func Install(name, home, version string, out io.Writer) error {
 	a, ok := registry[name]
 	if !ok {
 		return fmt.Errorf("agente no soportado: %q (soportados: %v)", name, Names())
 	}
-	return a.Install(home, out)
+	return a.Install(home, version, out)
 }
 
 // Uninstall desinstala el agente indicado.
@@ -64,4 +69,14 @@ func Uninstall(name, home string, out io.Writer) error {
 		return fmt.Errorf("agente no soportado: %q (soportados: %v)", name, Names())
 	}
 	return a.Uninstall(home, out)
+}
+
+// InstalledVersion devuelve la versión estampada por la última instalación del agente indicado.
+// present es false si el agente no está instalado por esta vía.
+func InstalledVersion(name, home string) (version string, present bool, err error) {
+	a, ok := registry[name]
+	if !ok {
+		return "", false, fmt.Errorf("agente no soportado: %q (soportados: %v)", name, Names())
+	}
+	return a.InstalledVersion(home)
 }

@@ -46,7 +46,13 @@ var hookSpecs = []hookSpec{
 	{event: "SubagentStop", script: "subagent-stop.sh", timeout: 10},
 }
 
-func (c claudeCode) Install(home string, out io.Writer) error {
+// versionFile es la ruta del marcador de versión de los assets instalados (§21 Eje 3). Vive junto
+// a los scripts, bajo ~/.claude/kandel/, así el uninstall (que borra esa carpeta) lo retira solo.
+func (claudeCode) versionFile(home string) string {
+	return filepath.Join(home, ".claude", "kandel", "VERSION")
+}
+
+func (c claudeCode) Install(home, version string, out io.Writer) error {
 	_, skillFile, scriptsDir, mcpFile, settingsFile := c.paths(home)
 
 	// 1. Skill principal.
@@ -92,6 +98,13 @@ func (c claudeCode) Install(home string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "✓ config de agente escrita en %s\n", filepath.Join(confDir, "config"))
 
+	// 6. Marca de versión de los assets (§21 Eje 3): permite detectar más tarde que el binario se
+	// actualizó pero los assets quedaron viejos (banner de "reinstala" en el diagnóstico).
+	if err := writeTextFile(c.versionFile(home), version, 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "✓ versión de assets (%s) marcada en %s\n", version, c.versionFile(home))
+
 	fmt.Fprintln(out, "\nListo. Reinicia Claude Code para que tome la configuración.")
 	fmt.Fprintln(out, "Requisito: Ollama corriendo con el modelo de embeddings (por defecto bge-m3).")
 	fmt.Fprintln(out, "  Si falta: ollama pull bge-m3")
@@ -125,6 +138,19 @@ func (c claudeCode) Uninstall(home string, out io.Writer) error {
 	}
 	fmt.Fprintln(out, "✓ skills y scripts borrados")
 	return nil
+}
+
+// InstalledVersion lee el marcador de versión de los assets. present es false si no existe (agente
+// no instalado por esta vía).
+func (c claudeCode) InstalledVersion(home string) (string, bool, error) {
+	data, err := os.ReadFile(c.versionFile(home))
+	if os.IsNotExist(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("leer versión de assets: %w", err)
+	}
+	return strings.TrimSpace(string(data)), true, nil
 }
 
 // installMCP registra el servidor MCP de kandel en mcpServers.kandel.

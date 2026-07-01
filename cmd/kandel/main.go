@@ -22,7 +22,20 @@ import (
 	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/port_in/cli"
 	"github.com/javierv-dev/kandel/internal/service"
+	"github.com/javierv-dev/kandel/internal/setup"
 )
+
+// installedAssetsProbe consulta la versión de los assets instalados del agente primario
+// (claude-code) para el chequeo de desalineación (§21 Eje 3). Cumple diagnostic.InstalledAssetsProbe.
+type installedAssetsProbe struct{}
+
+func (installedAssetsProbe) InstalledVersion() (string, bool, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false, err
+	}
+	return setup.InstalledVersion("claude-code", home)
+}
 
 // version, commit y buildDate se inyectan en tiempo de compilación con
 // -ldflags "-X main.version=... -X main.commit=... -X main.buildDate=..." (§21 Eje 5).
@@ -97,6 +110,7 @@ func run(args []string) error {
 	doctor := diagnostic.NewRunner(
 		diagnostic.EmbedderCheck{Embedder: embedder},
 		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, Model: embedder.Model()},
+		diagnostic.InstalledAssetsCheck{Running: version, Probe: installedAssetsProbe{}},
 	)
 
 	app := &cli.App{

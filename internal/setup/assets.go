@@ -23,6 +23,17 @@ func writeAsset(assetPath, dest string, mode os.FileMode) error {
 	return nil
 }
 
+// writeTextFile escribe contenido de texto en dest (no embebido), creando el directorio padre.
+func writeTextFile(dest, content string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("crear directorio de %q: %w", dest, err)
+	}
+	if err := os.WriteFile(dest, []byte(content), mode); err != nil {
+		return fmt.Errorf("escribir %q: %w", dest, err)
+	}
+	return nil
+}
+
 // writeAssetTree copia todos los archivos de un directorio embebido (assetDir) a destDir con el
 // modo dado. Devuelve cuántos archivos escribió.
 func writeAssetTree(assetDir, destDir string, mode os.FileMode) (int, error) {

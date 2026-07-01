@@ -30,7 +30,7 @@ func (installCmd) Run(_ context.Context, args []string, app *App) error {
 	if err != nil {
 		return fmt.Errorf("no se pudo resolver el directorio del usuario: %w", err)
 	}
-	return setup.Install(name, home, app.Out)
+	return setup.Install(name, home, app.Version, app.Out)
 }
 
 // uninstallCmd retira la integración de kandel de un agente, sin pisar su configuración propia.

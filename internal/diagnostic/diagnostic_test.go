@@ -92,9 +92,52 @@ func TestPendingEmbeddingsNilVectorsSkips(t *testing.T) {
 	}
 }
 
+// fakeAssets cumple InstalledAssetsProbe.
+type fakeAssets struct {
+	version string
+	present bool
+	err     error
+}
+
+func (f fakeAssets) InstalledVersion() (string, bool, error) {
+	return f.version, f.present, f.err
+}
+
+func TestInstalledAssetsMismatchIsWarning(t *testing.T) {
+	f := InstalledAssetsCheck{Running: "v2.0.0", Probe: fakeAssets{version: "v1.0.0", present: true}}.Run(context.Background())
+	if len(f) != 1 || f[0].Severity != SeverityWarning {
+		t.Fatalf("assets desalineados deben dar warning: %+v", f)
+	}
+	if f[0].NextStep == "" {
+		t.Error("el warning de desalineación debe sugerir reinstalar")
+	}
+}
+
+func TestInstalledAssetsMatchIsInfo(t *testing.T) {
+	f := InstalledAssetsCheck{Running: "v2.0.0", Probe: fakeAssets{version: "v2.0.0", present: true}}.Run(context.Background())
+	if len(f) != 1 || f[0].Severity != SeverityInfo {
+		t.Fatalf("assets al día deben dar info: %+v", f)
+	}
+}
+
+func TestInstalledAssetsNotPresentIsInfo(t *testing.T) {
+	f := InstalledAssetsCheck{Running: "v2.0.0", Probe: fakeAssets{present: false}}.Run(context.Background())
+	if len(f) != 1 || f[0].Severity != SeverityInfo {
+		t.Fatalf("sin instalación previa debe dar info: %+v", f)
+	}
+}
+
+func TestInstalledAssetsNilProbeSkips(t *testing.T) {
+	if f := (InstalledAssetsCheck{Running: "v2.0.0"}).Run(context.Background()); f != nil {
+		t.Errorf("sin probe no debe producir hallazgos: %+v", f)
+	}
+}
+
 var (
-	_ EmbedderProbe     = fakeEmbedder{}
-	_ ports.VectorIndex = fakeVectors{}
-	_ Check             = EmbedderCheck{}
-	_ Check             = PendingEmbeddingsCheck{}
+	_ EmbedderProbe        = fakeEmbedder{}
+	_ ports.VectorIndex    = fakeVectors{}
+	_ InstalledAssetsProbe = fakeAssets{}
+	_ Check                = EmbedderCheck{}
+	_ Check                = PendingEmbeddingsCheck{}
+	_ Check                = InstalledAssetsCheck{}
 )

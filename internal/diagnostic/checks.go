@@ -48,6 +48,58 @@ func (c EmbedderCheck) Run(ctx context.Context) []Finding {
 	}}
 }
 
+// InstalledAssetsProbe reporta la versión de los assets del agente ya instalados (skill/hooks/MCP).
+// Lo cumple un adaptador sobre internal/setup; se inyecta para no acoplar diagnostic al instalador.
+type InstalledAssetsProbe interface {
+	InstalledVersion() (version string, present bool, err error)
+}
+
+// InstalledAssetsCheck compara la versión de los assets instalados con la del binario en ejecución
+// (§21 Eje 3). Si difieren, el protocolo del agente puede haber quedado viejo respecto al binario
+// (típico tras actualizar kandel sin reinstalar). Es warning, no error: kandel sigue operando.
+type InstalledAssetsCheck struct {
+	Running string // versión del binario en ejecución
+	Probe   InstalledAssetsProbe
+}
+
+// Name identifica el chequeo.
+func (InstalledAssetsCheck) Name() string { return "installed_assets" }
+
+// Run compara versiones. Sin probe o sin instalación previa no hay nada que verificar.
+func (c InstalledAssetsCheck) Run(_ context.Context) []Finding {
+	if c.Probe == nil {
+		return nil
+	}
+	installed, present, err := c.Probe.InstalledVersion()
+	if err != nil {
+		return []Finding{{
+			Check:    c.Name(),
+			Severity: SeverityWarning,
+			Message:  "no se pudo leer la versión de los assets instalados: " + err.Error(),
+		}}
+	}
+	if !present {
+		return []Finding{{
+			Check:    c.Name(),
+			Severity: SeverityInfo,
+			Message:  "no se detectó una instalación de agente por kandel",
+		}}
+	}
+	if installed != c.Running {
+		return []Finding{{
+			Check:    c.Name(),
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("los assets instalados (%s) no coinciden con el binario (%s)", installed, c.Running),
+			NextStep: "reinstala para alinear skill/hooks/MCP con el binario: kandel install claude-code",
+		}}
+	}
+	return []Finding{{
+		Check:    c.Name(),
+		Severity: SeverityInfo,
+		Message:  fmt.Sprintf("los assets instalados están al día (%s)", installed),
+	}}
+}
+
 // PendingEmbeddingsCheck cuenta cuántas memorias vivas no tienen vector al día (faltante o de otro
 // modelo). No es un fallo: son memorias accesibles por lectura directa pero invisibles a la
 // búsqueda semántica hasta reindexarlas. Por eso es info/warning, no error.

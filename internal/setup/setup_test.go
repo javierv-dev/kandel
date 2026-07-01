@@ -23,7 +23,7 @@ func readJSON(t *testing.T, path string) map[string]any {
 
 func TestClaudeCodeInstall(t *testing.T) {
 	home := t.TempDir()
-	if err := Install("claude-code", home, &bytes.Buffer{}); err != nil {
+	if err := Install("claude-code", home, "v9.9.9", &bytes.Buffer{}); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 
@@ -73,10 +73,10 @@ func TestClaudeCodeInstall(t *testing.T) {
 
 func TestClaudeCodeInstallIdempotent(t *testing.T) {
 	home := t.TempDir()
-	if err := Install("claude-code", home, &bytes.Buffer{}); err != nil {
+	if err := Install("claude-code", home, "v9.9.9", &bytes.Buffer{}); err != nil {
 		t.Fatalf("Install 1: %v", err)
 	}
-	if err := Install("claude-code", home, &bytes.Buffer{}); err != nil {
+	if err := Install("claude-code", home, "v9.9.9", &bytes.Buffer{}); err != nil {
 		t.Fatalf("Install 2: %v", err)
 	}
 	settings := readJSON(t, filepath.Join(home, ".claude", "settings.json"))
@@ -110,7 +110,7 @@ func TestClaudeCodeUninstallPreservesUserConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Install("claude-code", home, &bytes.Buffer{}); err != nil {
+	if err := Install("claude-code", home, "v9.9.9", &bytes.Buffer{}); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	if err := Uninstall("claude-code", home, &bytes.Buffer{}); err != nil {
@@ -148,7 +148,35 @@ func TestClaudeCodeUninstallPreservesUserConfig(t *testing.T) {
 }
 
 func TestInstallUnknownAgent(t *testing.T) {
-	if err := Install("inexistente", t.TempDir(), &bytes.Buffer{}); err == nil {
+	if err := Install("inexistente", t.TempDir(), "v9.9.9", &bytes.Buffer{}); err == nil {
 		t.Error("un agente no soportado debe dar error")
+	}
+}
+
+// TestInstalledVersionMarker verifica el ciclo del marcador de versión (§21 Eje 3): sin instalar no
+// hay marca; tras instalar, InstalledVersion devuelve la versión estampada; tras desinstalar, se va.
+func TestInstalledVersionMarker(t *testing.T) {
+	home := t.TempDir()
+
+	if _, present, err := InstalledVersion("claude-code", home); err != nil || present {
+		t.Fatalf("sin instalar no debe haber marca: present=%v err=%v", present, err)
+	}
+
+	if err := Install("claude-code", home, "v1.2.3", &bytes.Buffer{}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	got, present, err := InstalledVersion("claude-code", home)
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if !present || got != "v1.2.3" {
+		t.Fatalf("versión instalada = %q present=%v, se esperaba v1.2.3", got, present)
+	}
+
+	if err := Uninstall("claude-code", home, &bytes.Buffer{}); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if _, present, _ := InstalledVersion("claude-code", home); present {
+		t.Fatalf("tras desinstalar no debe quedar marca de versión")
 	}
 }
