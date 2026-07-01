@@ -12,6 +12,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+
+	"github.com/javierv-dev/kandel/internal/setup"
 )
 
 // runner agrupa el estado común de un hook: el cliente HTTP del daemon, el destino de salida
@@ -21,14 +24,28 @@ type runner struct {
 	client *client
 	out    io.Writer
 	ctx    context.Context
+
+	// running es la versión del binario en ejecución; installedVersion resuelve la versión de los
+	// assets instalados (§21 Eje 3). Juntas alimentan el banner de desalineación en SessionStart.
+	// installedVersion es un campo (no una llamada directa) para poder inyectar un doble en tests.
+	running          string
+	installedVersion func() (version string, present bool, err error)
 }
 
 // Run ejecuta el hook indicado por event, leyendo el JSON del agente de stdin y escribiendo la
-// salida para el agente en out. NUNCA debe devolver error para eventos válidos: un fallo del hook
-// (exit≠0) puede bloquear el mensaje del usuario en el agente. Solo devuelve error ante un evento
-// desconocido (error de configuración del instalador, no del flujo normal).
-func Run(ctx context.Context, event string, stdin io.Reader, out io.Writer) error {
-	r := &runner{event: event, client: newClient(), out: out, ctx: ctx}
+// salida para el agente en out. version es la del binario (para el banner de desalineación de
+// assets). NUNCA debe devolver error para eventos válidos: un fallo del hook (exit≠0) puede bloquear
+// el mensaje del usuario en el agente. Solo devuelve error ante un evento desconocido (error de
+// configuración del instalador, no del flujo normal).
+func Run(ctx context.Context, event, version string, stdin io.Reader, out io.Writer) error {
+	r := &runner{
+		event:            event,
+		client:           newClient(),
+		out:              out,
+		ctx:              ctx,
+		running:          version,
+		installedVersion: defaultInstalledVersion,
+	}
 	payload := parsePayload(stdin)
 
 	switch event {
@@ -45,4 +62,14 @@ func Run(ctx context.Context, event string, stdin io.Reader, out io.Writer) erro
 	default:
 		return fmt.Errorf("hook desconocido: %q", event)
 	}
+}
+
+// defaultInstalledVersion resuelve la versión de los assets instalados del agente primario
+// (claude-code) a partir del home del usuario. Es el valor por defecto de runner.installedVersion.
+func defaultInstalledVersion() (string, bool, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false, err
+	}
+	return setup.InstalledVersion("claude-code", home)
 }

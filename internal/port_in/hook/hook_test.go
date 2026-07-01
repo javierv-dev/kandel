@@ -143,6 +143,44 @@ func TestSessionStartWithoutSessionIDDoesNotCreate(t *testing.T) {
 	}
 }
 
+func TestSessionStartAssetMismatchBanner(t *testing.T) {
+	d := newStubDaemon(t)
+
+	// Desalineado: assets v1.0.0 vs binario v2.0.0 → banner presente.
+	r, out := newTestRunner(t, "session-start", d)
+	r.running = "v2.0.0"
+	r.installedVersion = func() (string, bool, error) { return "v1.0.0", true, nil }
+	if err := r.sessionStart(payload{SessionID: "sess-mm", CWD: t.TempDir()}); err != nil {
+		t.Fatalf("sessionStart: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "kandel desactualizado") || !strings.Contains(s, "kandel install claude-code") {
+		t.Errorf("faltó el banner de desalineación:\n%s", s)
+	}
+
+	// Alineado: misma versión → sin banner.
+	r2, out2 := newTestRunner(t, "session-start", d)
+	r2.running = "v2.0.0"
+	r2.installedVersion = func() (string, bool, error) { return "v2.0.0", true, nil }
+	if err := r2.sessionStart(payload{SessionID: "sess-ok", CWD: t.TempDir()}); err != nil {
+		t.Fatalf("sessionStart: %v", err)
+	}
+	if strings.Contains(out2.String(), "kandel desactualizado") {
+		t.Errorf("no debe haber banner con versiones alineadas:\n%s", out2.String())
+	}
+
+	// Sin instalación previa (present=false) → sin banner (no molesta).
+	r3, out3 := newTestRunner(t, "session-start", d)
+	r3.running = "v2.0.0"
+	r3.installedVersion = func() (string, bool, error) { return "", false, nil }
+	if err := r3.sessionStart(payload{SessionID: "sess-none", CWD: t.TempDir()}); err != nil {
+		t.Fatalf("sessionStart: %v", err)
+	}
+	if strings.Contains(out3.String(), "kandel desactualizado") {
+		t.Errorf("sin instalación no debe haber banner:\n%s", out3.String())
+	}
+}
+
 func TestUserPromptSubmitSavesPromptAndFirstMessage(t *testing.T) {
 	d := newStubDaemon(t)
 	sid := fmt.Sprintf("sess-prompt-%d", time.Now().UnixNano())

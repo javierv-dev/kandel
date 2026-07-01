@@ -27,7 +27,7 @@ func (hookCmd) Run(ctx context.Context, args []string, app *App) error {
 	}
 	// Un hook NUNCA debe terminar con error: un exit≠0 puede bloquear el mensaje del usuario en el
 	// agente. Cualquier fallo se reporta por stderr (no bloquea) y se devuelve nil.
-	if err := hook.Run(ctx, args[0], os.Stdin, app.Out); err != nil {
+	if err := hook.Run(ctx, args[0], app.Version, os.Stdin, app.Out); err != nil {
 		fmt.Fprintln(app.Err, "kandel hook:", err)
 	}
 	return nil
