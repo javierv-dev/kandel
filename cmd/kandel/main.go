@@ -24,9 +24,14 @@ import (
 	"github.com/javierv-dev/kandel/internal/service"
 )
 
-// version se inyecta en tiempo de compilación con -ldflags "-X main.version=...".
-// Mantiene el valor "dev" en construcciones locales sin release.
-var version = "dev"
+// version, commit y buildDate se inyectan en tiempo de compilación con
+// -ldflags "-X main.version=... -X main.commit=... -X main.buildDate=..." (§21 Eje 5).
+// En construcciones locales sin release conservan estos valores por defecto.
+var (
+	version   = "dev"
+	commit    = ""
+	buildDate = ""
+)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -49,6 +54,10 @@ func run(args []string) error {
 		return err
 	}
 	defer db.Close()
+
+	// Versión de esquema ya migrada, para el diagnóstico de `kandel version` (§21 Eje 5). Si la
+	// lectura falla queda en 0; no es motivo para abortar el arranque.
+	schemaVersion, _ := db.SchemaVersion(ctx)
 
 	// Adaptadores concretos detrás de los ports.
 	clk := clock.System{}
@@ -106,6 +115,9 @@ func run(args []string) error {
 		Out:       os.Stdout,
 		Err:       os.Stderr,
 		Version:   version,
+		Commit:    commit,
+		BuildDate: buildDate,
+		Schema:    schemaVersion,
 	}
 	return cli.Dispatch(ctx, args, app)
 }

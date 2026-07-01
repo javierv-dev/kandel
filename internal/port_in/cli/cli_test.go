@@ -186,8 +186,15 @@ func TestDispatchVersion(t *testing.T) {
 	if err := Dispatch(context.Background(), []string{"version"}, app); err != nil {
 		t.Fatalf("version devolvió error: %v", err)
 	}
-	if !strings.Contains(out.String(), "kandel test") {
-		t.Fatalf("salida de version inesperada: %q", out.String())
+	got := out.String()
+	if !strings.Contains(got, "kandel test") {
+		t.Fatalf("salida de version inesperada: %q", got)
+	}
+	// Metadatos de build (§21 Eje 5): commit/fecha sin inyectar => "desconocido"; schema presente.
+	for _, want := range []string{"commit:  desconocido", "built:   desconocido", "schema:  0"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("la salida de version no contiene %q: %q", want, got)
+		}
 	}
 }
 

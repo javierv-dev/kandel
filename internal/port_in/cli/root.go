@@ -117,10 +117,16 @@ type App struct {
 	Project   ProjectUseCases
 	Seed      SeedUseCases
 
-	In      io.Reader // entrada para confirmaciones interactivas (por defecto os.Stdin)
-	Out     io.Writer
-	Err     io.Writer
-	Version string
+	In  io.Reader // entrada para confirmaciones interactivas (por defecto os.Stdin)
+	Out io.Writer
+	Err io.Writer
+
+	// Metadatos de build para `kandel version` (§21 Eje 5). Version es el SemVer; Commit y
+	// BuildDate se inyectan por ldflags (vacíos en dev); Schema es la versión de esquema migrada.
+	Version   string
+	Commit    string
+	BuildDate string
+	Schema    int
 }
 
 // Command es un subcomando de la CLI. Name es la palabra que lo invoca; Synopsis es la línea
@@ -165,7 +171,7 @@ func Dispatch(ctx context.Context, args []string, app *App) error {
 		printUsage(app)
 		return nil
 	case "version", "--version", "-v":
-		fmt.Fprintf(app.Out, "kandel %s\n", app.Version)
+		printVersion(app)
 		return nil
 	}
 	cmd, ok := registry[name]
@@ -175,6 +181,23 @@ func Dispatch(ctx context.Context, args []string, app *App) error {
 		return fmt.Errorf("comando desconocido: %s", name)
 	}
 	return cmd.Run(ctx, args[1:], app)
+}
+
+// printVersion imprime la versión y los metadatos de build (§21 Eje 5): commit y fecha (vacíos
+// en construcciones dev => "desconocido") y la versión de esquema de la base ya migrada.
+func printVersion(app *App) {
+	fmt.Fprintf(app.Out, "kandel %s\n", app.Version)
+	fmt.Fprintf(app.Out, "commit:  %s\n", orUnknown(app.Commit))
+	fmt.Fprintf(app.Out, "built:   %s\n", orUnknown(app.BuildDate))
+	fmt.Fprintf(app.Out, "schema:  %d\n", app.Schema)
+}
+
+// orUnknown devuelve "desconocido" para cadenas vacías (metadatos no inyectados en dev).
+func orUnknown(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "desconocido"
+	}
+	return s
 }
 
 // printUsage imprime la ayuda general listando los comandos registrados en orden alfabético.

@@ -167,6 +167,12 @@ func (d *DB) migrate(ctx context.Context) error {
 	return nil
 }
 
+// SchemaVersion expone la versión de esquema registrada en la base (PRAGMA user_version), para
+// diagnóstico (p. ej. `kandel version`, §21 Eje 5). Es la versión ya migrada, no la declarada.
+func (d *DB) SchemaVersion(ctx context.Context) (int, error) {
+	return d.schemaVersion(ctx)
+}
+
 // schemaVersion lee la versión de esquema registrada en la base (0 en una base nueva).
 func (d *DB) schemaVersion(ctx context.Context) (int, error) {
 	var v int
