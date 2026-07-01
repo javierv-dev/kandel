@@ -68,9 +68,15 @@ Llama a `mem_save` INMEDIATAMENTE y SIN QUE TE LO PIDAN tras cualquiera de estos
 > "¿Acabo yo o el usuario de tomar una decisión, confirmar una recomendación, expresar una preferencia, arreglar un bug, aprender algo no obvio o establecer una convención? Si es así, llama a mem_save AHORA."
 
 Formato para `mem_save`:
-- **title**: Verbo + qué — corto y buscable (p. ej. "Arreglado N+1 en UserList", "Elegido Zustand sobre Redux")
-- **type**: bugfix | decision | preference | architecture | discovery
-- **scope**: `project` (def.) | `personal`
+- **title**: Verbo + qué — corto y buscable (p. ej. "Arreglado N+1 en UserList", "Elegido Zustand sobre Redux"). El título es el ANCLA del asunto (guía la búsqueda y la detección de conflictos): hazlo específico.
+- **type** — enruta por lo que ES la memoria:
+  - `decision` — una decisión tomada (incluye restricciones y la orientación/misión del proyecto)
+  - `preference` — un gusto o convención del usuario (idioma, estilo). Suele ser global
+  - `architecture` — estructura del sistema y patrones/idiomas de código recurrentes
+  - `bugfix` — la causa raíz de un bug resuelto
+  - `discovery` — un hecho del sistema/entorno, aprendizaje o configuración (CATCH-ALL, por defecto)
+- **scope**: `project` (def.) | `global`. Usa `global` para lo que aplica en TODOS tus proyectos (típico de `preference`); `project` para lo específico de este repo. (Ya no existe `personal`.)
+- **resolution** (opcional): pon `open` cuando el usuario deje algo SIN resolver (aparecerá en la bandeja "Pendientes"). Para cerrarlo, guarda una memoria NUEVA que lo reemplace, en vez de editar la vieja.
 - **content**:
   **What**: Una frase — qué se hizo
   **Why**: Qué lo motivó (petición del usuario, bug, rendimiento, etc.)
@@ -81,6 +87,21 @@ Formato para `mem_save`:
 
 - Temas distintos NO deben sobrescribirse entre sí (ejemplo: decisión de arquitectura vs bugfix)
 - Si ya conoces el ID exacto que corregir, usa `mem_update`
+
+## FILTRO DE CAPTURA (qué merece memoria)
+
+Por defecto, guarda de más: el descarte lo hacen dos compuertas de juicio.
+
+**Compuerta A — ¿entra?** ¿Es una decisión / convención / preferencia / restricción / bugfix con causa
+raíz / descubrimiento no obvio / gotcha / patrón / confirmación o rechazo del usuario / dirección
+concluida? Si NINGUNO aplica → no guardes.
+
+**Compuerta B — ¿es trivial?** Descarta si CUALQUIERA es "sí":
+1. ¿Ya se deriva del código, git o CLAUDE.md? (no dupliques el repo)
+2. ¿Solo importa para esta conversación? (efímero)
+3. ¿Es genérico/obvio, no específico de este proyecto?
+4. ¿Le falta un "por qué" o contenido sustantivo?
+Si B lo descartaría pero el usuario insiste, guarda SOLO el "por qué" no obvio.
 
 ## CUÁNDO BUSCAR EN LA MEMORIA
 
@@ -93,6 +114,20 @@ inyectado no baste. Cuando el usuario pida recordar algo — cualquier variació
 3. Usa `mem_context` solo para volver a listar lo reciente si el contexto inyectado se truncó o se perdió
 
 NO cargues ni llames estas tools en peticiones triviales que no necesitan memoria previa.
+
+## AL ARRANCAR — actúa sobre el contexto inyectado (viene en bandejas)
+
+El bloque de contexto que se te inyecta al iniciar la sesión viene organizado en bandejas. Cada una
+pide una acción distinta:
+
+- **Siempre presente (normativas)**: son las reglas vigentes del proyecto y del usuario. Respétalas
+  durante toda la sesión (no hace falta re-buscarlas).
+- **Pendientes por resolver**: cosas que quedaron abiertas. Al arrancar, revísalas y ofrece retomarlas.
+- **Recientes**: es una ventana CHICA de hechos recientes (búsqueda perezosa). Si vas a trabajar en un
+  tema y necesitas más contexto factual del que aparece ahí, llama a `mem_search` para traerlo.
+- **Salud de memoria**: si aparecen avisos ("normativas sin verificar contra conflictos", "demasiadas
+  normativas"), coméntaselos al usuario. Las normativas se obedecen igual; el aviso es por
+  mantenimiento o por riesgo de contradicción aún no comprobada.
 
 ## PROTOCOLO DE CIERRE DE SESIÓN (obligatorio)
 

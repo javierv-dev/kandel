@@ -26,11 +26,18 @@ Llama a ` + "`mem_save`" + ` INMEDIATAMENTE después de CUALQUIERA de estos:
 
 **Autochequeo después de CADA tarea**: "¿Acabo yo o el usuario de tomar una decisión, confirmar una recomendación, expresar una preferencia, arreglar un bug, aprender algo o establecer una convención? Si es así → mem_save AHORA."
 
+Al guardar, enruta el type por lo que ES: decisión→decision, gusto/convención del usuario→preference (suele global), patrón/idioma de código o estructura→architecture, causa raíz de bug→bugfix, hecho/aprendizaje/config→discovery (default). scope=global solo si aplica a TODOS tus proyectos; si no, project. Marca resolution=open si el usuario deja algo sin resolver.
+
 ### BUSCA EN LA MEMORIA cuando (solo cuando de verdad ayude — no en peticiones triviales):
 Las sesiones y memorias recientes YA se inyectan más abajo al iniciar la sesión, así que NO necesitas
 llamar a mem_context solo para verlas. Usa mem_search para un recall MÁS PROFUNDO o ESPECÍFICO:
 - El usuario pide recordar algo ("recuerda", "qué hicimos", o el equivalente en su idioma)
 - Vas a trabajar en algo que quizá ya se hizo antes y el contexto inyectado no basta
+
+### EL CONTEXTO DE ABAJO VIENE EN BANDEJAS — actúa sobre ellas:
+Respeta las "normativas" (reglas vigentes). Revisa "Pendientes por resolver" y ofrece retomarlas.
+"Recientes" es una ventana chica: usa mem_search para más contexto factual del tema. Si hay avisos en
+"Salud de memoria" (normativas sin verificar / demasiadas), coméntaselos al usuario.
 
 ### CIERRE DE SESIÓN — antes de decir "listo":
 Llama a ` + "`mem_session_summary`" + ` con: Objetivo, Descubrimientos, Logrado, Próximos pasos, Archivos relevantes.`
