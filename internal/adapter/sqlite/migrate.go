@@ -1,9 +1,13 @@
 package sqlite
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
-// schema es el esquema declarativo del proyecto nuevo. Todo es idempotente (IF NOT EXISTS):
-// correr migrate() sobre una base vacía o ya existente es seguro y no destruye datos.
+// schemaV1 es el esquema base de kandel (línea base v1.0.0, §21 del plan). Todo es idempotente
+// (IF NOT EXISTS): correr esta migración sobre una base vacía o ya existente es seguro y no
+// destruye datos.
 //
 // Diferencias deliberadas frente al proyecto viejo (ver §6.bis del plan):
 //   - NO hay FTS5 (ni tabla virtual memories_fts ni sus triggers): la búsqueda deja de ser
@@ -11,7 +15,7 @@ import "context"
 //     cada memoria; el coseno se calcula en Go puro, ver vector_index.go).
 //   - Los timestamps se guardan como TEXT en formato "2006-01-02 15:04:05" (UTC), fijados por
 //     la capa de servicio vía Clock; el adaptador no usa datetime('now') salvo en el borrado.
-const schema = `
+const schemaV1 = `
 CREATE TABLE IF NOT EXISTS sessions (
 	id         TEXT PRIMARY KEY,
 	project    TEXT NOT NULL,
@@ -125,8 +129,68 @@ CREATE TABLE IF NOT EXISTS memory_vectors (
 );
 `
 
-// migrate aplica el esquema declarativo. Idempotente: cada sentencia usa IF NOT EXISTS.
+// migration es un paso de evolución del esquema, identificado por un número de versión
+// estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
+// de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
+type migration struct {
+	version int
+	sql     string
+}
+
+// migrations es la lista ordenada de migraciones del esquema. REGLAS (§21.C del plan):
+//   - **Additivas, nunca destructivas:** añadir tablas/columnas, jamás DROP/rename directo
+//     (rename/drop => crear-copiar-swap en una migración explícita).
+//   - **Append-only:** solo se AÑADEN entradas al final, con version = anterior + 1. Nunca se
+//     edita una migración ya publicada: rompería las bases que ya la aplicaron.
+//   - La v1 es el esquema base (§21): todo idempotente (IF NOT EXISTS), seguro sobre una base
+//     recién creada o preexistente (user_version 0 => 1 sin perder datos).
+var migrations = []migration{
+	{version: 1, sql: schemaV1},
+}
+
+// migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base
+// (PRAGMA user_version), cada una en su propia transacción, y avanza user_version. Es seguro
+// correrlo en cada arranque: las migraciones ya aplicadas se saltan y no destruye datos.
 func (d *DB) migrate(ctx context.Context) error {
-	_, err := d.sql.ExecContext(ctx, schema)
-	return err
+	current, err := d.schemaVersion(ctx)
+	if err != nil {
+		return err
+	}
+	for _, m := range migrations {
+		if m.version <= current {
+			continue
+		}
+		if err := d.applyMigration(ctx, m); err != nil {
+			return fmt.Errorf("migración v%d: %w", m.version, err)
+		}
+	}
+	return nil
+}
+
+// schemaVersion lee la versión de esquema registrada en la base (0 en una base nueva).
+func (d *DB) schemaVersion(ctx context.Context) (int, error) {
+	var v int
+	if err := d.sql.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
+		return 0, fmt.Errorf("leer user_version: %w", err)
+	}
+	return v, nil
+}
+
+// applyMigration ejecuta el SQL de una migración y avanza user_version en una sola transacción:
+// o se aplica entera o no se aplica nada (atomicidad ante fallos a mitad de camino).
+func (d *DB) applyMigration(ctx context.Context, m migration) error {
+	tx, err := d.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, m.sql); err != nil {
+		return err
+	}
+	// PRAGMA no admite parámetros ligados; m.version es un int controlado por nosotros (no hay
+	// riesgo de inyección).
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
