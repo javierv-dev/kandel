@@ -394,6 +394,31 @@ func (f *fakeEmbedding) waitWarmup(t *testing.T) {
 	}
 }
 
+// TestShutdownEndpoint comprueba que, con OnShutdown cableado, POST /shutdown responde 202 y dispara
+// el cierre (la goroutine puede correr tras la respuesta, así que se espera por un canal).
+func TestShutdownEndpoint(t *testing.T) {
+	fired := make(chan struct{}, 1)
+	svc := Services{OnShutdown: func() { fired <- struct{}{} }}
+	rec := do(t, svc, http.MethodPost, "/shutdown", "")
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, se esperaba 202", rec.Code)
+	}
+	select {
+	case <-fired:
+	case <-time.After(time.Second):
+		t.Fatal("OnShutdown no se disparó")
+	}
+}
+
+// TestShutdownDisabledWhenNil comprueba que, sin OnShutdown, la ruta /shutdown ni siquiera existe
+// (el mux responde 405 al método porque no hay handler registrado para ese patrón).
+func TestShutdownDisabledWhenNil(t *testing.T) {
+	rec := do(t, Services{}, http.MethodPost, "/shutdown", "")
+	if rec.Code == http.StatusAccepted {
+		t.Fatalf("la ruta /shutdown no debería existir sin OnShutdown; status = %d", rec.Code)
+	}
+}
+
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
 	_ SessionPort   = (*fakeSession)(nil)

@@ -67,6 +67,13 @@ type Services struct {
 	Context   ContextPort
 	Project   ProjectPort
 	Embedding EmbeddingPort
+
+	// OnShutdown, si no es nil, habilita el endpoint POST /shutdown que apaga el daemon de forma
+	// ordenada (lo usa `kandel stop`). El daemon corre la imagen del propio binario y lo mantiene
+	// bloqueado en Windows; pararlo libera el .exe para poder actualizarlo. El wiring vive en
+	// serve.go; en los tests y en usos sin daemon se deja nil y la ruta NO se registra (así no se
+	// expone el apagado por accidente).
+	OnShutdown func()
 }
 
 // NewHandler construye el enrutador con todas las rutas registradas. Devuelve un http.Handler
@@ -100,10 +107,26 @@ func NewHandler(svc Services) http.Handler {
 	mux.HandleFunc("POST /embeddings/backfill", handleBackfill(svc))
 	mux.HandleFunc("POST /embeddings/warmup", handleWarmup(svc))
 
+	// Apagado ordenado (lo pide `kandel stop`). Solo se registra si el daemon cableó el disparador,
+	// así el endpoint no existe en los tests ni en usos sin daemon.
+	if svc.OnShutdown != nil {
+		mux.HandleFunc("POST /shutdown", handleShutdown(svc.OnShutdown))
+	}
+
 	return mux
 }
 
 // handleHealth responde un OK simple para sondas de vida.
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleShutdown responde 202 y dispara el apagado ordenado del daemon en segundo plano. El
+// disparo va en una goroutine para que la respuesta llegue al cliente antes de que el servidor
+// deje de aceptar conexiones (http.Server.Shutdown espera a que esta misma petición termine).
+func handleShutdown(trigger func()) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "apagando"})
+		go trigger()
+	}
 }

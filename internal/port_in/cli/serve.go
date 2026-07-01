@@ -2,12 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	nethttp "net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	httpadapter "github.com/javierv-dev/kandel/internal/port_in/http"
@@ -55,7 +57,11 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 		*addr = "127.0.0.1:" + resolvePort()
 	}
 
-	handler := httpadapter.NewHandler(httpadapter.Services{
+	// srv se declara antes de construir el handler para que el disparador de apagado (OnShutdown)
+	// pueda cerrarlo de forma ordenada. sync.Once protege contra varias peticiones a /shutdown.
+	srv := &nethttp.Server{Addr: *addr}
+	var shutdownOnce sync.Once
+	srv.Handler = httpadapter.NewHandler(httpadapter.Services{
 		Memory:    app.Memory,
 		Session:   app.Session,
 		Lifecycle: app.Lifecycle,
@@ -63,6 +69,15 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 		Context:   app.Context,
 		Project:   app.Project,
 		Embedding: app.Embedding,
+		// OnShutdown apaga el daemon con drenaje acotado. Lo usa `kandel stop` para liberar el
+		// binario en ejecución (en Windows el daemon bloquea el .exe e impide actualizarlo).
+		OnShutdown: func() {
+			shutdownOnce.Do(func() {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = srv.Shutdown(shutdownCtx)
+			})
+		},
 	})
 
 	// Barrido periódico de backfill: reembebe en segundo plano las memorias que se guardaron sin
@@ -75,8 +90,12 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 	}
 
 	fmt.Fprintf(app.Out, "kandel HTTP escuchando en http://%s\n", *addr)
-	// ListenAndServe bloquea hasta que el proceso termina o falla.
-	return nethttp.ListenAndServe(*addr, handler)
+	// ListenAndServe bloquea hasta que el proceso termina o falla. Un apagado ordenado (vía
+	// /shutdown → srv.Shutdown) devuelve ErrServerClosed, que aquí es salida limpia, no error.
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 // resolveBackfillInterval devuelve el intervalo del barrido de backfill: KANDEL_BACKFILL_INTERVAL
