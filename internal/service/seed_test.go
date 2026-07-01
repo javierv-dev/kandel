@@ -49,9 +49,10 @@ func genFactory(g ports.AgentGenerator) func(string, string) ports.AgentGenerato
 func TestSeedGenerateParsesAndFiltersCandidates(t *testing.T) {
 	gen := &seedFakeGenerator{out: `[
 		{"type":"decision","scope":"project","title":"Motor de BD","content":"**What** Postgres"},
-		{"type":"discovery","scope":"project","title":"trivial","content":"se descarta por tipo"},
+		{"type":"bugfix","scope":"project","title":"fix puntual","content":"se descarta por tipo"},
 		{"type":"architecture","title":"Hexagonal","content":"capas domain/ports/service"},
-		{"type":"discovery","scope":"project","title":"","content":"sin título, se descarta"}
+		{"type":"discovery","scope":"project","title":"","content":"sin título, se descarta"},
+		{"type":"discovery","scope":"project","title":"Gotcha de plataforma","content":"límite no obvio"}
 	]`}
 	svc := NewSeedService(&seedFakeSaver{}, genFactory(gen))
 
@@ -59,10 +60,12 @@ func TestSeedGenerateParsesAndFiltersCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	if len(cands) != 2 {
-		t.Fatalf("se esperaban 2 candidatos válidos, hay %d: %+v", len(cands), cands)
+	// Válidos: decision, architecture y discovery (gotcha). Se descartan el bugfix (tipo no
+	// permitido) y el discovery sin título.
+	if len(cands) != 3 {
+		t.Fatalf("se esperaban 3 candidatos válidos, hay %d: %+v", len(cands), cands)
 	}
-	if cands[0].Type != "decision" || cands[1].Type != "architecture" {
+	if cands[0].Type != "decision" || cands[1].Type != "architecture" || cands[2].Type != "discovery" {
 		t.Errorf("tipos inesperados: %+v", cands)
 	}
 	// El alcance ausente cae a project.

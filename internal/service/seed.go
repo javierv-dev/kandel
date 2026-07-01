@@ -21,12 +21,15 @@ const seedToolName = "kandel-seed"
 //go:embed seed_prompt.txt
 var seedPrompt string
 
-// allowedSeedTypes restringe los tipos que el seed acepta a las decisiones de alto valor (alcance de
-// la Fase 12, §19 del plan). Un candidato con otro tipo se descarta.
+// allowedSeedTypes restringe los tipos que el seed acepta a las memorias de alto valor de orientación
+// (alcance de la Fase 12, §19 del plan). Un candidato con otro tipo se descarta. Se incluye
+// "discovery" acotado a gotchas/restricciones no obvias y duraderas (el prompt lo delimita); se
+// excluye "bugfix" por transitorio y derivable del código.
 var allowedSeedTypes = map[domain.MemoryType]bool{
 	domain.TypeDecision:     true,
 	domain.TypeArchitecture: true,
 	domain.TypePreference:   true,
+	domain.TypeDiscovery:    true,
 }
 
 // SeedCandidate es una decisión propuesta por el LLM, antes de guardarse como memoria.
