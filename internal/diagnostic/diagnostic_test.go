@@ -133,11 +133,51 @@ func TestInstalledAssetsNilProbeSkips(t *testing.T) {
 	}
 }
 
+// fakeRelease cumple ports.ReleaseChecker.
+type fakeRelease struct {
+	latest string
+	newer  bool
+}
+
+func (f fakeRelease) Newer(context.Context, string) (string, bool) { return f.latest, f.newer }
+
+func TestLatestReleaseNewerIsWarning(t *testing.T) {
+	f := LatestReleaseCheck{Running: "v1.0.0", Checker: fakeRelease{latest: "v1.1.0", newer: true}}.Run(context.Background())
+	if len(f) != 1 || f[0].Severity != SeverityWarning {
+		t.Fatalf("versión nueva debe dar warning: %+v", f)
+	}
+	if f[0].NextStep == "" {
+		t.Error("el warning de versión nueva debe sugerir actualizar")
+	}
+}
+
+func TestLatestReleaseUpToDateIsInfo(t *testing.T) {
+	f := LatestReleaseCheck{Running: "v1.1.0", Checker: fakeRelease{latest: "v1.1.0", newer: false}}.Run(context.Background())
+	if len(f) != 1 || f[0].Severity != SeverityInfo {
+		t.Fatalf("al día debe dar info: %+v", f)
+	}
+}
+
+func TestLatestReleaseUndeterminedSkips(t *testing.T) {
+	// latest vacío = no se pudo determinar (offline/desactivado) → sin hallazgos.
+	if f := (LatestReleaseCheck{Running: "v1.0.0", Checker: fakeRelease{latest: "", newer: false}}).Run(context.Background()); f != nil {
+		t.Errorf("sin determinar no debe reportar: %+v", f)
+	}
+}
+
+func TestLatestReleaseNilCheckerSkips(t *testing.T) {
+	if f := (LatestReleaseCheck{Running: "v1.0.0"}).Run(context.Background()); f != nil {
+		t.Errorf("sin checker no debe reportar: %+v", f)
+	}
+}
+
 var (
 	_ EmbedderProbe        = fakeEmbedder{}
 	_ ports.VectorIndex    = fakeVectors{}
 	_ InstalledAssetsProbe = fakeAssets{}
+	_ ports.ReleaseChecker = fakeRelease{}
 	_ Check                = EmbedderCheck{}
 	_ Check                = PendingEmbeddingsCheck{}
 	_ Check                = InstalledAssetsCheck{}
+	_ Check                = LatestReleaseCheck{}
 )

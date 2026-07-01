@@ -181,6 +181,40 @@ func TestSessionStartAssetMismatchBanner(t *testing.T) {
 	}
 }
 
+// fakeRelease cumple ports.ReleaseChecker para el test del banner de versión nueva.
+type fakeRelease struct {
+	latest string
+	newer  bool
+}
+
+func (f fakeRelease) Newer(context.Context, string) (string, bool) { return f.latest, f.newer }
+
+func TestSessionStartUpdateBanner(t *testing.T) {
+	d := newStubDaemon(t)
+
+	// Hay versión nueva → banner presente.
+	r, out := newTestRunner(t, "session-start", d)
+	r.running = "v1.0.0"
+	r.updates = fakeRelease{latest: "v1.1.0", newer: true}
+	if err := r.sessionStart(payload{SessionID: "sess-up", CWD: t.TempDir()}); err != nil {
+		t.Fatalf("sessionStart: %v", err)
+	}
+	if s := out.String(); !strings.Contains(s, "versión nueva de kandel") || !strings.Contains(s, "v1.1.0") {
+		t.Errorf("faltó el banner de versión nueva:\n%s", s)
+	}
+
+	// Al día → sin banner.
+	r2, out2 := newTestRunner(t, "session-start", d)
+	r2.running = "v1.1.0"
+	r2.updates = fakeRelease{latest: "v1.1.0", newer: false}
+	if err := r2.sessionStart(payload{SessionID: "sess-ok2", CWD: t.TempDir()}); err != nil {
+		t.Fatalf("sessionStart: %v", err)
+	}
+	if strings.Contains(out2.String(), "versión nueva de kandel") {
+		t.Errorf("no debe haber banner estando al día:\n%s", out2.String())
+	}
+}
+
 func TestUserPromptSubmitSavesPromptAndFirstMessage(t *testing.T) {
 	d := newStubDaemon(t)
 	sid := fmt.Sprintf("sess-prompt-%d", time.Now().UnixNano())

@@ -18,6 +18,7 @@ import (
 	"github.com/javierv-dev/kandel/internal/adapter/embedding"
 	"github.com/javierv-dev/kandel/internal/adapter/git"
 	"github.com/javierv-dev/kandel/internal/adapter/llm"
+	"github.com/javierv-dev/kandel/internal/adapter/release"
 	"github.com/javierv-dev/kandel/internal/adapter/sqlite"
 	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/port_in/cli"
@@ -107,10 +108,13 @@ func run(args []string) error {
 	// El seed construye su generador bajo demanda: el agente y el modelo se resuelven en el comando
 	// (flags > entorno > config), no aquí, porque dependen de cómo se invoque.
 	seedService := service.NewSeedService(memoryService, llm.Generator)
+	// Chequeo de versión nueva (§21 Eje 6): única llamada de red saliente, opcional y cacheada.
+	updateChecker := release.NewChecker()
 	doctor := diagnostic.NewRunner(
 		diagnostic.EmbedderCheck{Embedder: embedder},
 		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, Model: embedder.Model()},
 		diagnostic.InstalledAssetsCheck{Running: version, Probe: installedAssetsProbe{}},
+		diagnostic.LatestReleaseCheck{Running: version, Checker: updateChecker},
 	)
 
 	app := &cli.App{
@@ -132,6 +136,7 @@ func run(args []string) error {
 		Commit:    commit,
 		BuildDate: buildDate,
 		Schema:    schemaVersion,
+		Update:    updateChecker,
 	}
 	return cli.Dispatch(ctx, args, app)
 }

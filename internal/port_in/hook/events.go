@@ -18,6 +18,7 @@ func (r *runner) sessionStart(p payload) error {
 	if err := r.client.ensureDaemon(r.ctx, r); err != nil {
 		// Sin daemon no hay backend; aun así se imprime el protocolo (es útil al modelo).
 		fmt.Fprint(r.out, r.assetMismatchBanner())
+		fmt.Fprint(r.out, r.updateBanner())
 		fmt.Fprint(r.out, protocolSessionStart)
 		return nil
 	}
@@ -47,8 +48,9 @@ func (r *runner) sessionStart(p payload) error {
 	code, _ := r.client.warmup(r.ctx)
 	r.klog("POST /embeddings/warmup -> HTTP " + code)
 
-	// Inyecta el banner de desalineación (si aplica) + el protocolo + el contexto del proyecto.
+	// Inyecta los banners (desalineación / versión nueva, si aplican) + el protocolo + el contexto.
 	fmt.Fprint(r.out, r.assetMismatchBanner())
+	fmt.Fprint(r.out, r.updateBanner())
 	fmt.Fprint(r.out, protocolSessionStart)
 	if text := r.client.fetchContext(r.ctx, project); text != "" {
 		fmt.Fprintf(r.out, "\n%s\n", text)
@@ -71,6 +73,20 @@ func (r *runner) assetMismatchBanner() string {
 		return ""
 	}
 	return "⚠️ kandel desactualizado — reinstala con `kandel install claude-code` y reinicia el agente.\n\n"
+}
+
+// updateBanner devuelve un aviso para el agente si hay una versión de kandel más nueva publicada
+// (§21 Eje 6). Devuelve "" si no hay checker, no se pudo determinar (offline/desactivado) o ya está
+// al día. Mensaje general y no técnico, coherente con el banner de desalineación.
+func (r *runner) updateBanner() string {
+	if r.updates == nil {
+		return ""
+	}
+	latest, newer := r.updates.Newer(r.ctx, r.running)
+	if !newer {
+		return ""
+	}
+	return fmt.Sprintf("⚠️ Hay una versión nueva de kandel (%s) — descárgala y reinstala con `kandel install claude-code`.\n\n", latest)
 }
 
 // postCompaction maneja el hook tras una compactación: asegura el daemon y la sesión, e inyecta un

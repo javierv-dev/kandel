@@ -127,6 +127,10 @@ type App struct {
 	Commit    string
 	BuildDate string
 	Schema    int
+
+	// Update consulta si hay una versión más nueva publicada (§21 Eje 6). Opcional: si es nil, el
+	// comando version no añade la nota de actualización.
+	Update ports.ReleaseChecker
 }
 
 // Command es un subcomando de la CLI. Name es la palabra que lo invoca; Synopsis es la línea
@@ -172,6 +176,7 @@ func Dispatch(ctx context.Context, args []string, app *App) error {
 		return nil
 	case "version", "--version", "-v":
 		printVersion(app)
+		printUpdateNote(ctx, app)
 		return nil
 	}
 	cmd, ok := registry[name]
@@ -190,6 +195,17 @@ func printVersion(app *App) {
 	fmt.Fprintf(app.Out, "commit:  %s\n", orUnknown(app.Commit))
 	fmt.Fprintf(app.Out, "built:   %s\n", orUnknown(app.BuildDate))
 	fmt.Fprintf(app.Out, "schema:  %d\n", app.Schema)
+}
+
+// printUpdateNote añade, tras la versión, un aviso si hay una release más nueva (§21 Eje 6). No hace
+// nada si no hay checker o si no se detecta versión nueva (offline/desactivado/al día).
+func printUpdateNote(ctx context.Context, app *App) {
+	if app.Update == nil {
+		return
+	}
+	if latest, newer := app.Update.Newer(ctx, app.Version); newer {
+		fmt.Fprintf(app.Out, "\nHay una versión nueva disponible: %s\nActualiza con: kandel install claude-code\n", latest)
+	}
 }
 
 // orUnknown devuelve "desconocido" para cadenas vacías (metadatos no inyectados en dev).

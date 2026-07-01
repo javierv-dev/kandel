@@ -100,6 +100,42 @@ func (c InstalledAssetsCheck) Run(_ context.Context) []Finding {
 	}}
 }
 
+// LatestReleaseCheck avisa si hay una versión de kandel más nueva que la que corre (§21 Eje 6).
+// Consulta un ports.ReleaseChecker (que cachea y degrada en silencio). Es warning cuando hay una
+// versión nueva (acción sugerida: actualizar), info si está al día, y no reporta nada si no se pudo
+// determinar (offline/desactivado): un chequeo opcional no debe ensuciar el diagnóstico.
+type LatestReleaseCheck struct {
+	Running string
+	Checker ports.ReleaseChecker
+}
+
+// Name identifica el chequeo.
+func (LatestReleaseCheck) Name() string { return "latest_release" }
+
+// Run consulta la última versión y compara.
+func (c LatestReleaseCheck) Run(ctx context.Context) []Finding {
+	if c.Checker == nil {
+		return nil
+	}
+	latest, newer := c.Checker.Newer(ctx, c.Running)
+	if latest == "" {
+		return nil // no se pudo determinar: silencio
+	}
+	if newer {
+		return []Finding{{
+			Check:    c.Name(),
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("hay una versión nueva de kandel disponible (%s); tienes %s", latest, c.Running),
+			NextStep: "descarga el binario nuevo de las releases y reinstala: kandel install claude-code",
+		}}
+	}
+	return []Finding{{
+		Check:    c.Name(),
+		Severity: SeverityInfo,
+		Message:  fmt.Sprintf("kandel está en la última versión (%s)", latest),
+	}}
+}
+
 // PendingEmbeddingsCheck cuenta cuántas memorias vivas no tienen vector al día (faltante o de otro
 // modelo). No es un fallo: son memorias accesibles por lectura directa pero invisibles a la
 // búsqueda semántica hasta reindexarlas. Por eso es info/warning, no error.

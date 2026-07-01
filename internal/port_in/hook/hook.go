@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/setup"
 )
 
@@ -30,14 +31,18 @@ type runner struct {
 	// installedVersion es un campo (no una llamada directa) para poder inyectar un doble en tests.
 	running          string
 	installedVersion func() (version string, present bool, err error)
+
+	// updates avisa si hay una versión de kandel más nueva publicada (§21 Eje 6); nil = sin aviso.
+	updates ports.ReleaseChecker
 }
 
 // Run ejecuta el hook indicado por event, leyendo el JSON del agente de stdin y escribiendo la
-// salida para el agente en out. version es la del binario (para el banner de desalineación de
-// assets). NUNCA debe devolver error para eventos válidos: un fallo del hook (exit≠0) puede bloquear
-// el mensaje del usuario en el agente. Solo devuelve error ante un evento desconocido (error de
+// salida para el agente en out. version es la del binario (para los banners de desalineación de
+// assets y de versión nueva); updates consulta si hay una release más nueva (§21 Eje 6; puede ser
+// nil). NUNCA debe devolver error para eventos válidos: un fallo del hook (exit≠0) puede bloquear el
+// mensaje del usuario en el agente. Solo devuelve error ante un evento desconocido (error de
 // configuración del instalador, no del flujo normal).
-func Run(ctx context.Context, event, version string, stdin io.Reader, out io.Writer) error {
+func Run(ctx context.Context, event, version string, updates ports.ReleaseChecker, stdin io.Reader, out io.Writer) error {
 	r := &runner{
 		event:            event,
 		client:           newClient(),
@@ -45,6 +50,7 @@ func Run(ctx context.Context, event, version string, stdin io.Reader, out io.Wri
 		ctx:              ctx,
 		running:          version,
 		installedVersion: defaultInstalledVersion,
+		updates:          updates,
 	}
 	payload := parsePayload(stdin)
 
