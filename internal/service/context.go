@@ -9,52 +9,124 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// Límites de cuántos elementos entran en el contexto inyectado. Mantienen el bloque acotado para
-// no inundar la ventana del agente al inicio de la sesión.
+// Límites de cuántos elementos entran en cada bandeja del contexto inyectado. Las normativas van
+// SIN tope (son must-see); el resto se acota para no inundar la ventana del agente al arrancar.
 const (
 	contextSessions = 5
-	contextPrompts  = 10
-	contextMemories = 10
+	// contextFactual es la ventana chica de continuidad factual: unas pocas recientes como ancla;
+	// el resto se recupera bajo demanda con mem_search durante la tarea (factual perezoso, §20.D).
+	contextFactual = 8
+	// contextPending es un tope generoso de pendientes (en la práctica hay pocos).
+	contextPending = 100
+	// defaultNormativeThreshold dispara el aviso de mantenimiento "demasiadas normativas".
+	defaultNormativeThreshold = 50
 )
 
-// ContextService arma el bloque de contexto que se inyecta al agente al arrancar una sesión (o
-// tras una compactación): un resumen en Markdown de sesiones, prompts y memorias recientes del
-// proyecto. Es una lectura directa (navegación), no depende del embebedor.
+// ContextService arma el bloque de contexto que se inyecta al agente al arrancar una sesión (o tras
+// una compactación). Se organiza en bandejas (§20.D): normativas siempre presentes, pendientes por
+// resolver, factuales recientes, sesiones y salud de memoria. Es lectura directa (no depende del
+// embebedor). Los prompts crudos ya NO se inyectan (solo quedan buscables).
 type ContextService struct {
-	sessions ports.SessionRepo
-	memories ports.MemoryRepo
-	prompts  ports.PromptRepo
+	sessions  ports.SessionRepo
+	memories  ports.MemoryRepo
+	threshold int // umbral del aviso "demasiadas normativas"
+}
+
+// ContextOption configura un ContextService opcionalmente.
+type ContextOption func(*ContextService)
+
+// WithNormativeThreshold fija el umbral del aviso de mantenimiento de normativas. Un valor no
+// positivo se ignora (se conserva el default).
+func WithNormativeThreshold(n int) ContextOption {
+	return func(c *ContextService) {
+		if n > 0 {
+			c.threshold = n
+		}
+	}
 }
 
 // NewContextService construye el servicio con sus repos inyectados.
-func NewContextService(sessions ports.SessionRepo, memories ports.MemoryRepo, prompts ports.PromptRepo) *ContextService {
-	return &ContextService{sessions: sessions, memories: memories, prompts: prompts}
+func NewContextService(sessions ports.SessionRepo, memories ports.MemoryRepo, opts ...ContextOption) *ContextService {
+	c := &ContextService{sessions: sessions, memories: memories, threshold: defaultNormativeThreshold}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
-// Format devuelve el contexto del proyecto en Markdown listo para inyectar. Si no hay nada que
-// mostrar devuelve cadena vacía (el hook entonces no inyecta nada).
+// Format devuelve el contexto del proyecto en Markdown, en bandejas, listo para inyectar. Si no hay
+// nada que mostrar devuelve cadena vacía (el hook entonces no inyecta nada).
 func (c *ContextService) Format(ctx context.Context, project string, scope domain.Scope) (string, error) {
 	project = normalizeProject(project)
+
+	// Bandeja "Siempre": normativas (decision/preference), sin tope, sin reemplazadas ni resueltas.
+	normatives, err := c.memories.Recent(ctx, ports.RecentQuery{
+		Project:           project,
+		Scope:             scope,
+		Types:             []domain.MemoryType{domain.TypeDecision, domain.TypePreference},
+		ExcludeSuperseded: true,
+		ExcludeResolved:   true,
+		Limit:             -1,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// Bandeja "Pendientes": resolution = open (excluye reemplazadas dentro del repo).
+	pendings, err := c.memories.PendingResolution(ctx, project, contextPending)
+	if err != nil {
+		return "", err
+	}
+
+	// Bandeja "Recientes" (factual perezoso): ventana chica de factuales por recencia.
+	factual, err := c.memories.Recent(ctx, ports.RecentQuery{
+		Project:           project,
+		Scope:             scope,
+		Types:             []domain.MemoryType{domain.TypeDiscovery, domain.TypeArchitecture, domain.TypeBugfix},
+		ExcludeSuperseded: true,
+		Limit:             contextFactual,
+	})
+	if err != nil {
+		return "", err
+	}
 
 	sessions, err := c.sessions.Recent(ctx, project, contextSessions)
 	if err != nil {
 		return "", err
 	}
-	memories, err := c.memories.Recent(ctx, ports.RecentQuery{Project: project, Scope: scope, Limit: contextMemories, ExcludeSuperseded: true})
-	if err != nil {
-		return "", err
-	}
-	prompts, err := c.prompts.Recent(ctx, project, contextPrompts)
-	if err != nil {
-		return "", err
-	}
 
-	if len(sessions) == 0 && len(memories) == 0 && len(prompts) == 0 {
+	health := healthBanners(normatives, c.threshold)
+
+	if len(normatives) == 0 && len(pendings) == 0 && len(factual) == 0 && len(sessions) == 0 && len(health) == 0 {
 		return "", nil
 	}
 
 	var b strings.Builder
 	b.WriteString("## Memoria de sesiones anteriores\n\n")
+
+	if len(normatives) > 0 {
+		b.WriteString("### Siempre presente (normativas)\n")
+		for _, m := range normatives {
+			writeMemoryLine(&b, m)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(pendings) > 0 {
+		b.WriteString("### Pendientes por resolver\n")
+		for _, m := range pendings {
+			writeMemoryLine(&b, m)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(factual) > 0 {
+		b.WriteString("### Recientes\n")
+		for _, m := range factual {
+			writeMemoryLine(&b, m)
+		}
+		b.WriteString("\n")
+	}
 
 	if len(sessions) > 0 {
 		b.WriteString("### Sesiones recientes\n")
@@ -68,23 +140,40 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		b.WriteString("\n")
 	}
 
-	if len(prompts) > 0 {
-		b.WriteString("### Prompts recientes del usuario\n")
-		for _, p := range prompts {
-			fmt.Fprintf(&b, "- %s: %s\n", p.CreatedAt.Format("2006-01-02 15:04"), truncate(p.Content, 200))
-		}
-		b.WriteString("\n")
-	}
-
-	if len(memories) > 0 {
-		b.WriteString("### Memorias recientes\n")
-		for _, m := range memories {
-			fmt.Fprintf(&b, "- [%s] **%s**: %s\n", m.Type, m.Title, truncate(m.Content, 300))
+	if len(health) > 0 {
+		b.WriteString("### Salud de memoria\n")
+		for _, line := range health {
+			b.WriteString(line + "\n")
 		}
 		b.WriteString("\n")
 	}
 
 	return b.String(), nil
+}
+
+// writeMemoryLine escribe una memoria como una viñeta uniforme (tipo, título y contenido recortado).
+func writeMemoryLine(b *strings.Builder, m domain.Memory) {
+	fmt.Fprintf(b, "- [%s] **%s**: %s\n", m.Type, m.Title, truncate(m.Content, 300))
+}
+
+// healthBanners deriva los avisos de la bandeja "Salud de memoria" a partir de las normativas
+// activas (ya cargadas para la bandeja "Siempre", sin consultas extra): normativas sin verificar
+// contra conflictos y aviso de mantenimiento cuando hay demasiadas (§20.D/§20.F).
+func healthBanners(normatives []domain.Memory, threshold int) []string {
+	var out []string
+	unverified := 0
+	for _, m := range normatives {
+		if !m.ConflictChecked {
+			unverified++
+		}
+	}
+	if unverified > 0 {
+		out = append(out, fmt.Sprintf("- ⚠️ %d normativa(s) sin verificar contra conflictos (aún se obedecen; revisa que no se contradigan)", unverified))
+	}
+	if threshold > 0 && len(normatives) >= threshold {
+		out = append(out, fmt.Sprintf("- ⚠️ demasiadas normativas activas (%d ≥ %d): considera consolidar o archivar", len(normatives), threshold))
+	}
+	return out
 }
 
 // truncate recorta un texto a n runas, añadiendo una elipsis si lo recortó.

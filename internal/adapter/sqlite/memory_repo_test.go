@@ -232,6 +232,75 @@ func TestRecentOrderingAndFilters(t *testing.T) {
 	}
 }
 
+func TestRecentFiltersByTypesAndResolved(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	dec := sampleMemory() // decision, resolution vacía
+	if _, err := repo.Add(ctx, dec); err != nil {
+		t.Fatalf("Add decision: %v", err)
+	}
+	disc := sampleMemory()
+	disc.SyncID = "mem-disc"
+	disc.Type = domain.TypeDiscovery
+	if _, err := repo.Add(ctx, disc); err != nil {
+		t.Fatalf("Add discovery: %v", err)
+	}
+	resolved := sampleMemory()
+	resolved.SyncID = "mem-res"
+	resolved.Resolution = domain.ResolutionResolved
+	if _, err := repo.Add(ctx, resolved); err != nil {
+		t.Fatalf("Add resolved: %v", err)
+	}
+
+	// Solo decisiones, excluyendo resueltas → queda la decisión de resolución vacía.
+	got, err := repo.Recent(ctx, ports.RecentQuery{
+		Project: "proj", Types: []domain.MemoryType{domain.TypeDecision}, ExcludeResolved: true, Limit: -1,
+	})
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(got) != 1 || got[0].Type != domain.TypeDecision || got[0].Resolution == domain.ResolutionResolved {
+		t.Fatalf("filtro tipo+resuelta mal aplicado: %+v", got)
+	}
+
+	// Solo discovery → una.
+	gotDisc, _ := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Types: []domain.MemoryType{domain.TypeDiscovery}, Limit: 10})
+	if len(gotDisc) != 1 || gotDisc[0].Type != domain.TypeDiscovery {
+		t.Fatalf("filtro por discovery mal aplicado: %+v", gotDisc)
+	}
+}
+
+func TestPendingResolutionExcludesSuperseded(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	superseded := sampleMemory() // mem-1, pendiente pero reemplazada
+	superseded.Resolution = domain.ResolutionOpen
+	if _, err := repo.Add(ctx, superseded); err != nil {
+		t.Fatalf("Add superseded: %v", err)
+	}
+	live := sampleMemory()
+	live.SyncID = "mem-live"
+	live.Resolution = domain.ResolutionOpen
+	if _, err := repo.Add(ctx, live); err != nil {
+		t.Fatalf("Add live: %v", err)
+	}
+	seedSupersede(t, db, "mem-live", "mem-1") // mem-live reemplaza a mem-1
+
+	got, err := repo.PendingResolution(ctx, "proj", 10)
+	if err != nil {
+		t.Fatalf("PendingResolution: %v", err)
+	}
+	if len(got) != 1 || got[0].SyncID != "mem-live" {
+		t.Fatalf("un pendiente reemplazado no debe listarse: %+v", got)
+	}
+}
+
 func TestConflictCheckedRoundtripAndSweepQuery(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

@@ -118,6 +118,8 @@ func (f *fakeObs) Restore(_ context.Context, id int64) error {
 }
 
 func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
+	// La exclusión por supersede es un JOIN contra memory_relations que el fake no modela; se prueba
+	// a nivel del adaptador SQLite. Aquí se honran el resto de filtros.
 	var out []domain.Memory
 	for _, o := range f.items {
 		if o.IsDeleted() {
@@ -129,10 +131,26 @@ func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memor
 		if q.Scope != "" && o.Scope != q.Scope {
 			continue
 		}
+		if len(q.Types) > 0 && !containsType(q.Types, o.Type) {
+			continue
+		}
+		if q.ExcludeResolved && o.Resolution == domain.ResolutionResolved {
+			continue
+		}
 		out = append(out, o)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out, nil
+}
+
+// containsType indica si t está en el conjunto types.
+func containsType(types []domain.MemoryType, t domain.MemoryType) bool {
+	for _, x := range types {
+		if x == t {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeObs) Search(_ context.Context, q ports.SearchQuery, neighbors []ports.Neighbor) ([]domain.SearchResult, error) {

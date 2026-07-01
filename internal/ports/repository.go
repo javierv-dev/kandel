@@ -11,11 +11,19 @@ import (
 type RecentQuery struct {
 	Project string
 	Scope   domain.Scope // vacío = sin filtrar por alcance
-	Limit   int
+	// Limit acota el número de filas: > 0 fija el tope; 0 aplica un tope por defecto razonable;
+	// < 0 significa SIN tope (sin cláusula LIMIT) — lo usa la bandeja "Siempre" (normativas).
+	Limit int
+	// Types restringe a un conjunto de tipos (vacío = cualquiera). Lo usan las bandejas de la
+	// inyección para separar normativas (decision/preference) de factuales (discovery/…).
+	Types []domain.MemoryType
 	// ExcludeSuperseded omite las memorias reemplazadas (target de una relación 'supersedes'
 	// juzgada). Lo activa la inyección de contexto; la navegación cruda del usuario lo deja en
 	// false (ve toda la historia).
 	ExcludeSuperseded bool
+	// ExcludeResolved omite las memorias ya resueltas (resolution = 'resolved'). Lo usa la bandeja
+	// "Siempre" para no mostrar pendientes cerrados; las de resolución vacía u 'open' sí pasan.
+	ExcludeResolved bool
 }
 
 // SearchQuery describe una búsqueda semántica. La consulta en texto se convierte en vector

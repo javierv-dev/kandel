@@ -79,7 +79,8 @@ func run(args []string) error {
 	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex,
 		service.WithPostBackfill(detectionSweep(conflictService)))
 	syncService := service.NewSyncService(syncRepo, git.New(syncDir()), memoryRepo, uow, clk, "")
-	contextService := service.NewContextService(sessionRepo, memoryRepo, promptRepo)
+	contextService := service.NewContextService(sessionRepo, memoryRepo,
+		service.WithNormativeThreshold(normativeThreshold()))
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
 	// El seed construye su generador bajo demanda: el agente y el modelo se resuelven en el comando
 	// (flags > entorno > config), no aquí, porque dependen de cómo se invoque.
@@ -168,6 +169,20 @@ func conflictCutoff() float64 {
 // por defecto del servicio.
 func conflictTopK() int {
 	raw := strings.TrimSpace(os.Getenv("KANDEL_CONFLICT_TOPK"))
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// normativeThreshold lee el umbral del aviso "demasiadas normativas" de KANDEL_NORMATIVE_THRESHOLD;
+// 0 (o inválido) deja el valor por defecto del servicio.
+func normativeThreshold() int {
+	raw := strings.TrimSpace(os.Getenv("KANDEL_NORMATIVE_THRESHOLD"))
 	if raw == "" {
 		return 0
 	}

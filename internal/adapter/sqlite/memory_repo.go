@@ -136,7 +136,8 @@ const supersededClause = ` AND NOT EXISTS (
 		  AND r.relation = 'supersedes'
 		  AND r.judgment_status = 'judged')`
 
-// Recent lista memorias vivas por recencia (camino de navegación del usuario).
+// Recent lista memorias vivas por recencia (camino de navegación del usuario y base de las bandejas
+// de la inyección). Aplica los filtros de q; un Limit negativo omite la cláusula LIMIT (sin tope).
 func (r *MemoryRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
 	query := `SELECT ` + memoryColumns + ` FROM memories WHERE deleted_at IS NULL`
 	args := []any{}
@@ -148,11 +149,24 @@ func (r *MemoryRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.
 		query += ` AND scope = ?`
 		args = append(args, string(q.Scope))
 	}
+	if len(q.Types) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(q.Types)), ",")
+		query += ` AND type IN (` + placeholders + `)`
+		for _, t := range q.Types {
+			args = append(args, string(t))
+		}
+	}
+	if q.ExcludeResolved {
+		query += ` AND resolution != 'resolved'`
+	}
 	if q.ExcludeSuperseded {
 		query += supersededClause
 	}
-	query += ` ORDER BY datetime(created_at) DESC, id DESC LIMIT ?`
-	args = append(args, normalizeLimit(q.Limit))
+	query += ` ORDER BY datetime(created_at) DESC, id DESC`
+	if q.Limit >= 0 {
+		query += ` LIMIT ?`
+		args = append(args, normalizeLimit(q.Limit))
+	}
 	return r.queryMany(ctx, query, args...)
 }
 
@@ -231,11 +245,12 @@ func (r *MemoryRepo) FindByHash(ctx context.Context, project string, scope domai
 }
 
 // PendingResolution lista memorias vivas pendientes por resolver (resolution = 'open'), de la
-// más antigua a la más nueva (como una cola de TODO: lo más viejo primero).
+// más antigua a la más nueva (como una cola de TODO: lo más viejo primero). Excluye las
+// reemplazadas: un pendiente superseded ya se resolvió por su reemplazo (§20.D/§20.G).
 func (r *MemoryRepo) PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error) {
 	query := `SELECT ` + memoryColumns + ` FROM memories
 		WHERE deleted_at IS NULL
-		  AND resolution = 'open'`
+		  AND resolution = 'open'` + supersededClause
 	args := []any{}
 	if project != "" {
 		query += ` AND project = ?`
