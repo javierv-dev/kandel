@@ -160,12 +160,12 @@ func (claudeCode) installMCP(mcpFile string) error {
 		return err
 	}
 	servers := mapAt(cfg, "mcpServers")
+	// Opción X (§22): kandel NO inyecta su env aquí. El agente activo (para el juez LLM de mem_compare)
+	// se resuelve desde ~/.kandel/config (config.AgentCLI), que también lee el daemon. Un único origen
+	// de verdad, sin sangrar ajustes de kandel en el archivo de Claude Code.
 	servers["kandel"] = map[string]any{
 		"command": "kandel",
 		"args":    []any{"mcp", "--tools=agent"},
-		// KANDEL_AGENT_CLI=claude habilita el juez LLM de mem_compare reutilizando la CLI de
-		// Claude (claude -p, headless). Sin esto, mem_compare falla con "CLI del agente no instalada".
-		"env": map[string]any{"KANDEL_AGENT_CLI": "claude"},
 	}
 	return saveJSONObject(mcpFile, cfg)
 }

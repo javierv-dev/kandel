@@ -55,10 +55,10 @@ func TestClaudeCodeInstall(t *testing.T) {
 	if !ok {
 		t.Fatalf("no se registró el servidor MCP kandel: %+v", servers)
 	}
-	// El env debe habilitar el juez LLM de mem_compare vía la CLI de Claude.
-	env, _ := kandelSrv["env"].(map[string]any)
-	if env["KANDEL_AGENT_CLI"] != "claude" {
-		t.Errorf("falta env KANDEL_AGENT_CLI=claude en el servidor MCP: %+v", kandelSrv)
+	// Opción X (§22): el servidor MCP NO debe llevar env de kandel. El agente activo del juez de
+	// mem_compare se resuelve desde ~/.kandel/config (agent_cli, verificado arriba), no desde aquí.
+	if _, ok := kandelSrv["env"]; ok {
+		t.Errorf("el servidor MCP no debe fijar env de kandel (Opción X): %+v", kandelSrv)
 	}
 	// Hooks.
 	settings := readJSON(t, filepath.Join(home, ".claude", "settings.json"))
