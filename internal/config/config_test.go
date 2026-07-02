@@ -143,6 +143,64 @@ func TestRenderPreservesUnknownKeys(t *testing.T) {
 	}
 }
 
+// TestResolveWithSourceReportsOrigin verifica que ResolveWithSource distingue entorno/archivo/default.
+func TestResolveWithSourceReportsOrigin(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("KANDEL_DATA_DIR", dir)
+	t.Setenv(Port.Env, "")
+
+	if _, src := ResolveWithSource(Port); src != SourceDefault {
+		t.Errorf("sin fijar: origen = %v, se esperaba default", src)
+	}
+	if err := Save(dir, map[string]string{Port.File: "9001"}); err != nil {
+		t.Fatal(err)
+	}
+	if v, src := ResolveWithSource(Port); v != "9001" || src != SourceFile {
+		t.Errorf("con archivo: (%q,%v), se esperaba (9001,archivo)", v, src)
+	}
+	t.Setenv(Port.Env, "7777")
+	if v, src := ResolveWithSource(Port); v != "7777" || src != SourceEnv {
+		t.Errorf("con env: (%q,%v), se esperaba (7777,entorno)", v, src)
+	}
+}
+
+// TestKeyByFile busca claves conocidas y rechaza desconocidas.
+func TestKeyByFile(t *testing.T) {
+	if k, ok := KeyByFile("agent_cli"); !ok || k.Env != "KANDEL_AGENT_CLI" {
+		t.Errorf("KeyByFile(agent_cli) = (%+v,%v)", k, ok)
+	}
+	if _, ok := KeyByFile("inexistente"); ok {
+		t.Error("KeyByFile de clave desconocida debería devolver ok=false")
+	}
+}
+
+// TestAgentsAddRemove verifica el conjunto installed_agents: alta idempotente, orden, y baja.
+func TestAgentsAddRemove(t *testing.T) {
+	dir := t.TempDir()
+	if len(Agents(dir)) != 0 {
+		t.Fatal("un directorio nuevo no debe tener agentes")
+	}
+	if err := AddAgent(dir, "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddAgent(dir, "claude"); err != nil { // idempotente
+		t.Fatal(err)
+	}
+	if err := AddAgent(dir, "gemini"); err != nil {
+		t.Fatal(err)
+	}
+	got := Agents(dir)
+	if len(got) != 2 || got[0] != "claude" || got[1] != "gemini" {
+		t.Errorf("Agents = %v, se esperaba [claude gemini] ordenado sin duplicados", got)
+	}
+	if err := RemoveAgent(dir, "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if got := Agents(dir); len(got) != 1 || got[0] != "gemini" {
+		t.Errorf("tras RemoveAgent(claude): %v, se esperaba [gemini]", got)
+	}
+}
+
 // TestEnsureFileCreatesOnceAndPreserves verifica que EnsureFile crea el archivo autodocumentado si
 // falta y no lo pisa si ya existe.
 func TestEnsureFileCreatesOnceAndPreserves(t *testing.T) {

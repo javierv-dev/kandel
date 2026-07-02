@@ -20,6 +20,22 @@ var ErrAgentUnsupported = errors.New("llm: agente no soportado todavía")
 // stdout). Hoy solo Claude Code es objetivo de pruebas; el resto figura como hoja de ruta (§18).
 var supportedAgents = []string{"claude"}
 
+// SupportedAgents devuelve una copia de la allowlist de agentes con contrato de CLI implementado.
+// Lo usa `kandel agent use` para validar el cambio de agente activo sin duplicar la lista.
+func SupportedAgents() []string {
+	return append([]string(nil), supportedAgents...)
+}
+
+// IsSupported indica si un agente tiene contrato de CLI implementado (está en la allowlist).
+func IsSupported(agent string) bool {
+	for _, a := range supportedAgents {
+		if a == strings.TrimSpace(agent) {
+			return true
+		}
+	}
+	return false
+}
+
 // FromEnv elige el juez LLM según el agente activo, resuelto por config (env KANDEL_AGENT_CLI >
 // archivo ~/.kandel/config > vacío). Resolverlo por config es lo que permite al daemon `serve`
 // (arrancado por los hooks, sin heredar la env del entry MCP) ver el agente configurado:

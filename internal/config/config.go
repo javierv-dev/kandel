@@ -94,6 +94,11 @@ var Keys = []Key{
 // configFileName es el nombre del archivo dentro del directorio de datos.
 const configFileName = "config"
 
+// FilePath devuelve la ruta del archivo de configuración dentro del directorio dado.
+func FilePath(dir string) string {
+	return filepath.Join(dir, configFileName)
+}
+
 // DefaultDir resuelve el directorio de datos de kandel: KANDEL_DATA_DIR si está definido, si no
 // ~/.kandel. Es el mismo criterio que usa la base de datos, para que config y datos convivan.
 func DefaultDir() (string, error) {
@@ -107,19 +112,105 @@ func DefaultDir() (string, error) {
 	return filepath.Join(home, ".kandel"), nil
 }
 
+// Source indica de dónde salió el valor efectivo de una clave (para que `kandel config list` muestre
+// el origen y no confunda un env que pisa el archivo).
+type Source int
+
+const (
+	// SourceDefault: ni el entorno ni el archivo la fijan; se usa el default interno.
+	SourceDefault Source = iota
+	// SourceFile: la fija el archivo ~/.kandel/config.
+	SourceFile
+	// SourceEnv: la fija una variable de entorno (pisa al archivo).
+	SourceEnv
+)
+
+// String describe el origen en español para la salida de `kandel config list`.
+func (s Source) String() string {
+	switch s {
+	case SourceEnv:
+		return "entorno"
+	case SourceFile:
+		return "archivo"
+	default:
+		return "default"
+	}
+}
+
 // Resolve devuelve el valor efectivo de una clave aplicando la precedencia env > archivo > default.
-// Lee el entorno en vivo y el archivo del directorio de datos actual; no cachea, para respetar
-// cambios de KANDEL_DATA_DIR entre llamadas (importa en tests) sin coste relevante (archivo pequeño).
 func Resolve(k Key) string {
+	v, _ := ResolveWithSource(k)
+	return v
+}
+
+// ResolveWithSource es como Resolve pero además indica de dónde salió el valor. Lee el entorno en
+// vivo y el archivo del directorio de datos actual; no cachea, para respetar cambios de
+// KANDEL_DATA_DIR entre llamadas (importa en tests) sin coste relevante (archivo pequeño).
+func ResolveWithSource(k Key) (string, Source) {
 	if v := strings.TrimSpace(os.Getenv(k.Env)); v != "" {
-		return v
+		return v, SourceEnv
 	}
 	if dir, err := DefaultDir(); err == nil {
 		if v := strings.TrimSpace(Get(dir, k.File)); v != "" {
-			return v
+			return v, SourceFile
 		}
 	}
-	return k.Default
+	return k.Default, SourceDefault
+}
+
+// KeyByFile busca una clave conocida por su nombre de archivo (p. ej. "agent_cli"). Lo usa
+// `kandel config get/set` para validar que la clave existe antes de tocarla.
+func KeyByFile(fileKey string) (Key, bool) {
+	fileKey = strings.TrimSpace(fileKey)
+	for _, k := range Keys {
+		if k.File == fileKey {
+			return k, true
+		}
+	}
+	return Key{}, false
+}
+
+// Agents devuelve el conjunto de agentes instalados (installed_agents) del directorio dado, ordenado
+// y sin duplicados ni vacíos.
+func Agents(dir string) []string {
+	return splitAgents(Get(dir, InstalledAgents.File))
+}
+
+// splitAgents normaliza una lista separada por comas a un conjunto ordenado sin duplicados ni vacíos.
+func splitAgents(raw string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// AddAgent añade un agente al conjunto installed_agents (idempotente). No cambia el agente activo.
+func AddAgent(dir, agent string) error {
+	if strings.TrimSpace(agent) == "" {
+		return nil
+	}
+	set := splitAgents(Get(dir, InstalledAgents.File) + "," + agent)
+	return Save(dir, map[string]string{InstalledAgents.File: strings.Join(set, ",")})
+}
+
+// RemoveAgent quita un agente del conjunto installed_agents (idempotente).
+func RemoveAgent(dir, agent string) error {
+	agent = strings.TrimSpace(agent)
+	var kept []string
+	for _, a := range Agents(dir) {
+		if a != agent {
+			kept = append(kept, a)
+		}
+	}
+	return Save(dir, map[string]string{InstalledAgents.File: strings.Join(kept, ",")})
 }
 
 // Load lee el archivo de configuración del directorio dado y devuelve sus pares clave=valor. Un

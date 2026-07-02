@@ -19,6 +19,14 @@ type claudeCode struct{}
 
 func (claudeCode) Name() string { return "claude-code" }
 
+// claudeAgentCLI es el nombre de la CLI de agente de Claude Code (para el juez y el seed); es el
+// valor que se registra en installed_agents y, si es el primero, en agent_cli. claudeSeedModel es su
+// modelo de seed por defecto.
+const (
+	claudeAgentCLI  = "claude"
+	claudeSeedModel = "sonnet"
+)
+
 // rutas devuelve las rutas de los artefactos a partir del home del usuario.
 func (claudeCode) paths(home string) (claudeDir, skillFile, scriptsDir, mcpFile, settingsFile string) {
 	claudeDir = filepath.Join(home, ".claude")
@@ -87,16 +95,24 @@ func (c claudeCode) Install(home, version string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "✓ hooks de ciclo de vida fusionados en %s\n", settingsFile)
 
-	// 5. Config local (~/.kandel/config): qué CLI de agente y modelo usa el seed standalone, que NO
-	// hereda el env del servidor MCP. Para Claude Code: claude + sonnet.
+	// 5. Config local (~/.kandel/config): agente activo + registro de agentes instalados (§22.D).
+	// El agente activo (que juzga y siembra) sigue la regla first-install-wins: solo se fija si aún
+	// no hay uno, para no pisar la elección previa cuando se instala un segundo agente. El agente
+	// siempre se añade al conjunto installed_agents (habilita `kandel agent use` para cambiar/caer).
 	confDir := filepath.Join(home, ".kandel")
-	if err := config.Save(confDir, map[string]string{
-		config.AgentCLI.File:  "claude",
-		config.SeedModel.File: "sonnet",
-	}); err != nil {
+	if strings.TrimSpace(config.Get(confDir, config.AgentCLI.File)) == "" {
+		if err := config.Save(confDir, map[string]string{
+			config.AgentCLI.File:  claudeAgentCLI,
+			config.SeedModel.File: claudeSeedModel,
+		}); err != nil {
+			return err
+		}
+	}
+	if err := config.AddAgent(confDir, claudeAgentCLI); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "✓ config de agente escrita en %s\n", filepath.Join(confDir, "config"))
+	fmt.Fprintf(out, "✓ config de agente escrita en %s (activo: %s)\n",
+		filepath.Join(confDir, "config"), config.Get(confDir, config.AgentCLI.File))
 
 	// 6. Marca de versión de los assets (§21 Eje 3): permite detectar más tarde que el binario se
 	// actualizó pero los assets quedaron viejos (banner de "reinstala" en el diagnóstico).
@@ -137,6 +153,27 @@ func (c claudeCode) Uninstall(home string, out io.Writer) error {
 		return fmt.Errorf("borrar scripts: %w", err)
 	}
 	fmt.Fprintln(out, "✓ skills y scripts borrados")
+
+	// 4. Quita el agente del registro de instalados y, si era el activo, reasigna al que quede (o lo
+	// desconfigura si no queda ninguno) — §22.D.
+	confDir := filepath.Join(home, ".kandel")
+	if err := config.RemoveAgent(confDir, claudeAgentCLI); err != nil {
+		return err
+	}
+	if strings.TrimSpace(config.Get(confDir, config.AgentCLI.File)) == claudeAgentCLI {
+		replacement := ""
+		if remaining := config.Agents(confDir); len(remaining) > 0 {
+			replacement = remaining[0]
+		}
+		if err := config.Save(confDir, map[string]string{config.AgentCLI.File: replacement}); err != nil {
+			return err
+		}
+		if replacement != "" {
+			fmt.Fprintf(out, "✓ agente activo reasignado a %s\n", replacement)
+		} else {
+			fmt.Fprintln(out, "✓ agente activo desconfigurado (no quedan agentes instalados)")
+		}
+	}
 	return nil
 }
 

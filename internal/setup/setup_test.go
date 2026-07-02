@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/javierv-dev/kandel/internal/config"
 )
 
 func readJSON(t *testing.T, path string) map[string]any {
@@ -150,6 +152,59 @@ func TestClaudeCodeUninstallPreservesUserConfig(t *testing.T) {
 func TestInstallUnknownAgent(t *testing.T) {
 	if err := Install("inexistente", t.TempDir(), "v9.9.9", &bytes.Buffer{}); err == nil {
 		t.Error("un agente no soportado debe dar error")
+	}
+}
+
+// TestInstallFirstAgentWins verifica §22.D: el primer install fija agent_cli; un install posterior no
+// lo pisa si ya hay uno, pero sí añade el agente a installed_agents.
+func TestInstallFirstAgentWins(t *testing.T) {
+	home := t.TempDir()
+	confDir := filepath.Join(home, ".kandel")
+
+	// Simula que otro agente se instaló primero y quedó como activo.
+	if err := config.Save(confDir, map[string]string{config.AgentCLI.File: "gemini"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AddAgent(confDir, "gemini"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Install("claude-code", home, "v9.9.9", &bytes.Buffer{}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	// El activo NO cambia (first-install-wins); claude se suma al conjunto de instalados.
+	if got := config.Get(confDir, config.AgentCLI.File); got != "gemini" {
+		t.Errorf("agent_cli = %q, se esperaba gemini (no debe pisarse)", got)
+	}
+	if got := config.Agents(confDir); len(got) != 2 || got[0] != "claude" || got[1] != "gemini" {
+		t.Errorf("installed_agents = %v, se esperaba [claude gemini]", got)
+	}
+}
+
+// TestUninstallReassignsActiveAgent verifica §22.D: al desinstalar el agente activo, si queda otro
+// instalado se reasigna a él; el agente se quita del conjunto.
+func TestUninstallReassignsActiveAgent(t *testing.T) {
+	home := t.TempDir()
+	confDir := filepath.Join(home, ".kandel")
+
+	if err := Install("claude-code", home, "v9.9.9", &bytes.Buffer{}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	// claude quedó activo; añadimos un segundo agente al conjunto para que haya reemplazo.
+	if err := config.AddAgent(confDir, "gemini"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Uninstall("claude-code", home, &bytes.Buffer{}); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+
+	if got := config.Agents(confDir); len(got) != 1 || got[0] != "gemini" {
+		t.Errorf("installed_agents tras uninstall = %v, se esperaba [gemini]", got)
+	}
+	if got := config.Get(confDir, config.AgentCLI.File); got != "gemini" {
+		t.Errorf("agent_cli tras uninstall = %q, se esperaba reasignado a gemini", got)
 	}
 }
 
