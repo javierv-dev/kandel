@@ -201,92 +201,10 @@ func TestDispatchHelpListsRegisteredCommands(t *testing.T) {
 	if err := Dispatch(context.Background(), nil, app); err != nil {
 		t.Fatalf("ayuda devolvió error: %v", err)
 	}
-	for _, name := range []string{"save", "search", "recent", "get", "delete", "pending"} {
+	for _, name := range []string{"session", "embeddings", "doctor", "sync", "seed", "tui"} {
 		if !strings.Contains(out.String(), name) {
 			t.Errorf("la ayuda no lista el comando %q:\n%s", name, out.String())
 		}
-	}
-}
-
-func TestSaveParsesFlagsAndArgs(t *testing.T) {
-	app, mem, _, _, _ := newTestApp()
-	args := []string{"save", "--type", "decision", "--project", "kandel", "--scope", "global",
-		"Mi título", "Mi contenido"}
-	if err := Dispatch(context.Background(), args, app); err != nil {
-		t.Fatalf("save devolvió error: %v", err)
-	}
-	if mem.saveInput.Title != "Mi título" || mem.saveInput.Content != "Mi contenido" {
-		t.Errorf("título/contenido mal parseados: %+v", mem.saveInput)
-	}
-	if mem.saveInput.Type != domain.TypeDecision {
-		t.Errorf("type = %q, se esperaba decision", mem.saveInput.Type)
-	}
-	if mem.saveInput.Project != "kandel" {
-		t.Errorf("project = %q, se esperaba kandel", mem.saveInput.Project)
-	}
-	if mem.saveInput.Scope != domain.ScopeGlobal {
-		t.Errorf("scope = %q, se esperaba global", mem.saveInput.Scope)
-	}
-}
-
-func TestSaveMissingArgsFails(t *testing.T) {
-	app, _, _, _, _ := newTestApp()
-	err := Dispatch(context.Background(), []string{"save", "solo-titulo"}, app)
-	if err == nil {
-		t.Fatal("se esperaba error por faltar el contenido")
-	}
-}
-
-func TestSaveInvalidScopeFails(t *testing.T) {
-	app, _, _, _, _ := newTestApp()
-	err := Dispatch(context.Background(), []string{"save", "--scope", "raro", "t", "c"}, app)
-	if err == nil {
-		t.Fatal("se esperaba error por alcance inválido")
-	}
-}
-
-func TestSearchParsesQueryAndLimit(t *testing.T) {
-	app, mem, _, _, _ := newTestApp()
-	args := []string{"search", "--limit", "3", "--type", "bugfix", "cómo arreglar el login"}
-	if err := Dispatch(context.Background(), args, app); err != nil {
-		t.Fatalf("search devolvió error: %v", err)
-	}
-	if mem.searchQuery.Query != "cómo arreglar el login" {
-		t.Errorf("query = %q", mem.searchQuery.Query)
-	}
-	if mem.searchQuery.Limit != 3 {
-		t.Errorf("limit = %d, se esperaba 3", mem.searchQuery.Limit)
-	}
-	if mem.searchQuery.Type != domain.TypeBugfix {
-		t.Errorf("type = %q, se esperaba bugfix", mem.searchQuery.Type)
-	}
-}
-
-func TestRecentDefaultLimit(t *testing.T) {
-	app, mem, _, _, _ := newTestApp()
-	if err := Dispatch(context.Background(), []string{"recent"}, app); err != nil {
-		t.Fatalf("recent devolvió error: %v", err)
-	}
-	if mem.recentQuery.Limit != 20 {
-		t.Errorf("limit por defecto = %d, se esperaba 20", mem.recentQuery.Limit)
-	}
-}
-
-func TestDeleteSoft(t *testing.T) {
-	app, mem, _, _, _ := newTestApp()
-	if err := Dispatch(context.Background(), []string{"delete", "42"}, app); err != nil {
-		t.Fatalf("delete devolvió error: %v", err)
-	}
-	if mem.deletedID != 42 {
-		t.Errorf("delete recibió id=%d, se esperaba 42", mem.deletedID)
-	}
-}
-
-func TestDeleteInvalidIDFails(t *testing.T) {
-	app, _, _, _, _ := newTestApp()
-	err := Dispatch(context.Background(), []string{"delete", "no-numero"}, app)
-	if err == nil {
-		t.Fatal("se esperaba error por id inválido")
 	}
 }
 
@@ -351,26 +269,6 @@ func TestDoctorWarningDoesNotFail(t *testing.T) {
 	}}
 	if err := Dispatch(context.Background(), []string{"doctor"}, app); err != nil {
 		t.Fatalf("un warning no debe hacer fallar doctor: %v", err)
-	}
-}
-
-func TestConflictsListsCandidates(t *testing.T) {
-	app, _, _, out, _ := newTestApp()
-	app.Conflict = &fakeConflict{candidates: []service.Candidate{
-		{Memory: domain.Memory{ID: 3, Title: "Otra cosa"}, Score: 0.7},
-	}}
-	if err := Dispatch(context.Background(), []string{"conflicts", "5"}, app); err != nil {
-		t.Fatalf("conflicts devolvió error: %v", err)
-	}
-	if !strings.Contains(out.String(), "#3") {
-		t.Errorf("debe listar el candidato: %q", out.String())
-	}
-}
-
-func TestConflictsMissingID(t *testing.T) {
-	app, _, _, _, _ := newTestApp()
-	if err := Dispatch(context.Background(), []string{"conflicts"}, app); err == nil {
-		t.Fatal("conflicts sin id debe devolver error")
 	}
 }
 
@@ -482,17 +380,5 @@ func TestSeedNoAgentFails(t *testing.T) {
 	dir := writeSeedRepo(t)
 	if err := Dispatch(context.Background(), []string{"seed", "--dir", dir}, app); err == nil {
 		t.Fatal("seed sin agente configurado debe fallar")
-	}
-}
-
-func TestGetNotFound(t *testing.T) {
-	app, mem, _, _, _ := newTestApp()
-	mem.getResult = nil
-	err := Dispatch(context.Background(), []string{"get", "99"}, app)
-	if err != domain.ErrNotFound {
-		t.Fatalf("se esperaba ErrNotFound, se obtuvo %v", err)
-	}
-	if mem.getID != 99 {
-		t.Errorf("getID = %d, se esperaba 99", mem.getID)
 	}
 }
