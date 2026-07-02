@@ -8,9 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"strings"
 	"time"
+
+	"github.com/javierv-dev/kandel/internal/config"
 )
 
 // client habla con el daemon HTTP local de kandel (kandel serve). Centraliza la base de la URL y
@@ -20,15 +20,11 @@ type client struct {
 	hc   *http.Client
 }
 
-// newClient construye el cliente apuntando a 127.0.0.1:$KANDEL_PORT (def. 8765), el mismo puerto
-// que fija el instalador y que usa el comando serve (único origen de verdad del puerto).
+// newClient construye el cliente apuntando a 127.0.0.1:<port>, con el puerto resuelto por config
+// (env KANDEL_PORT > archivo > default 8765), el mismo origen de verdad que usa el comando serve.
 func newClient() *client {
-	port := strings.TrimSpace(os.Getenv("KANDEL_PORT"))
-	if port == "" {
-		port = "8765"
-	}
 	return &client{
-		base: "http://127.0.0.1:" + port,
+		base: "http://127.0.0.1:" + config.Resolve(config.Port),
 		hc:   &http.Client{Timeout: 3 * time.Second},
 	}
 }

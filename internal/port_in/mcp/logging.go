@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/javierv-dev/kandel/internal/config"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -67,7 +68,7 @@ func firstText(res *mcp.CallToolResult) string {
 // mcpLogDir resuelve el directorio de logs (KANDEL_LOG_DIR o ~/.kandel/logs). Mismo lugar que los
 // hooks, para tener toda la observabilidad junta.
 func mcpLogDir() string {
-	if d := strings.TrimSpace(os.Getenv("KANDEL_LOG_DIR")); d != "" {
+	if d := config.Resolve(config.LogDir); d != "" {
 		return d
 	}
 	home, err := os.UserHomeDir()

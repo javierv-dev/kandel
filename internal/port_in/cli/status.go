@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	nethttp "net/http"
-	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/javierv-dev/kandel/internal/config"
 )
 
 // statusCmd informa si el daemon HTTP responde y dónde viven la base de datos y los logs. Es la
@@ -35,14 +36,10 @@ func (statusCmd) Run(_ context.Context, _ []string, app *App) error {
 		}
 	}
 
-	home, _ := os.UserHomeDir()
-	dataDir := os.Getenv("KANDEL_DATA_DIR")
-	if dataDir == "" && home != "" {
-		dataDir = filepath.Join(home, ".kandel")
-	}
-	logDir := os.Getenv("KANDEL_LOG_DIR")
-	if logDir == "" && home != "" {
-		logDir = filepath.Join(home, ".kandel", "logs")
+	dataDir, _ := config.DefaultDir()
+	logDir := config.Resolve(config.LogDir)
+	if logDir == "" && dataDir != "" {
+		logDir = filepath.Join(dataDir, "logs")
 	}
 	fmt.Fprintf(app.Out, "puerto:   %s (KANDEL_PORT)\n", port)
 	fmt.Fprintf(app.Out, "base:     %s\n", filepath.Join(dataDir, "kandel.db"))

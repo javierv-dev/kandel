@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/javierv-dev/kandel/internal/config"
 	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/semver"
 )
@@ -52,7 +53,7 @@ func NewChecker() *Checker {
 	owner := envOr("KANDEL_UPDATE_OWNER", defaultOwner)
 	repo := envOr("KANDEL_UPDATE_REPO", defaultRepo)
 	return &Checker{
-		enabled:   !strings.EqualFold(strings.TrimSpace(os.Getenv("KANDEL_UPDATE_CHECK")), "off"),
+		enabled:   !strings.EqualFold(config.Resolve(config.UpdateCheck), "off"),
 		cachePath: defaultCachePath(),
 		ttl:       cacheTTL,
 		now:       time.Now,
@@ -146,13 +147,9 @@ func githubLatest(ctx context.Context, owner, repo string) (string, error) {
 
 // defaultCachePath resuelve ~/.kandel/update-check.json (respeta KANDEL_DATA_DIR).
 func defaultCachePath() string {
-	dir := strings.TrimSpace(os.Getenv("KANDEL_DATA_DIR"))
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		dir = filepath.Join(home, ".kandel")
+	dir, err := config.DefaultDir()
+	if err != nil {
+		return ""
 	}
 	return filepath.Join(dir, "update-check.json")
 }

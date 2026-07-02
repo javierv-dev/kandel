@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
+
+	"github.com/javierv-dev/kandel/internal/config"
 )
 
-// logDir resuelve el directorio de logs de los hooks. KANDEL_LOG_DIR lo sobreescribe; por defecto
-// es ~/.kandel/logs (el mismo que usaban los scripts shell). Devuelve "" si no se puede resolver.
+// logDir resuelve el directorio de logs de los hooks. config lo sobreescribe (env KANDEL_LOG_DIR >
+// archivo); por defecto es ~/.kandel/logs (el mismo que usaban los scripts shell). Devuelve "" si no
+// se puede resolver.
 func logDir() string {
-	if d := strings.TrimSpace(os.Getenv("KANDEL_LOG_DIR")); d != "" {
+	if d := config.Resolve(config.LogDir); d != "" {
 		return d
 	}
 	home, err := os.UserHomeDir()

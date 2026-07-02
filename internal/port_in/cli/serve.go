@@ -7,29 +7,22 @@ import (
 	"fmt"
 	"log"
 	nethttp "net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/javierv-dev/kandel/internal/config"
 	httpadapter "github.com/javierv-dev/kandel/internal/port_in/http"
 )
 
-// defaultPort es el puerto por defecto del daemon HTTP. KANDEL_PORT lo sobreescribe; el
-// instalador de cada agente lo fija de forma coherente en los hooks y aquí (ver §18 del plan).
-const defaultPort = "8765"
-
 // defaultBackfillInterval es cada cuánto el daemon barre las memorias guardadas sin vector (p. ej.
-// con Ollama caído) y las reembebe. KANDEL_BACKFILL_INTERVAL lo sobreescribe; "0" lo desactiva.
+// con Ollama caído) y las reembebe. config lo sobreescribe (backfill_interval); "0" lo desactiva.
 const defaultBackfillInterval = 2 * time.Minute
 
-// resolvePort devuelve el puerto efectivo del daemon: KANDEL_PORT si está definido, si no el
-// valor por defecto. Mantiene un único origen de verdad para el puerto entre hooks y servidor.
+// resolvePort devuelve el puerto efectivo del daemon, resuelto por config (env KANDEL_PORT >
+// archivo > default 8765). Único origen de verdad del puerto entre hooks y servidor.
 func resolvePort() string {
-	if p := strings.TrimSpace(os.Getenv("KANDEL_PORT")); p != "" {
-		return p
-	}
-	return defaultPort
+	return config.Resolve(config.Port)
 }
 
 // serveCmd arranca la API HTTP local. Expone los casos de uso como endpoints REST para
@@ -102,7 +95,7 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 // (formato de time.ParseDuration, p. ej. "90s", "5m") si está definido, si no el valor por defecto.
 // "0" (o cualquier valor <= 0) desactiva el barrido.
 func resolveBackfillInterval() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("KANDEL_BACKFILL_INTERVAL"))
+	raw := strings.TrimSpace(config.Resolve(config.BackfillInterval))
 	if raw == "" {
 		return defaultBackfillInterval
 	}

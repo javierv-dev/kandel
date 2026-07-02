@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/javierv-dev/kandel/internal/agentconf"
+	"github.com/javierv-dev/kandel/internal/config"
 )
 
 func init() { register(claudeCode{}) }
@@ -90,9 +90,9 @@ func (c claudeCode) Install(home, version string, out io.Writer) error {
 	// 5. Config local (~/.kandel/config): qué CLI de agente y modelo usa el seed standalone, que NO
 	// hereda el env del servidor MCP. Para Claude Code: claude + sonnet.
 	confDir := filepath.Join(home, ".kandel")
-	if err := agentconf.Save(confDir, map[string]string{
-		agentconf.KeyAgentCLI:  "claude",
-		agentconf.KeySeedModel: "sonnet",
+	if err := config.Save(confDir, map[string]string{
+		config.AgentCLI.File:  "claude",
+		config.SeedModel.File: "sonnet",
 	}); err != nil {
 		return err
 	}

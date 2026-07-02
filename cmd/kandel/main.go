@@ -20,6 +20,7 @@ import (
 	"github.com/javierv-dev/kandel/internal/adapter/llm"
 	"github.com/javierv-dev/kandel/internal/adapter/release"
 	"github.com/javierv-dev/kandel/internal/adapter/sqlite"
+	"github.com/javierv-dev/kandel/internal/config"
 	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/port_in/cli"
 	"github.com/javierv-dev/kandel/internal/service"
@@ -84,8 +85,8 @@ func run(args []string) error {
 	uow := sqlite.NewUnitOfWork(db)
 	agentRunner := llm.FromEnv()
 	embedder := embedding.NewOllama(
-		os.Getenv("KANDEL_OLLAMA_HOST"),
-		os.Getenv("KANDEL_EMBED_MODEL"),
+		config.Resolve(config.OllamaHost),
+		config.Resolve(config.EmbedModel),
 		embedDimensions(),
 	)
 
@@ -162,10 +163,7 @@ func databasePath() (string, error) {
 // sobreescribe; por defecto es ".kandel" relativo al directorio de trabajo (pensado para vivir
 // dentro del repositorio del proyecto y versionarse con git).
 func syncDir() string {
-	if d := strings.TrimSpace(os.Getenv("KANDEL_SYNC_DIR")); d != "" {
-		return d
-	}
-	return ".kandel"
+	return config.Resolve(config.SyncDir)
 }
 
 // detectionSweep envuelve el barrido de detección de conflictos como el callback que dispara el
@@ -185,7 +183,7 @@ func detectionSweep(c *service.ConflictService) func(context.Context) {
 // conflictCutoff lee el corte de similitud de la detección de KANDEL_CONFLICT_SIM_CUTOFF; 0 (o
 // inválido) deja el valor por defecto del servicio.
 func conflictCutoff() float64 {
-	raw := strings.TrimSpace(os.Getenv("KANDEL_CONFLICT_SIM_CUTOFF"))
+	raw := strings.TrimSpace(config.Resolve(config.ConflictCutoff))
 	if raw == "" {
 		return 0
 	}
@@ -199,7 +197,7 @@ func conflictCutoff() float64 {
 // conflictTopK lee el top-K de la detección de KANDEL_CONFLICT_TOPK; 0 (o inválido) deja el valor
 // por defecto del servicio.
 func conflictTopK() int {
-	raw := strings.TrimSpace(os.Getenv("KANDEL_CONFLICT_TOPK"))
+	raw := strings.TrimSpace(config.Resolve(config.ConflictTopK))
 	if raw == "" {
 		return 0
 	}
@@ -213,7 +211,7 @@ func conflictTopK() int {
 // normativeThreshold lee el umbral del aviso "demasiadas normativas" de KANDEL_NORMATIVE_THRESHOLD;
 // 0 (o inválido) deja el valor por defecto del servicio.
 func normativeThreshold() int {
-	raw := strings.TrimSpace(os.Getenv("KANDEL_NORMATIVE_THRESHOLD"))
+	raw := strings.TrimSpace(config.Resolve(config.NormativeThreshold))
 	if raw == "" {
 		return 0
 	}
@@ -227,7 +225,7 @@ func normativeThreshold() int {
 // embedDimensions lee la dimensión del vector de KANDEL_EMBED_DIMENSIONS; 0 deja que el
 // embebedor use su valor por defecto.
 func embedDimensions() int {
-	raw := strings.TrimSpace(os.Getenv("KANDEL_EMBED_DIMENSIONS"))
+	raw := strings.TrimSpace(config.Resolve(config.EmbedDimensions))
 	if raw == "" {
 		return 0
 	}
@@ -243,7 +241,7 @@ func embedDimensions() int {
 // o KANDEL_LOG_DIR si está definido). Si no se puede resolver la ruta, escribe a stderr. Nunca
 // entra en pánico: la observabilidad es deseable, no crítica.
 func embeddingWarnLogger() func(string, ...any) {
-	dir := strings.TrimSpace(os.Getenv("KANDEL_LOG_DIR"))
+	dir := strings.TrimSpace(config.Resolve(config.LogDir))
 	if dir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
 			dir = filepath.Join(home, ".kandel", "logs")

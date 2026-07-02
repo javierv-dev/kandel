@@ -21,6 +21,7 @@ func TestFromEnvUnsupportedAgent(t *testing.T) {
 // ErrCLINotInstalled, no con ErrAgentUnsupported): "vacío" y "no soportado" son casos distintos.
 func TestFromEnvEmptyAgent(t *testing.T) {
 	t.Setenv("KANDEL_AGENT_CLI", "")
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir()) // aísla del ~/.kandel/config real (fallback de config)
 	r := FromEnv()
 	_, err := r.Judge(context.Background(), "prompt")
 	if !errors.Is(err, ErrCLINotInstalled) {

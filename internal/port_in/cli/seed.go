@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/javierv-dev/kandel/internal/agentconf"
+	"github.com/javierv-dev/kandel/internal/config"
 	"github.com/javierv-dev/kandel/internal/project"
 	"github.com/javierv-dev/kandel/internal/seedsource"
 	"github.com/javierv-dev/kandel/internal/service"
@@ -126,31 +126,20 @@ func confirm(app *App, n int) bool {
 	return answer == "y" || answer == "yes" || answer == "s" || answer == "si" || answer == "sí"
 }
 
-// resolveAgentCLI aplica la cadena de resolución de la CLI de agente: flag > entorno > config local.
+// resolveAgentCLI aplica la cadena de resolución de la CLI de agente: flag > (entorno > config local).
+// El flag explícito manda; el resto lo resuelve config (env KANDEL_AGENT_CLI > archivo).
 func resolveAgentCLI(explicit string) string {
 	if v := strings.TrimSpace(explicit); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("KANDEL_AGENT_CLI")); v != "" {
-		return v
-	}
-	if dir, err := agentconf.DefaultDir(); err == nil {
-		return strings.TrimSpace(agentconf.Get(dir, agentconf.KeyAgentCLI))
-	}
-	return ""
+	return strings.TrimSpace(config.Resolve(config.AgentCLI))
 }
 
-// resolveSeedModel aplica la cadena de resolución del modelo: flag > entorno > config local. Vacío
+// resolveSeedModel aplica la cadena de resolución del modelo: flag > (entorno > config local). Vacío
 // deja que el adaptador llm elija su modelo por defecto del seed.
 func resolveSeedModel(explicit string) string {
 	if v := strings.TrimSpace(explicit); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("KANDEL_SEED_MODEL")); v != "" {
-		return v
-	}
-	if dir, err := agentconf.DefaultDir(); err == nil {
-		return strings.TrimSpace(agentconf.Get(dir, agentconf.KeySeedModel))
-	}
-	return ""
+	return strings.TrimSpace(config.Resolve(config.SeedModel))
 }

@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
+	"github.com/javierv-dev/kandel/internal/config"
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
 )
@@ -20,7 +20,9 @@ var ErrAgentUnsupported = errors.New("llm: agente no soportado todavía")
 // stdout). Hoy solo Claude Code es objetivo de pruebas; el resto figura como hoja de ruta (§18).
 var supportedAgents = []string{"claude"}
 
-// FromEnv elige el juez LLM según la variable KANDEL_AGENT_CLI:
+// FromEnv elige el juez LLM según el agente activo, resuelto por config (env KANDEL_AGENT_CLI >
+// archivo ~/.kandel/config > vacío). Resolverlo por config es lo que permite al daemon `serve`
+// (arrancado por los hooks, sin heredar la env del entry MCP) ver el agente configurado:
 //   - "claude"            → CLI de Claude (claude -p --output-format json --model haiku --max-turns 1)
 //   - vacío               → un runner noop que falla en Judge (no hay agente configurado)
 //   - cualquier otro valor → un runner que falla con un aviso claro (agente no soportado todavía)
@@ -29,7 +31,7 @@ var supportedAgents = []string{"claude"}
 // detección de candidatos (que no usa el juez) y el registro de veredictos del agente
 // (mem_judge) funcionan aunque no haya CLI de agente; solo mem_compare fallaría, con mensaje claro.
 func FromEnv() ports.AgentRunner {
-	switch agent := strings.TrimSpace(os.Getenv("KANDEL_AGENT_CLI")); agent {
+	switch agent := strings.TrimSpace(config.Resolve(config.AgentCLI)); agent {
 	case "":
 		return Noop{}
 	case "claude":
