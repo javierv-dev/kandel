@@ -77,6 +77,7 @@ Formato para `mem_save`:
   - `discovery` — un hecho del sistema/entorno, aprendizaje o configuración (CATCH-ALL, por defecto)
 - **scope**: `project` (def.) | `global`. Usa `global` para lo que aplica en TODOS tus proyectos (típico de `preference`); `project` para lo específico de este repo. (Ya no existe `personal`.)
 - **resolution** (opcional): pon `open` cuando el usuario deje algo SIN resolver (aparecerá en la bandeja "Pendientes"). Para cerrarlo, guarda una memoria NUEVA que lo reemplace, en vez de editar la vieja.
+- **project** y **session_id**: reutiliza los valores del bloque "[uso interno kandel]" inyectado en la conversación. El `session_id` liga la memoria a la charla que la originó (trazabilidad); si no aparece, omítelo.
 - **content**:
   **What**: Una frase — qué se hizo
   **Why**: Qué lo motivó (petición del usuario, bug, rendimiento, etc.)

@@ -20,6 +20,7 @@ func (r *runner) sessionStart(p payload) error {
 		fmt.Fprint(r.out, r.assetMismatchBanner())
 		fmt.Fprint(r.out, r.updateBanner())
 		fmt.Fprint(r.out, protocolSessionStart)
+		r.injectMetadata(project, p.SessionID)
 		return nil
 	}
 
@@ -48,14 +49,24 @@ func (r *runner) sessionStart(p payload) error {
 	code, _ := r.client.warmup(r.ctx)
 	r.klog("POST /embeddings/warmup -> HTTP " + code)
 
-	// Inyecta los banners (desalineación / versión nueva, si aplican) + el protocolo + el contexto.
+	// Inyecta los banners (desalineación / versión nueva, si aplican) + el protocolo + los metadatos
+	// internos (project/session_id) + el contexto.
 	fmt.Fprint(r.out, r.assetMismatchBanner())
 	fmt.Fprint(r.out, r.updateBanner())
 	fmt.Fprint(r.out, protocolSessionStart)
+	r.injectMetadata(project, p.SessionID)
 	if text := r.client.fetchContext(r.ctx, project); text != "" {
 		fmt.Fprintf(r.out, "\n%s\n", text)
 	}
 	return nil
+}
+
+// injectMetadata escribe el bloque de metadatos internos de la conversación (project, session_id, …)
+// en el stdout del hook, con una línea de separación. No imprime nada si no hay datos que inyectar.
+func (r *runner) injectMetadata(project, sessionID string) {
+	if block := (agentMetadata{project: project, sessionID: sessionID}).render(); block != "" {
+		fmt.Fprintf(r.out, "\n%s", block)
+	}
 }
 
 // assetMismatchBanner devuelve un aviso para el agente si la versión de los assets instalados no
@@ -96,7 +107,7 @@ func (r *runner) postCompaction(p payload) error {
 	r.klog(fmt.Sprintf("inicio: session_id=%s project=%s", orQ(p.SessionID), orQ(project)))
 
 	if err := r.client.ensureDaemon(r.ctx, r); err != nil {
-		r.printPostCompaction(project, "")
+		r.printPostCompaction(project, p.SessionID, "")
 		return nil
 	}
 
@@ -105,18 +116,20 @@ func (r *runner) postCompaction(p payload) error {
 		r.klog("POST /sessions -> HTTP " + code)
 	}
 
-	r.printPostCompaction(project, r.client.fetchContext(r.ctx, project))
+	r.printPostCompaction(project, p.SessionID, r.client.fetchContext(r.ctx, project))
 	return nil
 }
 
 // printPostCompaction compone e imprime el bloque post-compactación con el nombre del proyecto
-// interpolado y, opcionalmente, el contexto recuperado.
-func (r *runner) printPostCompaction(project, context string) {
+// interpolado, los metadatos internos (la compactación borró el contexto previo, así que hay que
+// re-inyectarlos) y, opcionalmente, el contexto recuperado.
+func (r *runner) printPostCompaction(project, sessionID, context string) {
 	fmt.Fprintln(r.out, postCompactionHeader)
 	fmt.Fprintf(r.out, "\n1. PRIMERO: Llama a mem_session_summary con el contenido del resumen compactado de arriba. Usa project: '%s'.\n", project)
 	fmt.Fprint(r.out, "   Esto preserva lo que se logró antes de la compactación.\n\n")
 	fmt.Fprintf(r.out, "2. LUEGO: Llama a mem_context con project: '%s' para recuperar el historial reciente de sesiones y memorias.\n", project)
 	fmt.Fprintln(r.out, postCompactionFooter)
+	r.injectMetadata(project, sessionID)
 	if context != "" {
 		fmt.Fprintf(r.out, "\n%s\n", context)
 	}

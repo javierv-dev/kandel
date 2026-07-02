@@ -26,7 +26,7 @@ Llama a ` + "`mem_save`" + ` INMEDIATAMENTE después de CUALQUIERA de estos:
 
 **Autochequeo después de CADA tarea**: "¿Acabo yo o el usuario de tomar una decisión, confirmar una recomendación, expresar una preferencia, arreglar un bug, aprender algo o establecer una convención? Si es así → mem_save AHORA."
 
-Al guardar, enruta el type por lo que ES: decisión→decision, gusto/convención del usuario→preference (suele global), patrón/idioma de código o estructura→architecture, causa raíz de bug→bugfix, hecho/aprendizaje/config→discovery (default). scope=global solo si aplica a TODOS tus proyectos; si no, project. Marca resolution=open si el usuario deja algo sin resolver.
+Al guardar, enruta el type por lo que ES: decisión→decision, gusto/convención del usuario→preference (suele global), patrón/idioma de código o estructura→architecture, causa raíz de bug→bugfix, hecho/aprendizaje/config→discovery (default). scope=global solo si aplica a TODOS tus proyectos; si no, project. Marca resolution=open si el usuario deja algo sin resolver. Pasa también el project y el session_id que aparecen en el bloque "[uso interno kandel]" de esta conversación, para ligar la memoria a la charla que la originó.
 
 ### BUSCA EN LA MEMORIA cuando (solo cuando de verdad ayude — no en peticiones triviales):
 Las sesiones y memorias recientes YA se inyectan más abajo al iniciar la sesión, así que NO necesitas

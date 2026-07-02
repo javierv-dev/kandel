@@ -125,6 +125,10 @@ func TestSessionStartCreatesSessionAndInjectsContext(t *testing.T) {
 	if !strings.Contains(out.String(), "CONTEXTO DE PRUEBA") {
 		t.Errorf("la salida no inyecta el contexto:\n%s", out.String())
 	}
+	// Metadatos internos: project + session_id, para que el agente los pase a mem_save.
+	if s := out.String(); !strings.Contains(s, "uso interno kandel") || !strings.Contains(s, "session_id: sess-1") {
+		t.Errorf("la salida no inyecta los metadatos internos:\n%s", s)
+	}
 }
 
 func TestSessionStartWithoutSessionIDDoesNotCreate(t *testing.T) {
@@ -140,6 +144,11 @@ func TestSessionStartWithoutSessionIDDoesNotCreate(t *testing.T) {
 	// Aun así inyecta el protocolo (es útil al modelo).
 	if !strings.Contains(out.String(), "Memoria persistente kandel") {
 		t.Errorf("debería imprimir el protocolo aunque no haya sesión")
+	}
+	// Sin session_id, el bloque de metadatos NO debe listar esa clave (se omite lo vacío), pero sí
+	// el project (el basename del cwd).
+	if s := out.String(); strings.Contains(s, "session_id:") {
+		t.Errorf("sin session_id no debe aparecer esa clave en los metadatos:\n%s", s)
 	}
 }
 
@@ -311,6 +320,28 @@ func TestPostCompactionInjectsProtocol(t *testing.T) {
 	}
 	if !strings.Contains(s, "CONTEXTO DE PRUEBA") {
 		t.Errorf("post-compactación debe inyectar el contexto:\n%s", s)
+	}
+	// La compactación borró el contexto previo → hay que re-inyectar los metadatos internos.
+	if !strings.Contains(s, "session_id: sc-1") {
+		t.Errorf("post-compactación debe re-inyectar el session_id:\n%s", s)
+	}
+}
+
+func TestAgentMetadataRender(t *testing.T) {
+	// Ambos valores presentes → bloque con las dos claves.
+	full := agentMetadata{project: "kandel", sessionID: "sess-9"}.render()
+	if !strings.Contains(full, "project: kandel") || !strings.Contains(full, "session_id: sess-9") {
+		t.Errorf("render completo incorrecto:\n%s", full)
+	}
+	// session_id vacío → se omite esa clave (la línea "session_id:"), pero el project queda. Se busca
+	// la clave con dos puntos porque la prosa de instrucción menciona la palabra "session_id".
+	partial := agentMetadata{project: "kandel", sessionID: "  "}.render()
+	if strings.Contains(partial, "session_id:") || !strings.Contains(partial, "project: kandel") {
+		t.Errorf("render parcial debe omitir session_id vacío:\n%s", partial)
+	}
+	// Sin ningún dato → bloque vacío (el llamador no imprime nada).
+	if empty := (agentMetadata{}).render(); empty != "" {
+		t.Errorf("render sin datos debe ser vacío, fue:\n%s", empty)
 	}
 }
 
