@@ -100,25 +100,6 @@ func TestVectorDelete(t *testing.T) {
 	}
 }
 
-func TestVectorCascadeOnHardDelete(t *testing.T) {
-	db := newTestDB(t)
-	seedSession(t, db, "s1")
-	repo := NewMemoryRepo(db)
-	idx := NewVectorIndex(db)
-	ctx := context.Background()
-
-	id := seedMemory(t, db, "m1")
-	_ = idx.Upsert(ctx, id, []float32{1, 0}, "fake")
-	if err := repo.HardDelete(ctx, id); err != nil {
-		t.Fatalf("HardDelete: %v", err)
-	}
-	// La clave foránea ON DELETE CASCADE debe haber quitado el vector.
-	got, _ := idx.Nearest(ctx, []float32{1, 0}, 10)
-	if len(got) != 0 {
-		t.Errorf("el hard-delete de la memoria debe cascadear al vector, quedan %d", len(got))
-	}
-}
-
 func TestPendingEmbedding(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

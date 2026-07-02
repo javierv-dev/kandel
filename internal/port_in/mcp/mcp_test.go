@@ -127,13 +127,13 @@ func TestHandleGetNotFound(t *testing.T) {
 func TestHandleDeleteIsAlwaysSoft(t *testing.T) {
 	mem := &fakeMemory{}
 	svc := Services{Memory: mem}
-	// Aunque la llamada pida hard=true, el agente solo puede borrar lógico (hard reservado a la CLI).
-	_, err := handleDelete(svc)(context.Background(), callWith(map[string]any{"id": float64(4), "hard": true}))
+	// El borrado es siempre lógico: no existe borrado físico en ninguna superficie.
+	_, err := handleDelete(svc)(context.Background(), callWith(map[string]any{"id": float64(4)}))
 	if err != nil {
 		t.Fatalf("handleDelete error: %v", err)
 	}
-	if mem.deletedID != 4 || mem.deletedHard {
-		t.Errorf("mem_delete debe ser siempre soft: id=%d hard=%v", mem.deletedID, mem.deletedHard)
+	if mem.deletedID != 4 {
+		t.Errorf("mem_delete debe borrar el id 4, borró %d", mem.deletedID)
 	}
 }
 
@@ -331,14 +331,13 @@ func textOf(t *testing.T, res *mcp.CallToolResult) string {
 // ─── dobles ────────────────────────────────────────────────────────────────────
 
 type fakeMemory struct {
-	lastSave    service.SaveInput
-	lastSearch  ports.SearchQuery
-	saveResult  service.SaveResult
-	saveCount   int
-	getResult   *domain.Memory
-	deletedID   int64
-	deletedHard bool
-	restoredID  int64
+	lastSave   service.SaveInput
+	lastSearch ports.SearchQuery
+	saveResult service.SaveResult
+	saveCount  int
+	getResult  *domain.Memory
+	deletedID  int64
+	restoredID int64
 }
 
 func (f *fakeMemory) Save(_ context.Context, in service.SaveInput) (service.SaveResult, error) {
@@ -357,9 +356,8 @@ func (f *fakeMemory) Search(_ context.Context, q ports.SearchQuery) ([]domain.Se
 func (f *fakeMemory) Update(_ context.Context, id int64, _ service.UpdateInput) (domain.Memory, error) {
 	return domain.Memory{ID: id}, nil
 }
-func (f *fakeMemory) Delete(_ context.Context, id int64, hard bool) error {
+func (f *fakeMemory) Delete(_ context.Context, id int64) error {
 	f.deletedID = id
-	f.deletedHard = hard
 	return nil
 }
 func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error) {

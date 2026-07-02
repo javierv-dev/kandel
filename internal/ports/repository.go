@@ -57,8 +57,6 @@ type MemoryRepo interface {
 	// Restore revierte un soft-delete (limpia DeletedAt). Solo afecta a memorias borradas
 	// lógicamente; si la memoria no existe o no estaba borrada, devuelve domain.ErrNotFound.
 	Restore(ctx context.Context, id int64) error
-	// HardDelete elimina la memoria y sus datos asociados (incluido su vector).
-	HardDelete(ctx context.Context, id int64) error
 	// Recent lista memorias por recencia para navegación del usuario.
 	Recent(ctx context.Context, q RecentQuery) ([]domain.Memory, error)
 	// Search hidrata a SearchResult los vecinos devueltos por el VectorIndex, aplicando los

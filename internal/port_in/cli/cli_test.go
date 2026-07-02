@@ -21,7 +21,6 @@ type fakeMemory struct {
 	searchQuery ports.SearchQuery
 	recentQuery ports.RecentQuery
 	deletedID   int64
-	deletedHard bool
 	restoredID  int64
 	getID       int64
 	getResult   *domain.Memory
@@ -55,9 +54,8 @@ func (f *fakeMemory) Update(_ context.Context, _ int64, _ service.UpdateInput) (
 	return domain.Memory{}, nil
 }
 
-func (f *fakeMemory) Delete(_ context.Context, id int64, hard bool) error {
+func (f *fakeMemory) Delete(_ context.Context, id int64) error {
 	f.deletedID = id
-	f.deletedHard = hard
 	return nil
 }
 
@@ -274,13 +272,13 @@ func TestRecentDefaultLimit(t *testing.T) {
 	}
 }
 
-func TestDeleteHardFlag(t *testing.T) {
+func TestDeleteSoft(t *testing.T) {
 	app, mem, _, _, _ := newTestApp()
-	if err := Dispatch(context.Background(), []string{"delete", "42", "--hard"}, app); err != nil {
+	if err := Dispatch(context.Background(), []string{"delete", "42"}, app); err != nil {
 		t.Fatalf("delete devolvió error: %v", err)
 	}
-	if mem.deletedID != 42 || !mem.deletedHard {
-		t.Errorf("delete recibió id=%d hard=%v", mem.deletedID, mem.deletedHard)
+	if mem.deletedID != 42 {
+		t.Errorf("delete recibió id=%d, se esperaba 42", mem.deletedID)
 	}
 }
 

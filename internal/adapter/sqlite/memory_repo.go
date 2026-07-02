@@ -118,14 +118,6 @@ func (r *MemoryRepo) Restore(ctx context.Context, id int64) error {
 	return nil
 }
 
-// HardDelete elimina físicamente la memoria.
-func (r *MemoryRepo) HardDelete(ctx context.Context, id int64) error {
-	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM memories WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("sqlite: hard-delete memoria: %w", err)
-	}
-	return nil
-}
-
 // supersededClause excluye memorias reemplazadas: una memoria queda fuera si es el target_id de
 // una relación 'supersedes' ya juzgada (su source, más reciente, la reemplaza). Maneja cadenas
 // A→B→C solo (cada eslabón anterior es target de un supersedes juzgado). Las memorias con sync_id

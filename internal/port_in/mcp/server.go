@@ -18,7 +18,7 @@ type MemoryPort interface {
 	Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Memory, error)
 	Search(ctx context.Context, q ports.SearchQuery) ([]domain.SearchResult, error)
 	Update(ctx context.Context, id int64, in service.UpdateInput) (domain.Memory, error)
-	Delete(ctx context.Context, id int64, hard bool) error
+	Delete(ctx context.Context, id int64) error
 	Restore(ctx context.Context, id int64) (domain.Memory, error)
 }
 

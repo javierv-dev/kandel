@@ -304,8 +304,9 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 	return result, nil
 }
 
-// Delete borra una memoria (soft por defecto, hard si se pide) y encola la mutación de borrado.
-func (m *MemoryService) Delete(ctx context.Context, id int64, hard bool) error {
+// Delete borra una memoria de forma LÓGICA (soft-delete, reversible con Restore) y encola la
+// mutación de borrado. No existe borrado físico: la fila siempre sobrevive para poder restaurarla.
+func (m *MemoryService) Delete(ctx context.Context, id int64) error {
 	return m.uow.Do(ctx, func(ctx context.Context) error {
 		o, err := m.memories.Get(ctx, id)
 		if err != nil {
@@ -314,12 +315,7 @@ func (m *MemoryService) Delete(ctx context.Context, id int64, hard bool) error {
 		if o == nil {
 			return domain.ErrNotFound
 		}
-		if hard {
-			err = m.memories.HardDelete(ctx, id)
-		} else {
-			err = m.memories.SoftDelete(ctx, id)
-		}
-		if err != nil {
+		if err := m.memories.SoftDelete(ctx, id); err != nil {
 			return err
 		}
 		return m.enqueue(ctx, *o, domain.SyncOpDelete)

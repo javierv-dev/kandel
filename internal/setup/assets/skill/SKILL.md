@@ -32,8 +32,8 @@ Tools adicionales (diferidas — cárgalas con ToolSearch solo cuando las necesi
 - `mem_delete`, `mem_restore`
 
 > ⚠️ `mem_delete` borra una memoria (borrado LÓGICO — reversible con `mem_restore`). Úsala
-> SOLO cuando estés seguro: una memoria errónea o duplicada, o una que el usuario pidió olvidar. El
-> borrado físico (irreversible) NO está disponible para el agente — solo vía `kandel delete <id> --hard`.
+> SOLO cuando estés seguro: una memoria errónea o duplicada, o una que el usuario pidió olvidar.
+> No existe borrado físico: toda eliminación es reversible.
 
 ## DISPARADORES DE GUARDADO PROACTIVO (obligatorio — NO esperes a que el usuario lo pida)
 

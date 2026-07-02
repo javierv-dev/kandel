@@ -78,14 +78,14 @@ func TestGetMemoryBadID(t *testing.T) {
 	}
 }
 
-func TestDeleteMemoryHard(t *testing.T) {
+func TestDeleteMemory(t *testing.T) {
 	mem := &fakeMemory{}
-	rec := do(t, Services{Memory: mem}, http.MethodDelete, "/memories/4?hard=true", "")
+	rec := do(t, Services{Memory: mem}, http.MethodDelete, "/memories/4", "")
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, se esperaba 204", rec.Code)
 	}
-	if mem.deletedID != 4 || !mem.deletedHard {
-		t.Errorf("delete mal traducido: id=%d hard=%v", mem.deletedID, mem.deletedHard)
+	if mem.deletedID != 4 {
+		t.Errorf("delete mal traducido: id=%d", mem.deletedID)
 	}
 }
 
@@ -276,7 +276,6 @@ type fakeMemory struct {
 	updateInput  service.UpdateInput
 	updateResult domain.Memory
 	deletedID    int64
-	deletedHard  bool
 }
 
 func (f *fakeMemory) Save(_ context.Context, in service.SaveInput) (service.SaveResult, error) {
@@ -295,9 +294,8 @@ func (f *fakeMemory) Update(_ context.Context, _ int64, in service.UpdateInput) 
 	f.updateInput = in
 	return f.updateResult, nil
 }
-func (f *fakeMemory) Delete(_ context.Context, id int64, hard bool) error {
+func (f *fakeMemory) Delete(_ context.Context, id int64) error {
 	f.deletedID = id
-	f.deletedHard = hard
 	return nil
 }
 

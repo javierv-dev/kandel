@@ -164,15 +164,15 @@ func handleUpdateMemory(svc Services) http.HandlerFunc {
 	}
 }
 
-// handleDeleteMemory borra una memoria (soft por defecto, ?hard=true para borrado físico).
+// handleDeleteMemory borra una memoria de forma lógica (soft-delete, reversible). No hay borrado
+// físico: toda eliminación es reversible con el restore.
 func handleDeleteMemory(svc Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathID(w, r)
 		if !ok {
 			return
 		}
-		hard := r.URL.Query().Get("hard") == "true"
-		if err := svc.Memory.Delete(r.Context(), id, hard); err != nil {
+		if err := svc.Memory.Delete(r.Context(), id); err != nil {
 			writeError(w, statusForError(err), err.Error())
 			return
 		}

@@ -6,36 +6,26 @@ import (
 	"strconv"
 )
 
-// deleteCmd borra una memoria. Por defecto es soft-delete (reversible); --hard la elimina
-// junto con su vector.
+// deleteCmd borra una memoria de forma LÓGICA (soft-delete, reversible con restore). No existe
+// borrado físico: toda eliminación es reversible.
 type deleteCmd struct{}
 
 func init() { register(deleteCmd{}) }
 
 func (deleteCmd) Name() string     { return "delete" }
-func (deleteCmd) Synopsis() string { return "borra una memoria (soft por defecto, --hard total)" }
+func (deleteCmd) Synopsis() string { return "borra una memoria (lógico, reversible con restore)" }
 
-// Run escanea los argumentos a mano (en vez de usar flag) para que --hard funcione en
-// cualquier posición: el paquete flag deja de parsear tras el primer posicional, y un flag
-// destructivo silenciosamente ignorado sería peligroso. Acepta tanto "delete 42 --hard" como
-// "delete --hard 42".
 func (deleteCmd) Run(ctx context.Context, args []string, app *App) error {
-	hard := false
 	idArg := ""
 	for _, a := range args {
-		switch a {
-		case "--hard", "-hard":
-			hard = true
-		default:
-			if idArg == "" {
-				idArg = a
-			} else {
-				return fmt.Errorf("delete: argumento inesperado %q", a)
-			}
+		if idArg == "" {
+			idArg = a
+		} else {
+			return fmt.Errorf("delete: argumento inesperado %q", a)
 		}
 	}
 	if idArg == "" {
-		fmt.Fprintln(app.Err, "uso: kandel delete <id> [--hard]")
+		fmt.Fprintln(app.Err, "uso: kandel delete <id>")
 		return fmt.Errorf("delete: falta el id")
 	}
 	id, err := strconv.ParseInt(idArg, 10, 64)
@@ -43,13 +33,9 @@ func (deleteCmd) Run(ctx context.Context, args []string, app *App) error {
 		return fmt.Errorf("delete: id inválido %q", idArg)
 	}
 
-	if err := app.Memory.Delete(ctx, id, hard); err != nil {
+	if err := app.Memory.Delete(ctx, id); err != nil {
 		return err
 	}
-	kind := "soft-delete"
-	if hard {
-		kind = "hard-delete"
-	}
-	fmt.Fprintf(app.Out, "%s memoria #%d\n", kind, id)
+	fmt.Fprintf(app.Out, "soft-delete memoria #%d\n", id)
 	return nil
 }

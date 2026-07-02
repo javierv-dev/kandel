@@ -96,7 +96,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 	if shouldRegister("mem_delete", allowlist) {
 		srv.AddTool(
 			mcp.NewTool("mem_delete",
-				mcp.WithDescription("⚠️ ÚSALA CON PRECAUCIÓN. Borra una memoria por id (borrado LÓGICO y reversible: deja de aparecer en búsquedas y listados). Es reversible con mem_restore. Solo bórrala si estás seguro (memoria errónea, duplicada o que el usuario pidió olvidar). El borrado físico irreversible NO está disponible aquí; solo por la CLI (`kandel delete <id> --hard`)."),
+				mcp.WithDescription("⚠️ ÚSALA CON PRECAUCIÓN. Borra una memoria por id (borrado LÓGICO y reversible: deja de aparecer en búsquedas y listados). Es reversible con mem_restore. Solo bórrala si estás seguro (memoria errónea, duplicada o que el usuario pidió olvidar). No existe borrado físico: toda eliminación es reversible."),
 				mcp.WithTitleAnnotation("Borrar memoria (lógico)"),
 				mcp.WithDestructiveHintAnnotation(true),
 				mcp.WithNumber("id", mcp.Required(), mcp.Description("Id de la memoria a borrar")),
@@ -311,15 +311,15 @@ func handleUpdate(svc Services) server.ToolHandlerFunc {
 	}
 }
 
-// handleDelete traduce la llamada mem_delete a Memory.Delete. Solo permite borrado LÓGICO
-// (reversible) desde el agente; el borrado físico (hard) queda reservado a la CLI por seguridad.
+// handleDelete traduce la llamada mem_delete a Memory.Delete. El borrado es siempre LÓGICO
+// (reversible con mem_restore): no existe borrado físico en ninguna superficie.
 func handleDelete(svc Services) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id := int64(argInt(req, "id", 0))
 		if id <= 0 {
 			return mcp.NewToolResultError("id es obligatorio para mem_delete"), nil
 		}
-		if err := svc.Memory.Delete(ctx, id, false); err != nil {
+		if err := svc.Memory.Delete(ctx, id); err != nil {
 			return mcp.NewToolResultError("error al borrar la memoria: " + err.Error()), nil
 		}
 		return jsonResult(map[string]any{"id": id, "delete": "soft", "restore_with": "mem_restore"})

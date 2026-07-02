@@ -102,11 +102,6 @@ func (f *fakeObs) SoftDelete(_ context.Context, id int64) error {
 	return nil
 }
 
-func (f *fakeObs) HardDelete(_ context.Context, id int64) error {
-	delete(f.items, id)
-	return nil
-}
-
 func (f *fakeObs) Restore(_ context.Context, id int64) error {
 	o, ok := f.items[id]
 	if !ok || o.DeletedAt == nil {

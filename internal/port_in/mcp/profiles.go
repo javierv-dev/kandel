@@ -28,8 +28,8 @@ var ProfileAgent = map[string]bool{
 	"mem_doctor":          true,
 	"mem_compare":         true,
 	"mem_judge":           true,
-	// mem_delete está expuesta pero el handler la limita a borrado LÓGICO (reversible); el borrado
-	// físico (hard) queda solo en la CLI. mem_restore deshace el borrado lógico.
+	// mem_delete hace borrado LÓGICO (reversible); no existe borrado físico en ninguna superficie.
+	// mem_restore deshace el borrado lógico.
 	"mem_delete":  true,
 	"mem_restore": true,
 }

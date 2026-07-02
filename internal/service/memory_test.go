@@ -159,7 +159,7 @@ func TestDeleteSoftAndEnqueue(t *testing.T) {
 	ctx := context.Background()
 	res, _ := svc.Save(ctx, baseSaveInput())
 
-	if err := svc.Delete(ctx, res.Memory.ID, false); err != nil {
+	if err := svc.Delete(ctx, res.Memory.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	got, _ := obs.Get(ctx, res.Memory.ID)
@@ -174,7 +174,7 @@ func TestDeleteSoftAndEnqueue(t *testing.T) {
 
 func TestDeleteMissing(t *testing.T) {
 	svc, _, _ := newMemoryFixture()
-	err := svc.Delete(context.Background(), 999, false)
+	err := svc.Delete(context.Background(), 999)
 	if err != domain.ErrNotFound {
 		t.Errorf("Delete de id inexistente debe dar ErrNotFound, fue %v", err)
 	}
@@ -184,7 +184,7 @@ func TestRestoreReindexesAndEnqueuesUpsert(t *testing.T) {
 	svc, obs, sync := newMemoryFixture()
 	ctx := context.Background()
 	res, _ := svc.Save(ctx, baseSaveInput())
-	if err := svc.Delete(ctx, res.Memory.ID, false); err != nil {
+	if err := svc.Delete(ctx, res.Memory.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
