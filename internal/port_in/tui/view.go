@@ -23,12 +23,24 @@ func (m Model) View() string {
 	return m.listView()
 }
 
-// listView dibuja la lista de memorias con el cursor.
+// listView dibuja la lista de memorias con el cursor. La cabecera y el pie cambian según el modo:
+// tecleando una consulta (buscador), mostrando resultados de búsqueda, o los recientes por defecto.
 func (m Model) listView() string {
 	var b strings.Builder
-	b.WriteString("kandel — memorias recientes\n\n")
+	switch {
+	case m.searching:
+		fmt.Fprintf(&b, "kandel — buscar: %s▌\n\n", m.query)
+	case m.showingSearch:
+		fmt.Fprintf(&b, "kandel — resultados de: %s\n\n", m.query)
+	default:
+		b.WriteString("kandel — memorias recientes\n\n")
+	}
 	if len(m.memories) == 0 {
-		b.WriteString("  (sin memorias)\n")
+		if m.showingSearch {
+			b.WriteString("  (sin resultados)\n")
+		} else {
+			b.WriteString("  (sin memorias)\n")
+		}
 	}
 	for i, mem := range m.memories {
 		marker := "  "
@@ -37,7 +49,11 @@ func (m Model) listView() string {
 		}
 		fmt.Fprintf(&b, "%s#%d  [%s]  %s\n", marker, mem.ID, mem.Type, mem.Title)
 	}
-	b.WriteString("\n↑/↓ moverse · enter ver · r recargar · q salir\n")
+	if m.searching {
+		b.WriteString("\nenter buscar · esc cancelar · ctrl+c salir\n")
+	} else {
+		b.WriteString("\n↑/↓ moverse · enter ver · / buscar · r recientes · q salir\n")
+	}
 	return b.String()
 }
 

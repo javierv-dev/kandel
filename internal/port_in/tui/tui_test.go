@@ -11,14 +11,23 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// fakeReader sirve una lista fija de memorias (o un error) sin tocar SQLite.
+// fakeReader sirve una lista fija de memorias (o un error) sin tocar SQLite. Registra la última
+// consulta de búsqueda recibida y devuelve resultados/errores preprogramados.
 type fakeReader struct {
-	memories []domain.Memory
-	err      error
+	memories    []domain.Memory
+	err         error
+	searchQuery ports.SearchQuery
+	results     []domain.SearchResult
+	searchErr   error
 }
 
-func (f fakeReader) Recent(_ context.Context, _ ports.RecentQuery) ([]domain.Memory, error) {
+func (f *fakeReader) Recent(_ context.Context, _ ports.RecentQuery) ([]domain.Memory, error) {
 	return f.memories, f.err
+}
+
+func (f *fakeReader) Search(_ context.Context, q ports.SearchQuery) ([]domain.SearchResult, error) {
+	f.searchQuery = q
+	return f.results, f.searchErr
 }
 
 // sampleMemories devuelve memorias de prueba.
@@ -32,7 +41,7 @@ func sampleMemories() []domain.Memory {
 
 // loaded es un modelo ya con memorias cargadas (simula el resultado de Init).
 func loaded() Model {
-	m := NewModel(fakeReader{memories: sampleMemories()}, "", 20)
+	m := NewModel(&fakeReader{memories: sampleMemories()}, "", 20)
 	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
 	return next.(Model)
 }
@@ -129,7 +138,7 @@ func TestListViewShowsCursorMarker(t *testing.T) {
 }
 
 func TestErrorMsgShown(t *testing.T) {
-	m := NewModel(fakeReader{err: errors.New("falló la lectura")}, "", 20)
+	m := NewModel(&fakeReader{err: errors.New("falló la lectura")}, "", 20)
 	next, _ := m.Update(errMsg{err: errors.New("falló la lectura")})
 	m = next.(Model)
 	if !strings.Contains(m.View(), "Error") {
@@ -138,7 +147,7 @@ func TestErrorMsgShown(t *testing.T) {
 }
 
 func TestEmptyListMessage(t *testing.T) {
-	m := NewModel(fakeReader{}, "", 20)
+	m := NewModel(&fakeReader{}, "", 20)
 	next, _ := m.Update(memoriesLoadedMsg{memories: nil})
 	m = next.(Model)
 	if !strings.Contains(m.View(), "sin memorias") {
@@ -151,4 +160,122 @@ func TestEmptyListMessage(t *testing.T) {
 	}
 }
 
-var _ MemoryReader = fakeReader{}
+func TestSlashOpensSearch(t *testing.T) {
+	m := loaded()
+	next, _ := m.Update(key("/"))
+	m = next.(Model)
+	if !m.searching {
+		t.Fatal("/ debe abrir el buscador")
+	}
+	if !strings.Contains(m.View(), "buscar:") {
+		t.Errorf("la cabecera debe mostrar el buscador:\n%s", m.View())
+	}
+}
+
+func TestSearchTypesAndRunsSemanticSearch(t *testing.T) {
+	reader := &fakeReader{
+		memories: sampleMemories(),
+		results: []domain.SearchResult{
+			{Memory: domain.Memory{ID: 9, Type: domain.TypeDecision, Title: "Resultado"}, Score: 0.9},
+		},
+	}
+	m := NewModel(reader, "proj", 20)
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+
+	next, _ = m.Update(key("/"))
+	m = next.(Model)
+	for _, r := range "login" {
+		next, _ = m.Update(key(string(r)))
+		m = next.(Model)
+	}
+	if m.query != "login" {
+		t.Fatalf("query = %q, se esperaba login", m.query)
+	}
+
+	next, cmd := m.Update(key("enter"))
+	m = next.(Model)
+	if m.searching {
+		t.Error("enter debe cerrar el buscador")
+	}
+	if !m.showingSearch {
+		t.Error("enter debe marcar showingSearch")
+	}
+	if cmd == nil {
+		t.Fatal("enter debe devolver el comando de búsqueda")
+	}
+	// Ejecuta el comando de E/S y alimenta su mensaje al modelo.
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if reader.searchQuery.Query != "login" || reader.searchQuery.Project != "proj" {
+		t.Errorf("la consulta no llegó al reader: %+v", reader.searchQuery)
+	}
+	if len(m.memories) != 1 || m.memories[0].ID != 9 {
+		t.Fatalf("deben verse los resultados de la búsqueda: %+v", m.memories)
+	}
+	if !strings.Contains(m.View(), "resultados de: login") {
+		t.Errorf("se esperaba la cabecera de resultados:\n%s", m.View())
+	}
+}
+
+func TestSearchEscCancels(t *testing.T) {
+	m := loaded()
+	next, _ := m.Update(key("/"))
+	m = next.(Model)
+	next, _ = m.Update(key("a"))
+	m = next.(Model)
+	next, _ = m.Update(key("esc"))
+	m = next.(Model)
+	if m.searching || m.query != "" {
+		t.Errorf("esc debe cancelar la búsqueda: searching=%v query=%q", m.searching, m.query)
+	}
+}
+
+func TestSearchTreatsLettersAsText(t *testing.T) {
+	m := loaded()
+	next, _ := m.Update(key("/"))
+	m = next.(Model)
+	next, cmd := m.Update(key("q"))
+	m = next.(Model)
+	if m.quitting || cmd != nil {
+		t.Error("q dentro del buscador no debe salir")
+	}
+	if m.query != "q" {
+		t.Errorf("q debe teclearse como texto: %q", m.query)
+	}
+}
+
+func TestSearchBackspace(t *testing.T) {
+	m := loaded()
+	next, _ := m.Update(key("/"))
+	m = next.(Model)
+	for _, r := range "ab" {
+		next, _ = m.Update(key(string(r)))
+		m = next.(Model)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = next.(Model)
+	if m.query != "a" {
+		t.Errorf("backspace debe borrar el último carácter: %q", m.query)
+	}
+}
+
+func TestSearchErrorShown(t *testing.T) {
+	reader := &fakeReader{memories: sampleMemories(), searchErr: errors.New("embebedor caído")}
+	m := NewModel(reader, "", 20)
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+	next, _ = m.Update(key("/"))
+	m = next.(Model)
+	next, _ = m.Update(key("x"))
+	m = next.(Model)
+	next, cmd := m.Update(key("enter"))
+	m = next.(Model)
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if !strings.Contains(m.View(), "Error") {
+		t.Errorf("un error de búsqueda debe mostrarse:\n%s", m.View())
+	}
+}
+
+var _ MemoryReader = &fakeReader{}
