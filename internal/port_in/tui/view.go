@@ -30,15 +30,20 @@ func (m Model) listView() string {
 	switch {
 	case m.searching:
 		fmt.Fprintf(&b, "kandel — buscar: %s▌\n\n", m.query)
+	case m.showingDeleted:
+		b.WriteString("kandel — papelera (borradas)\n\n")
 	case m.showingSearch:
 		fmt.Fprintf(&b, "kandel — resultados de: %s\n\n", m.query)
 	default:
 		b.WriteString("kandel — memorias recientes\n\n")
 	}
 	if len(m.memories) == 0 {
-		if m.showingSearch {
+		switch {
+		case m.showingDeleted:
+			b.WriteString("  (papelera vacía)\n")
+		case m.showingSearch:
 			b.WriteString("  (sin resultados)\n")
-		} else {
+		default:
 			b.WriteString("  (sin memorias)\n")
 		}
 	}
@@ -49,10 +54,16 @@ func (m Model) listView() string {
 		}
 		fmt.Fprintf(&b, "%s#%d  [%s]  %s\n", marker, mem.ID, mem.Type, mem.Title)
 	}
-	if m.searching {
-		b.WriteString("\nenter buscar · esc cancelar · ctrl+c salir\n")
-	} else {
-		b.WriteString("\n↑/↓ moverse · enter ver · / buscar · r recientes · q salir\n")
+	b.WriteString("\n")
+	switch {
+	case m.confirmingDelete:
+		fmt.Fprintf(&b, "¿Borrar #%d? (y/n)\n", m.selectedID())
+	case m.searching:
+		b.WriteString("enter buscar · esc cancelar · ctrl+c salir\n")
+	case m.showingDeleted:
+		b.WriteString("↑/↓ moverse · enter ver · u restaurar · t volver · q salir\n")
+	default:
+		b.WriteString("↑/↓ moverse · enter ver · / buscar · d borrar · t papelera · r recientes · q salir\n")
 	}
 	return b.String()
 }

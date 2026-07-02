@@ -12,12 +12,15 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// MemoryReader es lo que el TUI necesita del caso de uso de memoria: listar recientes (lectura
-// directa, offline) y buscar por significado (semántica, necesita el embebedor). Recent es el
-// aterrizaje por defecto; Search se dispara cuando el usuario teclea una consulta.
-type MemoryReader interface {
+// MemoryAccess es lo que el TUI necesita del caso de uso de memoria. Además de las lecturas
+// (Recent como aterrizaje offline y la papelera vía RecentQuery.OnlyDeleted; Search semántica con
+// embebedor) incluye las mutaciones de curación: Delete es SIEMPRE lógico (reversible) y Restore
+// deshace ese borrado. *service.MemoryService la cumple por estructura.
+type MemoryAccess interface {
 	Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Memory, error)
 	Search(ctx context.Context, q ports.SearchQuery) ([]domain.SearchResult, error)
+	Delete(ctx context.Context, id int64) error
+	Restore(ctx context.Context, id int64) (domain.Memory, error)
 }
 
 // view distingue las dos pantallas del TUI: la lista de memorias y el detalle de una.
@@ -30,7 +33,7 @@ const (
 
 // Model es el estado completo del TUI.
 type Model struct {
-	reader   MemoryReader
+	reader   MemoryAccess
 	project  string
 	limit    int
 	memories []domain.Memory
@@ -47,11 +50,17 @@ type Model struct {
 	searching     bool
 	query         string
 	showingSearch bool
+
+	// Estado de la curación. showingDeleted indica que la lista actual es la papelera (borradas
+	// lógicas); en ese modo se restaura en vez de borrar. confirmingDelete es true mientras se pide
+	// la confirmación y/n antes de un borrado lógico.
+	showingDeleted   bool
+	confirmingDelete bool
 }
 
 // NewModel construye el modelo inicial. El project filtra la lista (vacío = todos); limit acota
 // cuántas memorias se cargan.
-func NewModel(reader MemoryReader, project string, limit int) Model {
+func NewModel(reader MemoryAccess, project string, limit int) Model {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -73,5 +82,11 @@ type memoriesLoadedMsg struct {
 
 // errMsg lleva un error ocurrido en un comando.
 type errMsg struct {
+	err error
+}
+
+// mutatedMsg señala que una mutación (borrar/restaurar) terminó. Si err no es nil, se muestra; si
+// no, Update recarga la lista del modo activo para reflejar el cambio.
+type mutatedMsg struct {
 	err error
 }

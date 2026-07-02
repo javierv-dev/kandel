@@ -24,6 +24,9 @@ type RecentQuery struct {
 	// ExcludeResolved omite las memorias ya resueltas (resolution = 'resolved'). Lo usa la bandeja
 	// "Siempre" para no mostrar pendientes cerrados; las de resolución vacía u 'open' sí pasan.
 	ExcludeResolved bool
+	// OnlyDeleted invierte el filtro base: en vez de las vivas, devuelve SOLO las borradas
+	// lógicamente (deleted_at IS NOT NULL). Lo usa la papelera de la TUI para poder restaurarlas.
+	OnlyDeleted bool
 }
 
 // SearchQuery describe una búsqueda semántica. La consulta en texto se convierte en vector

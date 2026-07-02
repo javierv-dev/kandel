@@ -11,23 +11,41 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// fakeReader sirve una lista fija de memorias (o un error) sin tocar SQLite. Registra la última
-// consulta de búsqueda recibida y devuelve resultados/errores preprogramados.
+// fakeReader sirve listas fijas de memorias (o un error) sin tocar SQLite. Registra la última
+// consulta de búsqueda y los ids borrados/restaurados, y devuelve resultados/errores preprogramados.
 type fakeReader struct {
 	memories    []domain.Memory
+	deleted     []domain.Memory // se devuelve cuando RecentQuery.OnlyDeleted (papelera)
 	err         error
 	searchQuery ports.SearchQuery
 	results     []domain.SearchResult
 	searchErr   error
+	deletedID   int64
+	deleteErr   error
+	restoredID  int64
+	restoreErr  error
 }
 
-func (f *fakeReader) Recent(_ context.Context, _ ports.RecentQuery) ([]domain.Memory, error) {
+func (f *fakeReader) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
+	if q.OnlyDeleted {
+		return f.deleted, f.err
+	}
 	return f.memories, f.err
 }
 
 func (f *fakeReader) Search(_ context.Context, q ports.SearchQuery) ([]domain.SearchResult, error) {
 	f.searchQuery = q
 	return f.results, f.searchErr
+}
+
+func (f *fakeReader) Delete(_ context.Context, id int64) error {
+	f.deletedID = id
+	return f.deleteErr
+}
+
+func (f *fakeReader) Restore(_ context.Context, id int64) (domain.Memory, error) {
+	f.restoredID = id
+	return domain.Memory{ID: id}, f.restoreErr
 }
 
 // sampleMemories devuelve memorias de prueba.
@@ -278,4 +296,135 @@ func TestSearchErrorShown(t *testing.T) {
 	}
 }
 
-var _ MemoryReader = &fakeReader{}
+func TestDeleteAsksConfirmationThenDeletes(t *testing.T) {
+	reader := &fakeReader{memories: sampleMemories()}
+	m := NewModel(reader, "", 20)
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+
+	// d pide confirmación sobre la memoria bajo el cursor (#1).
+	next, _ = m.Update(key("d"))
+	m = next.(Model)
+	if !m.confirmingDelete {
+		t.Fatal("d debe pedir confirmación")
+	}
+	if !strings.Contains(m.View(), "¿Borrar #1?") {
+		t.Errorf("la vista debe pedir confirmación:\n%s", m.View())
+	}
+
+	// y confirma: dispara el borrado.
+	next, cmd := m.Update(key("y"))
+	m = next.(Model)
+	if m.confirmingDelete {
+		t.Error("y debe cerrar la confirmación")
+	}
+	if cmd == nil {
+		t.Fatal("y debe devolver el comando de borrado")
+	}
+	// Ejecuta el borrado; su mutatedMsg debe disparar una recarga.
+	next, reload := m.Update(cmd())
+	m = next.(Model)
+	if reader.deletedID != 1 {
+		t.Errorf("debe borrarse el id 1, se borró %d", reader.deletedID)
+	}
+	if reload == nil {
+		t.Error("tras borrar debe recargarse la lista")
+	}
+}
+
+func TestDeleteConfirmationCancels(t *testing.T) {
+	reader := &fakeReader{memories: sampleMemories()}
+	m := NewModel(reader, "", 20)
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+
+	next, _ = m.Update(key("d"))
+	m = next.(Model)
+	next, cmd := m.Update(key("n"))
+	m = next.(Model)
+	if m.confirmingDelete {
+		t.Error("n debe cancelar la confirmación")
+	}
+	if cmd != nil || reader.deletedID != 0 {
+		t.Errorf("n no debe borrar nada: cmd=%v deletedID=%d", cmd, reader.deletedID)
+	}
+}
+
+func TestTrashToggleLoadsDeleted(t *testing.T) {
+	reader := &fakeReader{
+		memories: sampleMemories(),
+		deleted:  []domain.Memory{{ID: 5, Type: domain.TypeBugfix, Title: "Borrada"}},
+	}
+	m := NewModel(reader, "", 20)
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+
+	next, cmd := m.Update(key("t"))
+	m = next.(Model)
+	if !m.showingDeleted {
+		t.Fatal("t debe abrir la papelera")
+	}
+	if cmd == nil {
+		t.Fatal("t debe cargar las borradas")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if len(m.memories) != 1 || m.memories[0].ID != 5 {
+		t.Fatalf("la papelera debe mostrar las borradas: %+v", m.memories)
+	}
+	if !strings.Contains(m.View(), "papelera") {
+		t.Errorf("la cabecera debe indicar la papelera:\n%s", m.View())
+	}
+}
+
+func TestRestoreFromTrash(t *testing.T) {
+	reader := &fakeReader{
+		memories: sampleMemories(),
+		deleted:  []domain.Memory{{ID: 5, Type: domain.TypeBugfix, Title: "Borrada"}},
+	}
+	m := NewModel(reader, "", 20)
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+	// Entrar a la papelera y cargarla.
+	next, cmd := m.Update(key("t"))
+	m = next.(Model)
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+
+	// u restaura la memoria bajo el cursor.
+	next, cmd = m.Update(key("u"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("u debe devolver el comando de restauración")
+	}
+	next, reload := m.Update(cmd())
+	m = next.(Model)
+	if reader.restoredID != 5 {
+		t.Errorf("debe restaurarse el id 5, se restauró %d", reader.restoredID)
+	}
+	if reload == nil {
+		t.Error("tras restaurar debe recargarse la papelera")
+	}
+}
+
+func TestDeleteNotAllowedInTrash(t *testing.T) {
+	reader := &fakeReader{
+		memories: sampleMemories(),
+		deleted:  []domain.Memory{{ID: 5, Title: "Borrada"}},
+	}
+	m := NewModel(reader, "", 20)
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+	next, cmd := m.Update(key("t"))
+	m = next.(Model)
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+
+	next, _ = m.Update(key("d"))
+	m = next.(Model)
+	if m.confirmingDelete {
+		t.Error("d no debe pedir confirmación en la papelera (allí se restaura)")
+	}
+}
+
+var _ MemoryAccess = &fakeReader{}

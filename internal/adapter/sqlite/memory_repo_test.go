@@ -135,6 +135,46 @@ func TestSoftDeleteHidesMemory(t *testing.T) {
 	}
 }
 
+func TestRecentOnlyDeletedReturnsTrash(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	viva, err := repo.Add(ctx, sampleMemory())
+	if err != nil {
+		t.Fatalf("Add viva: %v", err)
+	}
+	otra := sampleMemory()
+	otra.SyncID = "mem-2"
+	otra.NormalizedHash = "hash-2"
+	borrada, err := repo.Add(ctx, otra)
+	if err != nil {
+		t.Fatalf("Add borrada: %v", err)
+	}
+	if err := repo.SoftDelete(ctx, borrada); err != nil {
+		t.Fatalf("SoftDelete: %v", err)
+	}
+
+	// Por defecto la lista trae solo las vivas (excluye la borrada).
+	live, err := repo.Recent(ctx, ports.RecentQuery{})
+	if err != nil {
+		t.Fatalf("Recent vivas: %v", err)
+	}
+	if len(live) != 1 || live[0].ID != viva {
+		t.Fatalf("las vivas deben excluir la borrada: %+v", live)
+	}
+
+	// OnlyDeleted invierte el filtro: solo la borrada (la papelera).
+	trash, err := repo.Recent(ctx, ports.RecentQuery{OnlyDeleted: true})
+	if err != nil {
+		t.Fatalf("Recent papelera: %v", err)
+	}
+	if len(trash) != 1 || trash[0].ID != borrada {
+		t.Fatalf("la papelera debe traer solo la borrada: %+v", trash)
+	}
+}
+
 func TestRestoreUndoesSoftDelete(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

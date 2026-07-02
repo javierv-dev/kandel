@@ -128,10 +128,15 @@ const supersededClause = ` AND NOT EXISTS (
 		  AND r.relation = 'supersedes'
 		  AND r.judgment_status = 'judged')`
 
-// Recent lista memorias vivas por recencia (camino de navegación del usuario y base de las bandejas
-// de la inyección). Aplica los filtros de q; un Limit negativo omite la cláusula LIMIT (sin tope).
+// Recent lista memorias por recencia (camino de navegación del usuario y base de las bandejas de la
+// inyección). Por defecto solo las vivas; con q.OnlyDeleted devuelve solo las borradas lógicamente
+// (papelera). Aplica los filtros de q; un Limit negativo omite la cláusula LIMIT (sin tope).
 func (r *MemoryRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
-	query := `SELECT ` + memoryColumns + ` FROM memories WHERE deleted_at IS NULL`
+	deletedClause := ` WHERE deleted_at IS NULL`
+	if q.OnlyDeleted {
+		deletedClause = ` WHERE deleted_at IS NOT NULL`
+	}
+	query := `SELECT ` + memoryColumns + ` FROM memories` + deletedClause
 	args := []any{}
 	if q.Project != "" {
 		query += ` AND project = ?`
