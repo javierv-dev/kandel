@@ -48,6 +48,21 @@ func (f *fakeReader) Restore(_ context.Context, id int64) (domain.Memory, error)
 	return domain.Memory{ID: id}, f.restoreErr
 }
 
+// fakeLogger registra las acciones de auditoría recibidas.
+type fakeLogger struct {
+	actions []loggedAction
+}
+
+type loggedAction struct {
+	action string
+	id     int64
+	title  string
+}
+
+func (l *fakeLogger) LogAction(action string, id int64, title string) {
+	l.actions = append(l.actions, loggedAction{action, id, title})
+}
+
 // sampleMemories devuelve memorias de prueba.
 func sampleMemories() []domain.Memory {
 	return []domain.Memory{
@@ -427,4 +442,71 @@ func TestDeleteNotAllowedInTrash(t *testing.T) {
 	}
 }
 
+func TestDeleteAuditsAction(t *testing.T) {
+	reader := &fakeReader{memories: sampleMemories()}
+	logger := &fakeLogger{}
+	m := NewModel(reader, "", 20)
+	m.logger = logger
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+
+	next, _ = m.Update(key("d"))
+	m = next.(Model)
+	next, cmd := m.Update(key("y"))
+	m = next.(Model)
+	// Ejecuta el comando de borrado (que también audita).
+	m.Update(cmd())
+	if len(logger.actions) != 1 {
+		t.Fatalf("se esperaba 1 acción auditada, hubo %d", len(logger.actions))
+	}
+	got := logger.actions[0]
+	if got.action != "soft_delete" || got.id != 1 || got.title != "Uno" {
+		t.Errorf("acción mal auditada: %+v", got)
+	}
+}
+
+func TestRestoreAuditsAction(t *testing.T) {
+	reader := &fakeReader{
+		memories: sampleMemories(),
+		deleted:  []domain.Memory{{ID: 5, Type: domain.TypeBugfix, Title: "Borrada"}},
+	}
+	logger := &fakeLogger{}
+	m := NewModel(reader, "", 20)
+	m.logger = logger
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+	next, cmd := m.Update(key("t"))
+	m = next.(Model)
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+
+	next, cmd = m.Update(key("u"))
+	m = next.(Model)
+	m.Update(cmd())
+	if len(logger.actions) != 1 {
+		t.Fatalf("se esperaba 1 acción auditada, hubo %d", len(logger.actions))
+	}
+	got := logger.actions[0]
+	if got.action != "restore" || got.id != 5 || got.title != "Borrada" {
+		t.Errorf("acción mal auditada: %+v", got)
+	}
+}
+
+func TestMutationWithoutLoggerDoesNotPanic(t *testing.T) {
+	reader := &fakeReader{memories: sampleMemories()}
+	m := NewModel(reader, "", 20) // sin logger (nil)
+	next, _ := m.Update(memoriesLoadedMsg{memories: sampleMemories()})
+	m = next.(Model)
+	next, _ = m.Update(key("d"))
+	m = next.(Model)
+	next, cmd := m.Update(key("y"))
+	m = next.(Model)
+	// No debe entrar en pánico al ejecutar el comando con logger nil.
+	m.Update(cmd())
+	if reader.deletedID != 1 {
+		t.Errorf("el borrado debe seguir funcionando sin logger: deletedID=%d", reader.deletedID)
+	}
+}
+
 var _ MemoryAccess = &fakeReader{}
+var _ ActionLogger = &fakeLogger{}

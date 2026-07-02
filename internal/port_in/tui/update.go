@@ -80,29 +80,48 @@ func (m Model) reloadCurrent() tea.Cmd {
 	}
 }
 
-// deleteMemory devuelve un comando que borra LÓGICAMENTE la memoria con el id dado y emite
-// mutatedMsg con el resultado.
-func (m Model) deleteMemory(id int64) tea.Cmd {
+// deleteMemory devuelve un comando que borra LÓGICAMENTE la memoria dada, la registra en el log de
+// auditoría (si hay logger) y emite mutatedMsg con el resultado. El título viaja para el log.
+func (m Model) deleteMemory(id int64, title string) tea.Cmd {
+	logger := m.logger
 	return func() tea.Msg {
-		return mutatedMsg{err: m.reader.Delete(context.Background(), id)}
-	}
-}
-
-// restoreMemory devuelve un comando que restaura (deshace el borrado lógico de) la memoria con el
-// id dado y emite mutatedMsg con el resultado.
-func (m Model) restoreMemory(id int64) tea.Cmd {
-	return func() tea.Msg {
-		_, err := m.reader.Restore(context.Background(), id)
+		err := m.reader.Delete(context.Background(), id)
+		if err == nil && logger != nil {
+			logger.LogAction("soft_delete", id, title)
+		}
 		return mutatedMsg{err: err}
 	}
 }
 
+// restoreMemory devuelve un comando que restaura (deshace el borrado lógico de) la memoria dada, la
+// registra en el log de auditoría (si hay logger) y emite mutatedMsg con el resultado.
+func (m Model) restoreMemory(id int64, title string) tea.Cmd {
+	logger := m.logger
+	return func() tea.Msg {
+		_, err := m.reader.Restore(context.Background(), id)
+		if err == nil && logger != nil {
+			logger.LogAction("restore", id, title)
+		}
+		return mutatedMsg{err: err}
+	}
+}
+
+// selectedMemory devuelve la memoria bajo el cursor y true, o el valor cero y false si la lista
+// está vacía.
+func (m Model) selectedMemory() (domain.Memory, bool) {
+	if m.cursor < 0 || m.cursor >= len(m.memories) {
+		return domain.Memory{}, false
+	}
+	return m.memories[m.cursor], true
+}
+
 // selectedID devuelve el id de la memoria bajo el cursor, o 0 si la lista está vacía.
 func (m Model) selectedID() int64 {
-	if m.cursor < 0 || m.cursor >= len(m.memories) {
+	mem, ok := m.selectedMemory()
+	if !ok {
 		return 0
 	}
-	return m.memories[m.cursor].ID
+	return mem.ID
 }
 
 // Update transforma el modelo ante cada mensaje. Es puro: no hace E/S (eso vive en los tea.Cmd
@@ -193,9 +212,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "u":
 		// Restaurar la memoria bajo el cursor. Solo tiene sentido en la papelera.
-		if m.view == viewList && m.showingDeleted && m.selectedID() != 0 {
+		if mem, ok := m.selectedMemory(); m.view == viewList && m.showingDeleted && ok {
 			m.loading = true
-			return m, m.restoreMemory(m.selectedID())
+			return m, m.restoreMemory(mem.ID, mem.Title)
 		}
 		return m, nil
 
@@ -231,12 +250,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.confirmingDelete = false
 	if msg.String() == "y" {
-		id := m.selectedID()
-		if id == 0 {
+		mem, ok := m.selectedMemory()
+		if !ok {
 			return m, nil
 		}
 		m.loading = true
-		return m, m.deleteMemory(id)
+		return m, m.deleteMemory(mem.ID, mem.Title)
 	}
 	return m, nil
 }

@@ -23,6 +23,13 @@ type MemoryAccess interface {
 	Restore(ctx context.Context, id int64) (domain.Memory, error)
 }
 
+// ActionLogger registra las acciones de curación de la TUI (borrar/restaurar) para auditoría. La
+// interfaz la define el consumidor (la TUI); el adapter auditlog la cumple por estructura. Es
+// opcional: si el modelo no tiene logger, las acciones simplemente no se auditan.
+type ActionLogger interface {
+	LogAction(action string, id int64, title string)
+}
+
 // view distingue las dos pantallas del TUI: la lista de memorias y el detalle de una.
 type view int
 
@@ -56,6 +63,9 @@ type Model struct {
 	// la confirmación y/n antes de un borrado lógico.
 	showingDeleted   bool
 	confirmingDelete bool
+
+	// logger audita las acciones de curación (opcional: nil = sin auditoría). Lo inyecta Run.
+	logger ActionLogger
 }
 
 // NewModel construye el modelo inicial. El project filtra la lista (vacío = todos); limit acota
