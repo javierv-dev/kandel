@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/javierv-dev/kandel/internal/adapter/llm"
 	"github.com/javierv-dev/kandel/internal/config"
 )
 
@@ -20,12 +21,9 @@ type claudeCode struct{}
 func (claudeCode) Name() string { return "claude-code" }
 
 // claudeAgentCLI es el nombre de la CLI de agente de Claude Code (para el juez y el seed); es el
-// valor que se registra en installed_agents y, si es el primero, en agent_cli. claudeSeedModel es su
-// modelo de seed por defecto.
-const (
-	claudeAgentCLI  = "claude"
-	claudeSeedModel = "sonnet"
-)
+// valor que se registra en installed_agents y, si es el primero, en agent_cli. El modelo de seed se
+// deriva del registro único de llm (llm.SeedModelFor), para no duplicar el default.
+const claudeAgentCLI = "claude"
 
 // rutas devuelve las rutas de los artefactos a partir del home del usuario.
 func (claudeCode) paths(home string) (claudeDir, skillFile, scriptsDir, mcpFile, settingsFile string) {
@@ -103,7 +101,7 @@ func (c claudeCode) Install(home, version string, out io.Writer) error {
 	if strings.TrimSpace(config.Get(confDir, config.AgentCLI.File)) == "" {
 		if err := config.Save(confDir, map[string]string{
 			config.AgentCLI.File:  claudeAgentCLI,
-			config.SeedModel.File: claudeSeedModel,
+			config.SeedModel.File: llm.SeedModelFor(claudeAgentCLI),
 		}); err != nil {
 			return err
 		}

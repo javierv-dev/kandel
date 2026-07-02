@@ -71,7 +71,13 @@ func agentUse(app *App, dir, name string) error {
 		return fmt.Errorf("el agente %q no está soportado todavía (soportados: %s)", name,
 			strings.Join(llm.SupportedAgents(), ", "))
 	}
-	if err := config.Save(dir, map[string]string{config.AgentCLI.File: name}); err != nil {
+	// Fija el agente activo y, de paso, alinea el modelo de seed al de ese agente (§22.E): si el
+	// usuario venía de otro agente, su seed_model quedaría descolocado.
+	updates := map[string]string{config.AgentCLI.File: name}
+	if seed := llm.SeedModelFor(name); seed != "" {
+		updates[config.SeedModel.File] = seed
+	}
+	if err := config.Save(dir, updates); err != nil {
 		return err
 	}
 	fmt.Fprintf(app.Out, "agente activo: %s\n", name)

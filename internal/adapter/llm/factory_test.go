@@ -38,3 +38,23 @@ func TestGeneratorUnsupportedAgent(t *testing.T) {
 		t.Fatalf("se esperaba ErrAgentUnsupported, se obtuvo: %v", err)
 	}
 }
+
+// TestModelRegistry verifica que la allowlist y los modelos se derivan del registro único
+// modelsByAgent: claude está soportado con seed=sonnet; un agente ausente no lo está y su seed es "".
+func TestModelRegistry(t *testing.T) {
+	if !IsSupported("claude") {
+		t.Error("claude debe estar soportado (está en modelsByAgent)")
+	}
+	if IsSupported("gemini") {
+		t.Error("gemini aún no debe estar soportado")
+	}
+	if got := SeedModelFor("claude"); got != "sonnet" {
+		t.Errorf("SeedModelFor(claude) = %q, se esperaba sonnet", got)
+	}
+	if got := SeedModelFor("gemini"); got != "" {
+		t.Errorf("SeedModelFor de agente ausente = %q, se esperaba vacío", got)
+	}
+	if sup := SupportedAgents(); len(sup) != 1 || sup[0] != "claude" {
+		t.Errorf("SupportedAgents = %v, se esperaba [claude]", sup)
+	}
+}

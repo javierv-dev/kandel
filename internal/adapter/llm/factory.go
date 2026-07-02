@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/javierv-dev/kandel/internal/config"
@@ -16,24 +17,44 @@ import (
 // mensaje claro en vez de lanzar a ciegas un comando que no cumple el contrato stdin→JSON.
 var ErrAgentUnsupported = errors.New("llm: agente no soportado todavía")
 
-// supportedAgents lista los agentes con contrato de CLI implementado (prompt por stdin → JSON por
-// stdout). Hoy solo Claude Code es objetivo de pruebas; el resto figura como hoja de ruta (§18).
-var supportedAgents = []string{"claude"}
-
-// SupportedAgents devuelve una copia de la allowlist de agentes con contrato de CLI implementado.
-// Lo usa `kandel agent use` para validar el cambio de agente activo sin duplicar la lista.
-func SupportedAgents() []string {
-	return append([]string(nil), supportedAgents...)
+// AgentModels describe los modelos que usa un agente: Judge es el modelo BARATO del juez de conflictos
+// (clasifica, no razona prosa larga) y Seed es el modelo CAPAZ del seed (razona sobre la documentación
+// del proyecto). Separarlos evita gastar un modelo caro en clasificar y uno flojo en el seed.
+type AgentModels struct {
+	Judge string
+	Seed  string
 }
 
-// IsSupported indica si un agente tiene contrato de CLI implementado (está en la allowlist).
-func IsSupported(agent string) bool {
-	for _, a := range supportedAgents {
-		if a == strings.TrimSpace(agent) {
-			return true
-		}
+// modelsByAgent es el registro ÚNICO de agentes con contrato de CLI implementado (prompt por stdin →
+// JSON por stdout) y sus modelos. De aquí se derivan la allowlist (SupportedAgents/IsSupported) y la
+// elección de modelo en FromEnv/Generator. **Añadir un agente = una entrada aquí + su case en
+// FromEnv/Generator con el contrato de CLI concreto** (§22.E). Hoy solo Claude Code; Antigravity/Gemini
+// entran cuando se implemente su parser (hoja de ruta §18).
+var modelsByAgent = map[string]AgentModels{
+	"claude": {Judge: "haiku", Seed: "sonnet"},
+}
+
+// SupportedAgents devuelve los agentes con contrato de CLI implementado, ordenados. Lo usa
+// `kandel agent use` para validar el cambio de agente activo sin duplicar la lista.
+func SupportedAgents() []string {
+	out := make([]string, 0, len(modelsByAgent))
+	for a := range modelsByAgent {
+		out = append(out, a)
 	}
-	return false
+	sort.Strings(out)
+	return out
+}
+
+// IsSupported indica si un agente tiene contrato de CLI implementado (está en el registro de modelos).
+func IsSupported(agent string) bool {
+	_, ok := modelsByAgent[strings.TrimSpace(agent)]
+	return ok
+}
+
+// SeedModelFor devuelve el modelo de seed por defecto de un agente ("" si no está en el registro). Lo
+// usa `kandel agent use` para dejar el seed_model coherente con el agente activo al cambiarlo.
+func SeedModelFor(agent string) string {
+	return modelsByAgent[strings.TrimSpace(agent)].Seed
 }
 
 // FromEnv elige el juez LLM según el agente activo, resuelto por config (env KANDEL_AGENT_CLI >
@@ -51,17 +72,13 @@ func FromEnv() ports.AgentRunner {
 	case "":
 		return Noop{}
 	case "claude":
-		return New("claude", "-p", "--output-format", "json", "--model", "haiku", "--max-turns", "1")
+		return New("claude", "-p", "--output-format", "json",
+			"--model", modelsByAgent["claude"].Judge, "--max-turns", "1")
 	default:
 		// Agente nombrado pero sin contrato de CLI implementado todavía: no se lanza a ciegas.
 		return unsupported{agent: agent}
 	}
 }
-
-// defaultSeedModel es el modelo que usa el seed cuando no se especifica uno. El seed razona sobre
-// prosa larga (documentación del proyecto), más exigente que el juez de conflictos (que usa haiku),
-// por lo que conviene un modelo más capaz por defecto.
-const defaultSeedModel = "sonnet"
 
 // seedMaxTurns deja margen para que, si el modelo intenta una tool (queda denegada por la allowlist
 // vacía), tras la denegación pueda responder el JSON. Con `--max-turns 1` un solo `tool_use` ya
@@ -87,7 +104,7 @@ func Generator(agent, model string) ports.AgentGenerator {
 		return Noop{}
 	case "claude":
 		if strings.TrimSpace(model) == "" {
-			model = defaultSeedModel
+			model = modelsByAgent["claude"].Seed
 		}
 		// Generación pura de texto (no agéntica). Tres piezas evitan el fallo `error_max_turns`:
 		//   1. `--allowedTools ""` (allowlist vacía): cualquier tool que el modelo intente queda
@@ -136,7 +153,7 @@ var (
 
 // err arma el mensaje de aviso: qué agente se pidió y cuáles están soportados hoy.
 func (u unsupported) err() error {
-	return fmt.Errorf("%w: %q (soportados: %s)", ErrAgentUnsupported, u.agent, strings.Join(supportedAgents, ", "))
+	return fmt.Errorf("%w: %q (soportados: %s)", ErrAgentUnsupported, u.agent, strings.Join(SupportedAgents(), ", "))
 }
 
 // Judge siempre falla avisando que el agente no está soportado todavía.

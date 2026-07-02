@@ -86,4 +86,8 @@ func TestAgentUseValidatesInstalledAndSupported(t *testing.T) {
 	if got := config.Get(dir, config.AgentCLI.File); got != "claude" {
 		t.Errorf("agent_cli tras use = %q, se esperaba claude", got)
 	}
+	// `agent use` alinea el seed_model al del agente (§22.E): claude → sonnet.
+	if got := config.Get(dir, config.SeedModel.File); got != "sonnet" {
+		t.Errorf("seed_model tras use claude = %q, se esperaba sonnet", got)
+	}
 }
