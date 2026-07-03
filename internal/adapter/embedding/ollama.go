@@ -18,7 +18,7 @@ import (
 // Valores por defecto. El modelo bge-m3 es multilingüe (es+en) y produce vectores de 1024
 // dimensiones. El modelo es contrato de datos: cambiarlo obliga a re-embedding total.
 const (
-	DefaultHost       = "http://localhost:11434"
+	DefaultHost       = "http://127.0.0.1:11434"
 	DefaultModel      = "bge-m3"
 	DefaultDimensions = 1024
 )

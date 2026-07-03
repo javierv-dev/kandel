@@ -46,7 +46,7 @@ var (
 	SeedModel = Key{File: "seed_model", Env: "KANDEL_SEED_MODEL", Default: "",
 		Doc: "modelo del seed (generación); vacío = default del adaptador"}
 	// OllamaHost es el host del servidor Ollama (embebedor).
-	OllamaHost = Key{File: "ollama_host", Env: "KANDEL_OLLAMA_HOST", Default: "http://localhost:11434",
+	OllamaHost = Key{File: "ollama_host", Env: "KANDEL_OLLAMA_HOST", Default: "http://127.0.0.1:11434",
 		Doc: "host del servidor Ollama (embebedor)"}
 	// EmbedModel es el modelo de embeddings. Es contrato de datos: cambiarlo obliga a re-embedding total.
 	EmbedModel = Key{File: "embed_model", Env: "KANDEL_EMBED_MODEL", Default: "bge-m3",

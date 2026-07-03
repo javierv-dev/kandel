@@ -28,3 +28,9 @@ Thumbs.db
 
 legacy/
 /*.md
+
+# Scripts de exploración local (NO se suben; embed_bench.py puede contener API keys en claro)
+/scripts/embed_bench.py
+/scripts/embed_compare_local.py
+/scripts/__pycache__/
+/.firecrawl/
