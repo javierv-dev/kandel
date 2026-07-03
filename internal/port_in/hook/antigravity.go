@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -59,7 +60,12 @@ func (r *runner) agPreInvocation(in agInput) error {
 	r.klog(fmt.Sprintf("pre-invocation: invocationNum=%d session_id=%s project=%s", in.InvocationNum, orQ(sessionID), orQ(project)))
 
 	if in.InvocationNum != 0 {
-		// Turno posterior: solo mantener los vectores al día. No se inyecta nada.
+		// Turno posterior: leer transcript para guardar el prompt y mantener vectores.
+		lastPrompt, _ := parseTranscript(in.TranscriptPath)
+		if lastPrompt != "" {
+			code, _ := r.client.savePrompt(r.ctx, sessionID, lastPrompt)
+			r.klog(fmt.Sprintf("POST /prompts session_id=%s -> HTTP %s", sessionID, code))
+		}
 		bfCode, _ := r.client.triggerBackfill(r.ctx)
 		r.klog("POST /embeddings/backfill -> HTTP " + bfCode)
 		return writeInjectSteps(r.out, "")
@@ -88,6 +94,13 @@ func (r *runner) agStop(in agInput) error {
 	if in.ConversationID != "" {
 		code, _ := r.client.endSession(r.ctx, in.ConversationID)
 		r.klog(fmt.Sprintf("POST /sessions/%s/end -> HTTP %s", in.ConversationID, code))
+
+		_, fullConv := parseTranscript(in.TranscriptPath)
+		if fullConv != "" {
+			project := detectProject(in.cwd())
+			capCode, _ := r.client.passiveCapture(r.ctx, in.ConversationID, fullConv, project, "ag-stop")
+			r.klog(fmt.Sprintf("POST /memories/passive project=%s -> HTTP %s", project, capCode))
+		}
 	}
 	raw, _ := json.Marshal(map[string]any{"decision": "stop"})
 	fmt.Fprintln(r.out, string(raw))
@@ -112,4 +125,36 @@ func writeInjectSteps(out io.Writer, text string) error {
 	raw, _ := json.Marshal(payload)
 	fmt.Fprintln(out, string(raw))
 	return nil
+}
+
+// parseTranscript lee el transcript JSONL de Antigravity y extrae el último prompt del usuario
+// y la conversación completa para la captura pasiva.
+func parseTranscript(path string) (lastPrompt string, fullConversation string) {
+	if path == "" {
+		return "", ""
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", ""
+	}
+	defer f.Close()
+
+	var b strings.Builder
+	dec := json.NewDecoder(f)
+	for {
+		var line struct {
+			Type    string `json:"type"`
+			Content string `json:"content"`
+		}
+		if err := dec.Decode(&line); err != nil {
+			break
+		}
+		if line.Type == "USER_INPUT" && line.Content != "" {
+			lastPrompt = line.Content
+			b.WriteString("User:\n" + line.Content + "\n\n")
+		} else if line.Type == "PLANNER_RESPONSE" && line.Content != "" {
+			b.WriteString("Agent:\n" + line.Content + "\n\n")
+		}
+	}
+	return lastPrompt, strings.TrimSpace(b.String())
 }
