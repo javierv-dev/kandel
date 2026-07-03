@@ -22,11 +22,12 @@ func (antigravity) Name() string { return "antigravity" }
 
 // paths devuelve las rutas de los artefactos a partir del home del usuario. El directorio de
 // configuración de Antigravity CLI (heredado de Gemini) es ~/.gemini.
-func (antigravity) paths(home string) (geminiDir, mcpFile, rulesFile, hooksFile string) {
+func (antigravity) paths(home string) (geminiDir, mcpFile, rulesFile, hooksFile, skillFile string) {
 	geminiDir = filepath.Join(home, ".gemini")
 	mcpFile = filepath.Join(geminiDir, "config", "mcp_config.json")
 	rulesFile = filepath.Join(geminiDir, "GEMINI.md")
 	hooksFile = filepath.Join(geminiDir, "config", "hooks.json")
+	skillFile = filepath.Join(geminiDir, "skills", "kandel", "SKILL.md")
 	return
 }
 
@@ -78,7 +79,19 @@ Reglas:
 - Antes de terminar una tarea, llama a **mem_session_summary** con lo logrado y los próximos pasos.`
 
 func (a antigravity) Install(home, version string, out io.Writer) error {
-	_, mcpFile, rulesFile, hooksFile := a.paths(home)
+	_, mcpFile, rulesFile, hooksFile, skillFile := a.paths(home)
+
+	// 0. Skills
+	if err := writeAsset("assets/skill/SKILL.md", skillFile, 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "✓ skill escrita en %s\n", skillFile)
+
+	seedSkillFile := filepath.Join(filepath.Dir(filepath.Dir(skillFile)), "kandel-seed", "SKILL.md")
+	if err := writeAsset("assets/skill-seed/SKILL.md", seedSkillFile, 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "✓ skill de seed escrita en %s\n", seedSkillFile)
 
 	// 1. Registro del servidor MCP en ~/.gemini/config/mcp_config.json.
 	if err := a.installMCP(mcpFile); err != nil {
@@ -112,7 +125,7 @@ func (a antigravity) Install(home, version string, out io.Writer) error {
 }
 
 func (a antigravity) Uninstall(home string, out io.Writer) error {
-	geminiDir, mcpFile, rulesFile, hooksFile := a.paths(home)
+	geminiDir, mcpFile, rulesFile, hooksFile, _ := a.paths(home)
 
 	// 1. Quita el servidor MCP.
 	if err := a.uninstallMCP(mcpFile); err != nil {
@@ -132,11 +145,17 @@ func (a antigravity) Uninstall(home string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "✓ hooks de kandel retirados de %s\n", hooksFile)
 
-	// 4. Borra la carpeta propia de kandel (con el marcador de versión).
+	// 4. Borra la carpeta propia de kandel (con el marcador de versión) y las skills.
 	if err := os.RemoveAll(filepath.Join(geminiDir, "kandel")); err != nil {
 		return fmt.Errorf("borrar carpeta de kandel: %w", err)
 	}
-	fmt.Fprintln(out, "✓ carpeta de kandel borrada")
+	if err := os.RemoveAll(filepath.Join(geminiDir, "skills", "kandel")); err != nil {
+		return fmt.Errorf("borrar skill: %w", err)
+	}
+	if err := os.RemoveAll(filepath.Join(geminiDir, "skills", "kandel-seed")); err != nil {
+		return fmt.Errorf("borrar skill de seed: %w", err)
+	}
+	fmt.Fprintln(out, "✓ carpeta de kandel y skills borradas")
 	return nil
 }
 
