@@ -29,6 +29,7 @@ const (
 type ContextService struct {
 	sessions  ports.SessionRepo
 	memories  ports.MemoryRepo
+	relations ports.RelationRepo
 	threshold int // umbral del aviso "demasiadas normativas"
 }
 
@@ -46,8 +47,8 @@ func WithNormativeThreshold(n int) ContextOption {
 }
 
 // NewContextService construye el servicio con sus repos inyectados.
-func NewContextService(sessions ports.SessionRepo, memories ports.MemoryRepo, opts ...ContextOption) *ContextService {
-	c := &ContextService{sessions: sessions, memories: memories, threshold: defaultNormativeThreshold}
+func NewContextService(sessions ports.SessionRepo, memories ports.MemoryRepo, relations ports.RelationRepo, opts ...ContextOption) *ContextService {
+	c := &ContextService{sessions: sessions, memories: memories, relations: relations, threshold: defaultNormativeThreshold}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -95,7 +96,15 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		return "", err
 	}
 
-	health := healthBanners(normatives, c.threshold)
+	// Conflictos reales sin resolver (contradicciones mismo-scope que decide un humano). Se cuentan
+	// aparte porque viven en memory_relations, no en las normativas ya cargadas. Un fallo aquí no debe
+	// tumbar la inyección entera: se degrada a 0 (sin banner de conflictos).
+	openConflicts, err := c.relations.CountOpenConflicts(ctx, project)
+	if err != nil {
+		openConflicts = 0
+	}
+
+	health := healthBanners(normatives, openConflicts, c.threshold)
 
 	if len(normatives) == 0 && len(pendings) == 0 && len(factual) == 0 && len(sessions) == 0 && len(health) == 0 {
 		return "", nil
@@ -156,16 +165,19 @@ func writeMemoryLine(b *strings.Builder, m domain.Memory) {
 	fmt.Fprintf(b, "- [%s] **%s**: %s\n", m.Type, m.Title, truncate(m.Content, 300))
 }
 
-// healthBanners deriva los avisos de la bandeja "Salud de memoria" a partir de las normativas
-// activas (ya cargadas para la bandeja "Siempre", sin consultas extra): normativas sin verificar
-// contra conflictos y aviso de mantenimiento cuando hay demasiadas (§20.D/§20.F).
-func healthBanners(normatives []domain.Memory, threshold int) []string {
+// healthBanners deriva los avisos de la bandeja "Salud de memoria": conflictos reales sin resolver
+// (contado aparte, en openConflicts), normativas sin verificar contra conflictos (derivado de las ya
+// cargadas para la bandeja "Siempre") y aviso de mantenimiento cuando hay demasiadas (§20.D/§20.F).
+func healthBanners(normatives []domain.Memory, openConflicts, threshold int) []string {
 	var out []string
 	unverified := 0
 	for _, m := range normatives {
 		if !m.ConflictChecked {
 			unverified++
 		}
+	}
+	if openConflicts > 0 {
+		out = append(out, fmt.Sprintf("- ⚠️ %d conflicto(s) sin resolver entre normativas (contradicciones detectadas; revísalas y decide cuál prevalece)", openConflicts))
 	}
 	if unverified > 0 {
 		out = append(out, fmt.Sprintf("- ⚠️ %d normativa(s) sin verificar contra conflictos (aún se obedecen; revisa que no se contradigan)", unverified))

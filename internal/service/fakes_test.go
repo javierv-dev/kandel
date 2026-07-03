@@ -478,6 +478,33 @@ func (f *fakeRelations) ListByStatus(_ context.Context, status domain.JudgmentSt
 	return out, nil
 }
 
+func (f *fakeRelations) FindJudgedPair(_ context.Context, a, b string) (*domain.MemoryRelation, error) {
+	for i := range f.items {
+		r := f.items[i]
+		if r.Status != domain.JudgmentJudged {
+			continue
+		}
+		if (r.SourceID == a && r.TargetID == b) || (r.SourceID == b && r.TargetID == a) {
+			c := r
+			return &c, nil
+		}
+	}
+	return nil, nil
+}
+
+// CountOpenConflicts cuenta relaciones conflicts_with juzgadas. El fake no modela el proyecto de las
+// memorias (relaciones referencian sync_ids), así que ignora el filtro; el filtrado por proyecto se
+// prueba a nivel del adaptador SQLite.
+func (f *fakeRelations) CountOpenConflicts(_ context.Context, _ string) (int, error) {
+	n := 0
+	for _, r := range f.items {
+		if r.Status == domain.JudgmentJudged && r.Kind == domain.RelationConflictsWith {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // fakeRunner es un AgentRunner que devuelve un veredicto fijo (o un error).
 type fakeRunner struct {
 	verdict    domain.Verdict

@@ -123,4 +123,12 @@ type RelationRepo interface {
 	Judge(ctx context.Context, id int64, v domain.Verdict) error
 	// ListByStatus lista relaciones por estado de juicio.
 	ListByStatus(ctx context.Context, status domain.JudgmentStatus, limit int) ([]domain.MemoryRelation, error)
+	// FindJudgedPair devuelve la relación YA juzgada entre dos memorias (por sync_id), en CUALQUIER
+	// dirección (A→B o B→A son el mismo par), o nil si no hay ninguna. Es la base de la idempotencia:
+	// antes de persistir un veredicto se consulta para actualizar en vez de duplicar.
+	FindJudgedPair(ctx context.Context, a, b string) (*domain.MemoryRelation, error)
+	// CountOpenConflicts cuenta los conflictos reales sin resolver (relaciones conflicts_with juzgadas
+	// entre memorias vivas) relevantes para un proyecto (las del proyecto o alguna global). Alimenta el
+	// banner "conflictos sin resolver" del contexto inyectado.
+	CountOpenConflicts(ctx context.Context, project string) (int, error)
 }

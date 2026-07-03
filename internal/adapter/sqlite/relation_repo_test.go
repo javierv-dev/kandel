@@ -112,3 +112,102 @@ func TestRelationGetMissing(t *testing.T) {
 		t.Errorf("Get de relación inexistente debe ser nil, fue %+v", got)
 	}
 }
+
+// judgedRelation arma una relación ya juzgada entre dos sync_id.
+func judgedRelation(syncID, source, target string, kind domain.RelationType) domain.MemoryRelation {
+	return domain.MemoryRelation{
+		SyncID: syncID, SourceID: source, TargetID: target,
+		Kind: kind, Status: domain.JudgmentJudged, CreatedAt: baseTime, UpdatedAt: baseTime,
+	}
+}
+
+func TestRelationFindJudgedPair(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRelationRepo(db)
+	ctx := context.Background()
+
+	if _, err := repo.Insert(ctx, judgedRelation("rel-1", "mem-a", "mem-b", domain.RelationConflictsWith)); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	// Se encuentra en cualquier dirección.
+	for _, dir := range [][2]string{{"mem-a", "mem-b"}, {"mem-b", "mem-a"}} {
+		got, err := repo.FindJudgedPair(ctx, dir[0], dir[1])
+		if err != nil {
+			t.Fatalf("FindJudgedPair(%v): %v", dir, err)
+		}
+		if got == nil || got.SyncID != "rel-1" {
+			t.Errorf("debe encontrar el par en dirección %v, fue %+v", dir, got)
+		}
+	}
+	// Un par sin relación juzgada devuelve nil.
+	if got, _ := repo.FindJudgedPair(ctx, "mem-a", "mem-z"); got != nil {
+		t.Errorf("par inexistente debe ser nil, fue %+v", got)
+	}
+}
+
+// TestRelationPairUniqueIndex verifica la red de seguridad a nivel de base: no puede haber dos
+// relaciones juzgadas del mismo par, ni siquiera en direcciones opuestas.
+func TestRelationPairUniqueIndex(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRelationRepo(db)
+	ctx := context.Background()
+
+	if _, err := repo.Insert(ctx, judgedRelation("rel-1", "mem-a", "mem-b", domain.RelationConflictsWith)); err != nil {
+		t.Fatalf("primer Insert: %v", err)
+	}
+	// La dirección inversa colapsa a la misma clave canónica → viola el índice único parcial.
+	if _, err := repo.Insert(ctx, judgedRelation("rel-2", "mem-b", "mem-a", domain.RelationConflictsWith)); err == nil {
+		t.Error("insertar el par inverso ya juzgado debe fallar por el índice único")
+	}
+}
+
+func TestCountOpenConflicts(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	mem := NewMemoryRepo(db)
+	rel := NewRelationRepo(db)
+	ctx := context.Background()
+
+	add := func(syncID, project string, scope domain.Scope) {
+		_, err := mem.Add(ctx, domain.Memory{
+			SyncID: syncID, SessionID: "s1", Project: project, Scope: scope,
+			Type: domain.TypeDecision, Title: syncID, Content: "x",
+			RevisionCount: 1, DuplicateCount: 1, CreatedAt: baseTime, UpdatedAt: baseTime,
+		})
+		if err != nil {
+			t.Fatalf("Add %s: %v", syncID, err)
+		}
+	}
+	add("mem-a", "proj", domain.ScopeProject)
+	add("mem-b", "proj", domain.ScopeProject)
+	if _, err := rel.Insert(ctx, judgedRelation("rel-1", "mem-a", "mem-b", domain.RelationConflictsWith)); err != nil {
+		t.Fatalf("Insert relación: %v", err)
+	}
+
+	if n, _ := rel.CountOpenConflicts(ctx, "proj"); n != 1 {
+		t.Errorf("el proyecto debe tener 1 conflicto abierto, dio %d", n)
+	}
+	// Otro proyecto (sin memorias globales implicadas) no ve este conflicto.
+	if n, _ := rel.CountOpenConflicts(ctx, "otro"); n != 0 {
+		t.Errorf("otro proyecto no debe ver el conflicto, dio %d", n)
+	}
+	// Al borrar (lógico) una de las memorias, el conflicto deja de contarse.
+	if id, _ := idOf(t, mem, "mem-a"); true {
+		if err := mem.SoftDelete(ctx, id); err != nil {
+			t.Fatalf("SoftDelete: %v", err)
+		}
+	}
+	if n, _ := rel.CountOpenConflicts(ctx, "proj"); n != 0 {
+		t.Errorf("con una memoria borrada el conflicto no debe contarse, dio %d", n)
+	}
+}
+
+// idOf resuelve el id local de una memoria por su sync_id (helper de test).
+func idOf(t *testing.T, mem *MemoryRepo, syncID string) (int64, bool) {
+	t.Helper()
+	m, err := mem.GetBySyncID(context.Background(), syncID)
+	if err != nil || m == nil {
+		t.Fatalf("GetBySyncID %s: %v", syncID, err)
+	}
+	return m.ID, true
+}

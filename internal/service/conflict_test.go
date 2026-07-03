@@ -310,3 +310,92 @@ func TestRecordVerdictValidatesRelation(t *testing.T) {
 		t.Errorf("relación mal persistida: %+v", rel)
 	}
 }
+
+// TestSweepDetectionBatchNoDuplicate cubre el bug del punto 2: en inserción en lote (dos normativas en
+// conflicto, ambas sin verificar) el barrido juzgaba el par desde ambos lados y creaba dos filas
+// simétricas. Con el salto-si-ya-juzgado + idempotencia debe quedar UNA sola relación.
+func TestSweepDetectionBatchNoDuplicate(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationConflictsWith, Confidence: 0.9, Reasoning: "chocan"}}
+	seedConflictMemory(t, obs, vecs, "A", "usar tabs")
+	seedConflictMemory(t, obs, vecs, "B", "usar espacios")
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	n, err := svc.SweepDetection(context.Background())
+	if err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("esperaba 2 normativas verificadas, obtuve %d", n)
+	}
+	if len(rels.items) != 1 {
+		t.Fatalf("el par debe producir UNA sola relación (sin duplicado simétrico), hay %d", len(rels.items))
+	}
+}
+
+// TestCompareCrossScopeResolvesToSupersedes cubre el punto 1: mem_compare ahora comparte la lógica del
+// barrido, así que un cruce project/global se resuelve como supersedes (proyecto→global) y dispara la
+// cascada, en vez de quedar como un conflicts_with crudo que no resuelve nada.
+func TestCompareCrossScopeResolvesToSupersedes(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationConflictsWith, Confidence: 0.9, Reasoning: "chocan"}}
+	glob := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-G", Type: domain.TypeDecision, Scope: domain.ScopeGlobal, Title: "G", Content: "regla global",
+	})
+	proj := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-P", Type: domain.TypeDecision, Scope: domain.ScopeProject, Project: "proj", Title: "P", Content: "regla proyecto",
+	})
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	rel, err := svc.Compare(context.Background(), proj, glob)
+	if err != nil {
+		t.Fatalf("Compare error: %v", err)
+	}
+	if rel.Kind != domain.RelationSupersedes || rel.SourceID != "mem-P" || rel.TargetID != "mem-G" {
+		t.Errorf("cross-scope debe resolverse a supersedes proyecto→global: %+v", rel)
+	}
+	if len(rels.items) != 1 {
+		t.Errorf("debe persistirse una relación, hay %d", len(rels.items))
+	}
+}
+
+// TestCompareNonConflictNotPersisted verifica que un veredicto no conflictivo devuelto por mem_compare
+// se informa a quien llama pero NO se persiste (antes ensuciaba la tabla con filas muertas que nadie lee).
+func TestCompareNonConflictNotPersisted(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationRelated, Confidence: 0.7, Reasoning: "mismo tema"}}
+	a := seedConflictMemory(t, obs, vecs, "A", "uno")
+	b := seedConflictMemory(t, obs, vecs, "B", "dos")
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	rel, err := svc.Compare(context.Background(), a, b)
+	if err != nil {
+		t.Fatalf("Compare error: %v", err)
+	}
+	if rel.Kind != domain.RelationRelated {
+		t.Errorf("debe devolver el veredicto crudo al llamante: %+v", rel)
+	}
+	if len(rels.items) != 0 {
+		t.Errorf("un veredicto no conflictivo no debe persistirse, hay %d", len(rels.items))
+	}
+}
+
+// TestComparePairIdempotent verifica que comparar el mismo par dos veces (en ambos sentidos) mantiene
+// UNA sola relación: la segunda actualiza en sitio en vez de duplicar.
+func TestComparePairIdempotent(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationConflictsWith, Confidence: 0.9, Reasoning: "chocan"}}
+	a := seedConflictMemory(t, obs, vecs, "A", "usar tabs")
+	b := seedConflictMemory(t, obs, vecs, "B", "usar espacios")
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	if _, err := svc.Compare(context.Background(), a, b); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Compare(context.Background(), b, a); err != nil {
+		t.Fatal(err)
+	}
+	if len(rels.items) != 1 {
+		t.Fatalf("comparar el par dos veces debe mantener UNA relación, hay %d", len(rels.items))
+	}
+}

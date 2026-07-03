@@ -131,9 +131,12 @@ func (c *ConflictService) FindCandidates(ctx context.Context, memoryID int64, li
 	return out, nil
 }
 
-// Compare ejecuta el juicio LLM entre dos memorias y persiste el veredicto como una relación
-// juzgada. Es el extremo caro: invoca al AgentRunner. Devuelve domain.ErrNotFound si alguna de
-// las memorias no existe.
+// Compare ejecuta el juicio LLM entre dos memorias y, si hay conflicto, persiste la relación
+// resuelta. Es el extremo caro: invoca al AgentRunner. Comparte con el barrido la misma lógica de
+// resolución (resolveAndPersist): aplica resolveDirection —así un cruce project/global también se
+// resuelve como supersedes y dispara la cascada— y NO persiste los veredictos no conflictivos
+// (related/compatible/scoped/not_conflict), que devuelve como relación efímera sin fila. Devuelve
+// domain.ErrNotFound si alguna de las memorias no existe.
 func (c *ConflictService) Compare(ctx context.Context, sourceID, targetID int64) (domain.MemoryRelation, error) {
 	source, target, err := c.loadPair(ctx, sourceID, targetID)
 	if err != nil {
@@ -143,7 +146,7 @@ func (c *ConflictService) Compare(ctx context.Context, sourceID, targetID int64)
 	if err != nil {
 		return domain.MemoryRelation{}, err
 	}
-	return c.persistVerdict(ctx, *source, *target, verdict)
+	return c.resolveAndPersist(ctx, *source, *target, verdict)
 }
 
 // RecordVerdict persiste un veredicto YA emitido por el agente (sin volver a llamar al LLM): es el
@@ -218,6 +221,17 @@ func (c *ConflictService) detectOne(ctx context.Context, mem domain.Memory) erro
 		if cand == nil || !comparable(mem, *cand) {
 			continue
 		}
+		// Si el par ya tiene veredicto juzgado (lo hizo el otro lado del par, un barrido anterior o
+		// mem_compare), no se vuelve a invocar al juez LLM: la comprobación es barata y evita el juicio
+		// redundante que antes producía filas simétricas (detectOne(A) y detectOne(B)). No consume el
+		// presupuesto top-K porque no cuesta.
+		existing, err := c.relations.FindJudgedPair(ctx, mem.SyncID, cand.SyncID)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			continue
+		}
 		if err := c.judgePair(ctx, mem, *cand); err != nil {
 			return err
 		}
@@ -229,21 +243,38 @@ func (c *ConflictService) detectOne(ctx context.Context, mem domain.Memory) erro
 	return c.memories.SetConflictChecked(ctx, mem.ID)
 }
 
-// judgePair invoca al juez LLM sobre un par y, solo si el veredicto es de conflicto, persiste la
-// relación con el sentido y el verbo que fija resolveDirection. Los veredictos no conflictivos
-// (related/compatible/scoped/not_conflict) no se persisten: no alimentan ni el banner ni la cascada.
+// judgePair invoca al juez LLM sobre un par y delega en resolveAndPersist la resolución. Es la ruta
+// del barrido automático; ignora la relación efímera que devuelve (solo le importa persistir el
+// conflicto, si lo hay).
 func (c *ConflictService) judgePair(ctx context.Context, newMem, cand domain.Memory) error {
 	verdict, err := c.runner.Judge(ctx, buildComparePrompt(newMem, cand))
 	if err != nil {
 		return err
 	}
+	_, err = c.resolveAndPersist(ctx, newMem, cand, verdict)
+	return err
+}
+
+// resolveAndPersist es la lógica compartida por el barrido (judgePair) y mem_compare (Compare): toma
+// el veredicto crudo del juez y decide qué hacer con él. Si NO es de conflicto
+// (related/compatible/scoped/not_conflict) no persiste nada —no alimenta ni el banner ni la cascada— y
+// devuelve una relación efímera (sin id) con el veredicto, útil para informar a quien llamó a
+// mem_compare. Si es conflicto, aplica resolveDirection (el scope precede, no el tipo) y persiste la
+// relación resuelta de forma idempotente.
+func (c *ConflictService) resolveAndPersist(ctx context.Context, newMem, cand domain.Memory, verdict domain.Verdict) (domain.MemoryRelation, error) {
 	if verdict.Relation != domain.RelationConflictsWith && verdict.Relation != domain.RelationSupersedes {
-		return nil
+		return domain.MemoryRelation{
+			SourceID:   newMem.SyncID,
+			TargetID:   cand.SyncID,
+			Kind:       verdict.Relation,
+			Reason:     verdict.Reasoning,
+			Confidence: verdict.Confidence,
+			Status:     domain.JudgmentJudged,
+		}, nil
 	}
 	source, target, kind := resolveDirection(newMem, cand, verdict.Relation)
 	resolved := domain.Verdict{Relation: kind, Reasoning: verdict.Reasoning, Confidence: verdict.Confidence}
-	_, err = c.persistVerdict(ctx, source, target, resolved)
-	return err
+	return c.persistVerdict(ctx, source, target, resolved)
 }
 
 // resolveDirection decide el sentido y el verbo de la relación a persistir. El TIPO no da autoridad;
@@ -296,33 +327,56 @@ func (c *ConflictService) loadPair(ctx context.Context, sourceID, targetID int64
 	return source, target, nil
 }
 
-// persistVerdict inserta la relación juzgada entre dos memorias (referenciadas por su sync_id) y
-// la devuelve. La inserción va dentro de una transacción.
+// persistVerdict persiste la relación juzgada entre dos memorias (referenciadas por su sync_id) de
+// forma IDEMPOTENTE: si ya existe una relación juzgada del par (en cualquier dirección), la actualiza
+// en vez de insertar otra; si no, inserta una nueva. Así el par nunca acumula filas redundantes,
+// vengan del barrido (ambos lados), de mem_compare o de mem_judge. Todo va dentro de una transacción.
 func (c *ConflictService) persistVerdict(ctx context.Context, source, target domain.Memory, verdict domain.Verdict) (domain.MemoryRelation, error) {
 	now := c.clock.Now().UTC()
-	relation := domain.MemoryRelation{
-		SyncID:     newSyncID("rel"),
-		SourceID:   source.SyncID,
-		TargetID:   target.SyncID,
-		Kind:       verdict.Relation,
-		Reason:     verdict.Reasoning,
-		Confidence: verdict.Confidence,
-		Status:     domain.JudgmentJudged,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
+	var result domain.MemoryRelation
 	err := c.uow.Do(ctx, func(ctx context.Context) error {
+		existing, err := c.relations.FindJudgedPair(ctx, source.SyncID, target.SyncID)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			// Actualiza en sitio: refresca verbo, motivo y confianza sin duplicar. Conserva la
+			// dirección original (para conflicts_with es simétrica; para supersedes resolveDirection es
+			// determinista, así que ambos lados producen el mismo sentido).
+			if err := c.relations.Judge(ctx, existing.ID, verdict); err != nil {
+				return err
+			}
+			existing.Kind = verdict.Relation
+			existing.Reason = verdict.Reasoning
+			existing.Confidence = verdict.Confidence
+			existing.Status = domain.JudgmentJudged
+			existing.UpdatedAt = now
+			result = *existing
+			return nil
+		}
+		relation := domain.MemoryRelation{
+			SyncID:     newSyncID("rel"),
+			SourceID:   source.SyncID,
+			TargetID:   target.SyncID,
+			Kind:       verdict.Relation,
+			Reason:     verdict.Reasoning,
+			Confidence: verdict.Confidence,
+			Status:     domain.JudgmentJudged,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
 		id, err := c.relations.Insert(ctx, relation)
 		if err != nil {
 			return err
 		}
 		relation.ID = id
+		result = relation
 		return nil
 	})
 	if err != nil {
 		return domain.MemoryRelation{}, err
 	}
-	return relation, nil
+	return result, nil
 }
 
 // comparePromptTemplate es el prompt canónico de comparación. Es deliberadamente estable: cambiarlo

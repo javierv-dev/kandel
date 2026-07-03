@@ -96,6 +96,38 @@ func (r *RelationRepo) ListByStatus(ctx context.Context, status domain.JudgmentS
 	return out, rows.Err()
 }
 
+// FindJudgedPair devuelve la relación ya juzgada entre dos memorias (por sync_id), en cualquier
+// dirección; (nil, nil) si no existe. Se apoya en idx_memrel_source/target para el filtro.
+func (r *RelationRepo) FindJudgedPair(ctx context.Context, a, b string) (*domain.MemoryRelation, error) {
+	q := `SELECT ` + relationColumns + ` FROM memory_relations
+		WHERE judgment_status = 'judged'
+		  AND ((source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?))
+		ORDER BY id LIMIT 1`
+	rel, err := scanRelation(execFromCtx(ctx, r.db).QueryRowContext(ctx, q, a, b, b, a))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: buscar par juzgado: %w", err)
+	}
+	return &rel, nil
+}
+
+// CountOpenConflicts cuenta los conflictos reales sin resolver del proyecto: relaciones conflicts_with
+// juzgadas cuyas dos memorias siguen vivas y donde al menos un lado pertenece al proyecto o es global.
+func (r *RelationRepo) CountOpenConflicts(ctx context.Context, project string) (int, error) {
+	const q = `SELECT COUNT(*) FROM memory_relations r
+		JOIN memories s ON s.sync_id = r.source_id AND s.deleted_at IS NULL
+		JOIN memories t ON t.sync_id = r.target_id AND t.deleted_at IS NULL
+		WHERE r.relation = 'conflicts_with' AND r.judgment_status = 'judged'
+		  AND (s.project = ? OR t.project = ? OR s.scope = 'global' OR t.scope = 'global')`
+	var n int
+	if err := execFromCtx(ctx, r.db).QueryRowContext(ctx, q, project, project).Scan(&n); err != nil {
+		return 0, fmt.Errorf("sqlite: contar conflictos abiertos: %w", err)
+	}
+	return n, nil
+}
+
 // scanRelation escanea una fila al modelo de dominio.
 func scanRelation(sc rowScanner) (domain.MemoryRelation, error) {
 	var (

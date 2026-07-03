@@ -129,6 +129,31 @@ CREATE TABLE IF NOT EXISTS memory_vectors (
 );
 `
 
+// schemaV2 añade la garantía de idempotencia de la detección de conflictos: como mucho UNA relación
+// juzgada por par de memorias, sin importar la dirección (A→B y B→A son el mismo conflicto). Antes,
+// el barrido juzgaba el par desde ambos lados (detectOne(A) ve a B y detectOne(B) ve a A) y, sumado a
+// mem_compare, acumulaba filas redundantes para el mismo par. Dos piezas:
+//   - Un DELETE que colapsa las filas juzgadas duplicadas ya existentes, conservando la de menor id
+//     (necesario: crear el índice único fallaría si quedaran duplicados). Solo borra redundancia real.
+//   - Un índice ÚNICO PARCIAL sobre la clave canónica del par (menor||mayor de los sync_id), limitado a
+//     las relaciones ya juzgadas (las pendientes son placeholders y no deben colisionar). Es la red de
+//     seguridad a nivel de base: aunque dos caminos intenten insertar el mismo par, solo cuaja uno.
+const schemaV2 = `
+DELETE FROM memory_relations
+WHERE judgment_status = 'judged' AND id NOT IN (
+	SELECT MIN(id) FROM memory_relations
+	WHERE judgment_status = 'judged'
+	GROUP BY
+		CASE WHEN source_id < target_id THEN source_id ELSE target_id END,
+		CASE WHEN source_id < target_id THEN target_id ELSE source_id END
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memrel_pair_judged ON memory_relations(
+	CASE WHEN source_id < target_id THEN source_id ELSE target_id END,
+	CASE WHEN source_id < target_id THEN target_id ELSE source_id END
+) WHERE judgment_status = 'judged';
+`
+
 // migration es un paso de evolución del esquema, identificado por un número de versión
 // estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
 // de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
@@ -146,6 +171,7 @@ type migration struct {
 //     recién creada o preexistente (user_version 0 => 1 sin perder datos).
 var migrations = []migration{
 	{version: 1, sql: schemaV1},
+	{version: 2, sql: schemaV2},
 }
 
 // migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base

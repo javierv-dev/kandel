@@ -9,7 +9,7 @@ import (
 )
 
 func TestContextFormatEmpty(t *testing.T) {
-	svc := NewContextService(newFakeSessions(), newFakeObs())
+	svc := NewContextService(newFakeSessions(), newFakeObs(), &fakeRelations{})
 	out, err := svc.Format(context.Background(), "kandel", domain.Scope(""))
 	if err != nil {
 		t.Fatalf("Format error: %v", err)
@@ -32,7 +32,7 @@ func TestContextFormatBandejas(t *testing.T) {
 	// Factual reciente.
 	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDiscovery, Title: "Ollama tarda", Content: "cold start 7s"})
 
-	svc := NewContextService(sessions, memories)
+	svc := NewContextService(sessions, memories, &fakeRelations{})
 	out, err := svc.Format(ctx, "Kandel", domain.Scope(""))
 	if err != nil {
 		t.Fatalf("Format error: %v", err)
@@ -62,7 +62,7 @@ func TestContextHealthTooManyNormatives(t *testing.T) {
 		memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDecision, Title: title, Content: "x", ConflictChecked: true})
 	}
 
-	svc := NewContextService(newFakeSessions(), memories, WithNormativeThreshold(2))
+	svc := NewContextService(newFakeSessions(), memories, &fakeRelations{}, WithNormativeThreshold(2))
 	out, err := svc.Format(ctx, "kandel", domain.Scope(""))
 	if err != nil {
 		t.Fatalf("Format error: %v", err)
@@ -73,5 +73,24 @@ func TestContextHealthTooManyNormatives(t *testing.T) {
 	// Verificadas → sin banner "sin verificar".
 	if strings.Contains(out, "sin verificar") {
 		t.Errorf("normativas verificadas no deben disparar el aviso de sin verificar:\n%s", out)
+	}
+}
+
+// TestContextHealthOpenConflicts verifica que un conflicto real juzgado (conflicts_with) se
+// superficia en la bandeja "Salud de memoria" — el agujero que antes dejaba invisible al humano.
+func TestContextHealthOpenConflicts(t *testing.T) {
+	ctx := context.Background()
+	memories := newFakeObs()
+	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDecision, Title: "A", Content: "x", ConflictChecked: true})
+	rels := &fakeRelations{}
+	rels.Insert(ctx, domain.MemoryRelation{SourceID: "mem-A", TargetID: "mem-B", Kind: domain.RelationConflictsWith, Status: domain.JudgmentJudged})
+
+	svc := NewContextService(newFakeSessions(), memories, rels)
+	out, err := svc.Format(ctx, "kandel", domain.Scope(""))
+	if err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	if !strings.Contains(out, "conflicto(s) sin resolver") {
+		t.Errorf("un conflicts_with juzgado debe avisar en Salud de memoria:\n%s", out)
 	}
 }
