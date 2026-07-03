@@ -125,9 +125,16 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 		if content == "" {
 			return mcp.NewToolResultError("content es obligatorio para mem_save"), nil
 		}
-		scope, err := domain.ParseScope(argString(req, "scope"))
-		if err != nil {
-			return mcp.NewToolResultError("scope inválido: " + err.Error()), nil
+		// El scope solo se fija si el llamante lo pasa; si se omite se deja vacío para que
+		// MemoryService.Save aplique DefaultScopeForType (p. ej. preference→global). Parsear el vacío
+		// con ParseScope lo forzaría a project y anularía ese default.
+		var scope domain.Scope
+		if raw := argString(req, "scope"); raw != "" {
+			s, err := domain.ParseScope(raw)
+			if err != nil {
+				return mcp.NewToolResultError("scope inválido: " + err.Error()), nil
+			}
+			scope = s
 		}
 		typ := domain.MemoryType(argString(req, "type"))
 		if typ == "" {

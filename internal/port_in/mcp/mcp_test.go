@@ -91,6 +91,23 @@ func TestHandleSaveTranslatesArgs(t *testing.T) {
 	}
 }
 
+// TestHandleSaveOmitsScopeLetsServiceDefault cubre F1: si no se pasa scope, el handler debe dejarlo
+// vacío para que MemoryService.Save aplique DefaultScopeForType (antes ParseScope("") lo forzaba a
+// project y una preference nunca quedaba global).
+func TestHandleSaveOmitsScopeLetsServiceDefault(t *testing.T) {
+	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 1}, Outcome: service.SaveCreated}}
+	svc := Services{Memory: mem, DefaultProject: "kandel"}
+	res, err := handleSave(svc)(context.Background(), callWith(map[string]any{
+		"title": "T", "content": "C", "type": "preference",
+	}))
+	if err != nil || res.IsError {
+		t.Fatalf("handleSave falló: %v / %v", err, res)
+	}
+	if mem.lastSave.Scope != domain.Scope("") {
+		t.Errorf("sin scope explícito el handler debe pasar scope vacío (que el servicio resuelva), pasó %q", mem.lastSave.Scope)
+	}
+}
+
 func TestHandleSaveRequiresContent(t *testing.T) {
 	svc := Services{Memory: &fakeMemory{}}
 	res, _ := handleSave(svc)(context.Background(), callWith(map[string]any{"title": "T"}))
