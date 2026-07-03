@@ -141,6 +141,10 @@ func TestUpdateAppliesPartialChanges(t *testing.T) {
 	if updated.NormalizedHash == res.Memory.NormalizedHash {
 		t.Error("al cambiar el contenido el hash debe recalcularse")
 	}
+	// F3: cada actualización incrementa revision_count (nace en 1 tras Save).
+	if updated.RevisionCount != res.Memory.RevisionCount+1 {
+		t.Errorf("revision_count debe incrementarse: era %d, es %d", res.Memory.RevisionCount, updated.RevisionCount)
+	}
 	// Save + Update encolan una mutación cada uno.
 	if len(sync.enqueued) != 2 {
 		t.Errorf("esperaba 2 mutaciones, hubo %d", len(sync.enqueued))

@@ -299,6 +299,8 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		if in.Content != nil && o.Type.IsNormative() {
 			o.ConflictChecked = false
 		}
+		// Cuenta esta edición: revision_count es "número de veces que se actualizó" (domain.Memory).
+		o.RevisionCount++
 		o.UpdatedAt = now
 		if err := o.Validate(); err != nil {
 			return err
