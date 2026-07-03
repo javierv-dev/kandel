@@ -69,6 +69,9 @@ var (
 	// ConflictTopK es el top-K de candidatas que juzga la detección; vacío = default del servicio.
 	ConflictTopK = Key{File: "conflict_topk", Env: "KANDEL_CONFLICT_TOPK", Default: "",
 		Doc: "top-K de candidatas del juez; vacío = default del servicio (3)"}
+	// ConflictFactualCutoff es el corte de la pasada de supersede factual; vacío = default del servicio.
+	ConflictFactualCutoff = Key{File: "conflict_factual_cutoff", Env: "KANDEL_CONFLICT_FACTUAL_CUTOFF", Default: "",
+		Doc: "corte de similitud de la pasada de supersede factual (0..1); vacío = default del servicio (0.90)"}
 	// NormativeThreshold es el umbral del aviso "demasiadas normativas"; vacío = default del servicio.
 	NormativeThreshold = Key{File: "normative_threshold", Env: "KANDEL_NORMATIVE_THRESHOLD", Default: "",
 		Doc: "umbral del aviso 'demasiadas normativas'; vacío = default del servicio (50)"}
@@ -88,7 +91,7 @@ var (
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
 	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncDir, LogDir,
-	ConflictCutoff, ConflictTopK, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
+	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 
 // configFileName es el nombre del archivo dentro del directorio de datos.

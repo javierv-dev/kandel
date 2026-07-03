@@ -54,6 +54,26 @@ func TestMemoryTypeIsNormative(t *testing.T) {
 	}
 }
 
+func TestMemoryTypeIsFactual(t *testing.T) {
+	// IsFactual es el complemento de IsNormative sobre los tipos válidos: los factuales describen cómo
+	// ES el sistema (§20.E-bis), no cómo debe comportarse.
+	tests := []struct {
+		typ  MemoryType
+		want bool
+	}{
+		{TypeArchitecture, true},
+		{TypeBugfix, true},
+		{TypeDiscovery, true},
+		{TypeDecision, false},
+		{TypePreference, false},
+	}
+	for _, tc := range tests {
+		if got := tc.typ.IsFactual(); got != tc.want {
+			t.Errorf("%q.IsFactual() = %v, se esperaba %v", tc.typ, got, tc.want)
+		}
+	}
+}
+
 func TestMemoryValidate(t *testing.T) {
 	tests := []struct {
 		name    string

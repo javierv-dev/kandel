@@ -72,6 +72,10 @@ type MemoryRepo interface {
 	// UncheckedNormatives lista las normativas (decision/preference) vivas cuya detección de
 	// conflictos aún no corrió (conflict_checked = 0). Es la cola del barrido de detección.
 	UncheckedNormatives(ctx context.Context, limit int) ([]domain.Memory, error)
+	// UncheckedFactuals lista los factuales (architecture/bugfix/discovery) vivos cuya detección de
+	// conflictos aún no corrió (conflict_checked = 0). Es la cola de la pasada de supersede factual
+	// (§20.E-bis), separada de la normativa porque aplica reglas más estrechas (solo supersede).
+	UncheckedFactuals(ctx context.Context, limit int) ([]domain.Memory, error)
 	// SetConflictChecked marca una memoria como ya verificada por la detección de conflictos.
 	SetConflictChecked(ctx context.Context, id int64) error
 	// UpdateProject renombra el proyecto de todas las memorias que lo tengan; devuelve cuántas

@@ -222,10 +222,74 @@ func TestSweepDetectionNonConflictMarksCheckedWithoutRelation(t *testing.T) {
 	}
 }
 
-func TestSweepDetectionIgnoresFactual(t *testing.T) {
+func TestSweepDetectionFactualSupersede(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationSupersedes, Confidence: 0.9}}
+	// Dos descubrimientos (factuales) del mismo asunto: el hecho nuevo reemplaza al viejo (§20.E-bis).
+	older := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-Old", Type: domain.TypeDiscovery, Scope: domain.ScopeProject, Project: "proj",
+		Title: "Old", Content: "config vieja", CreatedAt: time.Unix(1000, 0).UTC(),
+	})
+	newer := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-New", Type: domain.TypeDiscovery, Scope: domain.ScopeProject, Project: "proj",
+		Title: "New", Content: "config nueva", CreatedAt: time.Unix(2000, 0).UTC(),
+	})
+	_ = obs.SetConflictChecked(context.Background(), newer) // se procesa la vieja, que detecta la nueva
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	n, err := svc.SweepDetection(context.Background())
+	if err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("esperaba 1 factual verificado, obtuve %d", n)
+	}
+	if len(rels.items) != 1 {
+		t.Fatalf("esperaba 1 relación, hay %d", len(rels.items))
+	}
+	rel := rels.items[0]
+	// El más reciente reemplaza al más antiguo; el retrieval oculta el target (el hecho caduco).
+	if rel.Kind != domain.RelationSupersedes || rel.SourceID != "mem-New" || rel.TargetID != "mem-Old" {
+		t.Errorf("supersede factual debe dirigir reciente→antiguo: %+v", rel)
+	}
+	if mo, _ := obs.Get(context.Background(), older); mo == nil || !mo.ConflictChecked {
+		t.Error("el factual procesado debe quedar verificado")
+	}
+}
+
+func TestSweepDetectionFactualDropsNonSupersede(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	// Para un hecho, una contradicción que NO es reemplazo (conflicts_with) no dispara banner: se
+	// descarta sin persistir, pero la memoria queda verificada igual.
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationConflictsWith, Confidence: 0.8, Reasoning: "chocan"}}
+	a := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-A", Type: domain.TypeDiscovery, Scope: domain.ScopeProject, Project: "proj", Title: "A", Content: "hecho A",
+	})
+	b := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-B", Type: domain.TypeDiscovery, Scope: domain.ScopeProject, Project: "proj", Title: "B", Content: "hecho B",
+	})
+	_ = obs.SetConflictChecked(context.Background(), b)
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	n, err := svc.SweepDetection(context.Background())
+	if err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("esperaba 1 factual verificado, obtuve %d", n)
+	}
+	if len(rels.items) != 0 {
+		t.Errorf("un veredicto factual que no es supersede no debe persistirse: %+v", rels.items)
+	}
+	if ma, _ := obs.Get(context.Background(), a); ma == nil || !ma.ConflictChecked {
+		t.Error("el factual debe quedar verificado aunque no se persista relación")
+	}
+}
+
+func TestSweepDetectionFactualLoneMarksCheckedWithoutJudge(t *testing.T) {
 	obs, vecs, emb, rels, runner := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}, &fakeRunner{}
-	// Un descubrimiento (factual) no es normativo: el barrido no debe tocarlo ni juzgar nada.
-	_ = seedNormative(t, obs, vecs, domain.Memory{
+	// Un factual solo (sin vecinos del mismo asunto) se marca verificado sin invocar al juez.
+	d := seedNormative(t, obs, vecs, domain.Memory{
 		SyncID: "mem-D", Type: domain.TypeDiscovery, Scope: domain.ScopeProject, Project: "proj", Title: "D", Content: "un hecho",
 	})
 	svc := newConflictService(obs, vecs, emb, rels, runner)
@@ -234,11 +298,14 @@ func TestSweepDetectionIgnoresFactual(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SweepDetection error: %v", err)
 	}
-	if n != 0 {
-		t.Errorf("no debe verificar factuales, verificó %d", n)
+	if n != 1 {
+		t.Errorf("un factual solo debe verificarse igual, verificó %d", n)
 	}
 	if runner.lastPrompt != "" {
-		t.Error("no debe invocarse el juez para una memoria factual")
+		t.Error("sin candidata comparable no debe invocarse el juez")
+	}
+	if md, _ := obs.Get(context.Background(), d); md == nil || !md.ConflictChecked {
+		t.Error("el factual debe quedar verificado")
 	}
 }
 

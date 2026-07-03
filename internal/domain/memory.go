@@ -48,6 +48,14 @@ func (t MemoryType) IsNormative() bool {
 	return t == TypeDecision || t == TypePreference
 }
 
+// IsFactual indica si el tipo es factual (arquitectura, bugfix o descubrimiento): describe cómo ES el
+// sistema, no cómo debe comportarse. Es el complemento de IsNormative sobre los tipos válidos. La
+// detección de conflictos los trata aparte (§20.E-bis): solo se detecta el REEMPLAZO (supersede) de un
+// hecho por otro más reciente del mismo asunto, no las contradicciones que un humano tendría que juzgar.
+func (t MemoryType) IsFactual() bool {
+	return t == TypeArchitecture || t == TypeBugfix || t == TypeDiscovery
+}
+
 // Resolution marca si una memoria es un pendiente por resolver y en qué fase está. Es ESTADO,
 // no tipo: cualquier tipo de memoria puede llevarlo. Vacío = memoria normal (no es un pendiente).
 type Resolution string

@@ -97,7 +97,8 @@ func run(args []string) error {
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)
 	conflictService := service.NewConflictService(memoryRepo, vectorIndex, embedder, relationRepo, agentRunner, uow, clk,
-		service.WithDetectionTuning(conflictCutoff(), conflictTopK()))
+		service.WithDetectionTuning(conflictCutoff(), conflictTopK()),
+		service.WithFactualTuning(conflictFactualCutoff()))
 	// El backfill de vectores engancha la detección de conflictos diferida: al ponerse al día los
 	// vectores, se barren las normativas sin verificar (§20.F). Acoplamiento flojo vía callback.
 	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex,
@@ -184,6 +185,20 @@ func detectionSweep(c *service.ConflictService) func(context.Context) {
 // inválido) deja el valor por defecto del servicio.
 func conflictCutoff() float64 {
 	raw := strings.TrimSpace(config.Resolve(config.ConflictCutoff))
+	if raw == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil || f <= 0 {
+		return 0
+	}
+	return f
+}
+
+// conflictFactualCutoff lee el corte de la pasada de supersede factual de
+// KANDEL_CONFLICT_FACTUAL_CUTOFF; 0 (o inválido) deja el valor por defecto del servicio.
+func conflictFactualCutoff() float64 {
+	raw := strings.TrimSpace(config.Resolve(config.ConflictFactualCutoff))
 	if raw == "" {
 		return 0
 	}

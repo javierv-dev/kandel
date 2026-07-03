@@ -270,6 +270,19 @@ func (r *MemoryRepo) UncheckedNormatives(ctx context.Context, limit int) ([]doma
 	return r.queryMany(ctx, q, normalizeLimit(limit))
 }
 
+// UncheckedFactuals lista los factuales vivos (architecture/bugfix/discovery) sobre los que la
+// detección de conflictos aún no corrió (conflict_checked = 0), de la más antigua a la más nueva. Es la
+// cola de la pasada de supersede factual (§20.E-bis); separada de UncheckedNormatives porque esa pasada
+// solo persiste reemplazos (supersedes), no contradicciones para un humano.
+func (r *MemoryRepo) UncheckedFactuals(ctx context.Context, limit int) ([]domain.Memory, error) {
+	const q = `SELECT ` + memoryColumns + ` FROM memories
+		WHERE deleted_at IS NULL
+		  AND conflict_checked = 0
+		  AND type IN ('architecture', 'bugfix', 'discovery')
+		ORDER BY id ASC LIMIT ?`
+	return r.queryMany(ctx, q, normalizeLimit(limit))
+}
+
 // SetConflictChecked marca una memoria como ya verificada por la detección de conflictos. Es
 // idempotente: volver a marcarla no tiene efecto adicional.
 func (r *MemoryRepo) SetConflictChecked(ctx context.Context, id int64) error {

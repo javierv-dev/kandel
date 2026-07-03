@@ -87,7 +87,15 @@ Formato para `mem_save`:
 ### Reglas de actualización
 
 - Temas distintos NO deben sobrescribirse entre sí (ejemplo: decisión de arquitectura vs bugfix)
-- Si ya conoces el ID exacto que corregir, usa `mem_update`
+- **Prefiere `mem_update` cuando ya conoces el ID de la memoria que quedó obsoleta** (la acabas de ver
+  en el contexto o vía `mem_search`): edita en sitio en vez de guardar una nueva. Es lo más preciso,
+  inmediato y limpio — reembebe, cuenta la revisión y deja UNA sola memoria, sin duplicados. Aplica a
+  CUALQUIER tipo.
+- **Si NO conoces la vieja (o la descubres tarde), guarda la nueva igual.** Para los HECHOS
+  (`architecture` / `bugfix` / `discovery`) que cambian —config que se mueve, patrón que se abandona,
+  estructura que se rehace— el barrido detecta el REEMPLAZO por sí solo y oculta el hecho caduco (el más
+  reciente gana). Es una **red de seguridad automática**, no un sustituto: cuesta un juicio y conserva la
+  vieja como histórico, así que `mem_update` sigue siendo el camino preferente cuando puedes usarlo.
 
 ## FILTRO DE CAPTURA (qué merece memoria)
 

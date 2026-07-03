@@ -214,6 +214,21 @@ func (f *fakeObs) UncheckedNormatives(_ context.Context, limit int) ([]domain.Me
 	return out, nil
 }
 
+func (f *fakeObs) UncheckedFactuals(_ context.Context, limit int) ([]domain.Memory, error) {
+	var out []domain.Memory
+	for _, o := range f.items {
+		if o.IsDeleted() || o.ConflictChecked || !o.Type.IsFactual() {
+			continue
+		}
+		out = append(out, o)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (f *fakeObs) SetConflictChecked(_ context.Context, id int64) error {
 	if o, ok := f.items[id]; ok {
 		o.ConflictChecked = true

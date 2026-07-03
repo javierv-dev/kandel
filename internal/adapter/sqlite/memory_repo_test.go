@@ -358,11 +358,13 @@ func TestConflictCheckedRoundtripAndSweepQuery(t *testing.T) {
 		t.Fatalf("una memoria nueva debe nacer sin verificar: %+v", got)
 	}
 
-	// Una factual (discovery) no debe aparecer en la cola del barrido aunque esté sin verificar.
+	// Una factual (discovery) no debe aparecer en la cola normativa, pero SÍ en la cola factual
+	// (§20.E-bis): ambas colas filtran por conflict_checked = 0, pero por tipos disjuntos.
 	fact := sampleMemory()
 	fact.SyncID = "mem-fact"
 	fact.Type = domain.TypeDiscovery
-	if _, err := repo.Add(ctx, fact); err != nil {
+	idFact, err := repo.Add(ctx, fact)
+	if err != nil {
 		t.Fatalf("Add factual: %v", err)
 	}
 
@@ -372,6 +374,14 @@ func TestConflictCheckedRoundtripAndSweepQuery(t *testing.T) {
 	}
 	if len(pending) != 1 || pending[0].ID != idNorm {
 		t.Fatalf("solo la normativa sin verificar debe estar pendiente: %+v", pending)
+	}
+
+	factuals, err := repo.UncheckedFactuals(ctx, 10)
+	if err != nil {
+		t.Fatalf("UncheckedFactuals: %v", err)
+	}
+	if len(factuals) != 1 || factuals[0].ID != idFact {
+		t.Fatalf("solo el factual sin verificar debe estar en la cola factual: %+v", factuals)
 	}
 
 	// Marcarla la saca de la cola y persiste el flag.

@@ -19,6 +19,10 @@ const (
 	// defaultConflictCutoff es la similitud de coseno mínima para que una candidata pase a la etapa
 	// cara (juez LLM). Filtra el ruido: solo las semánticamente muy cercanas se juzgan.
 	defaultConflictCutoff = 0.85
+	// defaultFactualCutoff es el corte de la pasada de supersede factual (§20.E-bis). Más exigente que
+	// el normativo: los factuales son muchos y de alta rotación, así que un umbral más alto acota el
+	// gasto del juez LLM y evita emparejar hechos que solo comparten tema.
+	defaultFactualCutoff = 0.90
 	// defaultConflictTopK es cuántas candidatas (las más cercanas que superan el corte) se juzgan
 	// por memoria, como mucho.
 	defaultConflictTopK = 3
@@ -39,8 +43,9 @@ type ConflictService struct {
 	uow       ports.UnitOfWork
 	clock     ports.Clock
 
-	cutoff float64 // corte de similitud para pasar al juez LLM
-	topK   int     // máximo de candidatas juzgadas por memoria
+	cutoff        float64 // corte de similitud para pasar al juez LLM (pasada normativa)
+	factualCutoff float64 // corte de la pasada de supersede factual (§20.E-bis), más alto
+	topK          int     // máximo de candidatas juzgadas por memoria
 	// mu serializa el barrido de detección: el daemon (tras el backfill) y el hook pueden
 	// coincidir; sin esto se juzgarían las mismas memorias dos veces.
 	mu sync.Mutex
@@ -63,18 +68,29 @@ func WithDetectionTuning(cutoff float64, topK int) ConflictOption {
 	}
 }
 
+// WithFactualTuning fija el corte de la pasada de supersede factual (§20.E-bis). Un valor no positivo
+// se ignora (se conserva el default), para que un entorno mal puesto no la desactive.
+func WithFactualTuning(cutoff float64) ConflictOption {
+	return func(c *ConflictService) {
+		if cutoff > 0 {
+			c.factualCutoff = cutoff
+		}
+	}
+}
+
 // NewConflictService construye el servicio con sus dependencias inyectadas.
 func NewConflictService(memories ports.MemoryRepo, vectors ports.VectorIndex, embedder ports.Embedder, relations ports.RelationRepo, runner ports.AgentRunner, uow ports.UnitOfWork, clock ports.Clock, opts ...ConflictOption) *ConflictService {
 	c := &ConflictService{
-		memories:  memories,
-		vectors:   vectors,
-		embedder:  embedder,
-		relations: relations,
-		runner:    runner,
-		uow:       uow,
-		clock:     clock,
-		cutoff:    defaultConflictCutoff,
-		topK:      defaultConflictTopK,
+		memories:      memories,
+		vectors:       vectors,
+		embedder:      embedder,
+		relations:     relations,
+		runner:        runner,
+		uow:           uow,
+		clock:         clock,
+		cutoff:        defaultConflictCutoff,
+		factualCutoff: defaultFactualCutoff,
+		topK:          defaultConflictTopK,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -163,20 +179,44 @@ func (c *ConflictService) RecordVerdict(ctx context.Context, sourceID, targetID 
 	return c.persistVerdict(ctx, *source, *target, verdict)
 }
 
-// SweepDetection corre la detección automática de conflictos sobre las normativas aún sin verificar
-// (conflict_checked = 0). Es el barrido: lo dispara el daemon justo después del backfill de vectores
-// (y, por su medio, el hook UserPromptSubmit). Si ya hay uno en curso, NO espera ni encola otro
-// (coalesce con TryLock). Devuelve cuántas normativas verificó. Si el embebedor o el juez fallan,
-// aborta devolviendo el error: las que queden sin verificar se reintentan en el próximo barrido y el
-// banner "normativas sin verificar" (bandeja Salud de memoria) las mantiene visibles.
+// SweepDetection corre la detección automática de conflictos sobre las memorias aún sin verificar
+// (conflict_checked = 0) en dos pasadas: primero las normativas (embudo completo: supersede o
+// conflicts_with para humano) y luego los factuales (§20.E-bis: solo supersede). Es el barrido: lo
+// dispara el daemon justo después del backfill de vectores (y, por su medio, el hook UserPromptSubmit).
+// Si ya hay uno en curso, NO espera ni encola otro (coalesce con TryLock). Devuelve cuántas memorias
+// verificó (ambas pasadas). Si el embebedor o el juez fallan, aborta devolviendo el error: las que
+// queden sin verificar se reintentan en el próximo barrido y el banner "normativas sin verificar"
+// (bandeja Salud de memoria) las mantiene visibles.
 func (c *ConflictService) SweepDetection(ctx context.Context) (int, error) {
 	if !c.mu.TryLock() {
 		return 0, nil
 	}
 	defer c.mu.Unlock()
 	checked := 0
+	// Pasada normativa: embudo completo (supersede + conflicts_with para humano).
+	n, err := c.sweepQueue(ctx, c.memories.UncheckedNormatives, c.detectOne)
+	checked += n
+	if err != nil {
+		return checked, err
+	}
+	// Pasada factual (§20.E-bis): solo detecta reemplazos (supersede), con corte más alto.
+	n, err = c.sweepQueue(ctx, c.memories.UncheckedFactuals, c.detectFactualOne)
+	checked += n
+	return checked, err
+}
+
+// sweepQueue drena una cola de detección por lotes reanudables: pide un lote a next, procesa cada
+// memoria con detect y repite hasta vaciarla. Devuelve cuántas procesó y aborta al primer error (las
+// que queden se reintentan en el próximo barrido). Comparte la mecánica de las dos pasadas de
+// SweepDetection; lo único que cambia es la cola de origen y la función de detección.
+func (c *ConflictService) sweepQueue(
+	ctx context.Context,
+	next func(context.Context, int) ([]domain.Memory, error),
+	detect func(context.Context, domain.Memory) error,
+) (int, error) {
+	checked := 0
 	for {
-		batch, err := c.memories.UncheckedNormatives(ctx, detectBatch)
+		batch, err := next(ctx, detectBatch)
 		if err != nil {
 			return checked, err
 		}
@@ -184,7 +224,7 @@ func (c *ConflictService) SweepDetection(ctx context.Context) (int, error) {
 			return checked, nil
 		}
 		for _, mem := range batch {
-			if err := c.detectOne(ctx, mem); err != nil {
+			if err := detect(ctx, mem); err != nil {
 				return checked, err
 			}
 			checked++
@@ -192,12 +232,24 @@ func (c *ConflictService) SweepDetection(ctx context.Context) (int, error) {
 	}
 }
 
-// detectOne ejecuta la detección para una normativa: embebe su contenido (ancla del asunto), busca
-// las vecinas más cercanas, y solo juzga (etapa cara) las que superan el corte de similitud, hasta
-// top-K. Al terminar la marca como verificada. Un fallo del embebedor o del juez se propaga (la deja
-// sin verificar para reintentar). El vector propio se recalcula aquí en vez de reusar el almacenado
-// para no depender de que el backfill ya haya corrido.
+// detectOne ejecuta la detección normativa para una memoria: embudo completo (juez LLM que puede
+// producir supersede o conflicts_with).
 func (c *ConflictService) detectOne(ctx context.Context, mem domain.Memory) error {
+	return c.detect(ctx, mem, c.cutoff, c.judgePair)
+}
+
+// detectFactualOne ejecuta la pasada de supersede factual (§20.E-bis) para una memoria: mismo embudo,
+// pero con el corte más alto y un juez que SOLO persiste reemplazos (supersede), descartando el resto.
+func (c *ConflictService) detectFactualOne(ctx context.Context, mem domain.Memory) error {
+	return c.detect(ctx, mem, c.factualCutoff, c.judgeFactualPair)
+}
+
+// detect es la mecánica compartida por las dos pasadas: embebe el contenido de mem (ancla del asunto),
+// busca las vecinas más cercanas, y solo juzga (etapa cara) las que superan el corte, hasta top-K. Al
+// terminar la marca como verificada. Un fallo del embebedor o del juez se propaga (la deja sin
+// verificar para reintentar). El vector propio se recalcula aquí en vez de reusar el almacenado para no
+// depender de que el backfill ya haya corrido. cutoff y judge son lo único que cambia entre pasadas.
+func (c *ConflictService) detect(ctx context.Context, mem domain.Memory, cutoff float64, judge func(context.Context, domain.Memory, domain.Memory) error) error {
 	vector, err := c.embedder.Embed(ctx, mem.Content)
 	if err != nil {
 		return err
@@ -211,7 +263,7 @@ func (c *ConflictService) detectOne(ctx context.Context, mem domain.Memory) erro
 		if n.MemoryID == mem.ID {
 			continue // no es candidata de sí misma
 		}
-		if n.Score < c.cutoff {
+		if n.Score < cutoff {
 			break // vecinos ordenados por cercanía: por debajo del corte, el resto también
 		}
 		cand, err := c.memories.Get(ctx, n.MemoryID)
@@ -232,7 +284,7 @@ func (c *ConflictService) detectOne(ctx context.Context, mem domain.Memory) erro
 		if existing != nil {
 			continue
 		}
-		if err := c.judgePair(ctx, mem, *cand); err != nil {
+		if err := judge(ctx, mem, *cand); err != nil {
 			return err
 		}
 		judged++
@@ -250,6 +302,23 @@ func (c *ConflictService) judgePair(ctx context.Context, newMem, cand domain.Mem
 	verdict, err := c.runner.Judge(ctx, buildComparePrompt(newMem, cand))
 	if err != nil {
 		return err
+	}
+	_, err = c.resolveAndPersist(ctx, newMem, cand, verdict)
+	return err
+}
+
+// judgeFactualPair es la ruta de la pasada factual (§20.E-bis): invoca al juez y persiste el veredicto
+// SOLO si es un reemplazo (supersede). Cualquier otro verbo (conflicts_with, related, compatible,
+// scoped, not_conflict) se descarta sin escribir nada: los hechos no disparan banner para un humano
+// —el objetivo es únicamente ocultar el hecho caduco cuando otro más reciente lo reemplaza. La
+// dirección la resuelve resolveAndPersist vía resolveDirection (mismo scope → gana el más reciente).
+func (c *ConflictService) judgeFactualPair(ctx context.Context, newMem, cand domain.Memory) error {
+	verdict, err := c.runner.Judge(ctx, buildComparePrompt(newMem, cand))
+	if err != nil {
+		return err
+	}
+	if verdict.Relation != domain.RelationSupersedes {
+		return nil
 	}
 	_, err = c.resolveAndPersist(ctx, newMem, cand, verdict)
 	return err
