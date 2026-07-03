@@ -15,13 +15,29 @@ func (r *runner) sessionStart(p payload) error {
 	old := oldProjectName(p.CWD)
 	r.klog(fmt.Sprintf("inicio: session_id=%s project=%s cwd=%s", orQ(p.SessionID), orQ(project), orQ(p.CWD)))
 
+	ctxText, _ := r.prepareStartup(project, old, p)
+
+	// Inyecta los banners (desalineación / versión nueva, si aplican) + el protocolo + los metadatos
+	// internos (project/session_id) + el contexto (vacío si el daemon estaba caído). El protocolo se
+	// imprime siempre, aunque no haya backend, porque es útil al modelo.
+	fmt.Fprint(r.out, r.assetMismatchBanner())
+	fmt.Fprint(r.out, r.updateBanner())
+	fmt.Fprint(r.out, protocolSessionStart)
+	r.injectMetadata(project, p.SessionID)
+	if ctxText != "" {
+		fmt.Fprintf(r.out, "\n%s\n", ctxText)
+	}
+	return nil
+}
+
+// prepareStartup corre los efectos de arranque de sesión —asegura el daemon, migra el nombre del
+// proyecto si cambió, crea/reactiva la sesión, importa los chunks sincronizados y precalienta el
+// embebedor— y devuelve el contexto del proyecto. daemonUp es false si el daemon no respondió (en ese
+// caso ctxText es "" y no se hizo ningún efecto). Lo comparten el arranque de Claude Code
+// (sessionStart) y el de Antigravity (agPreInvocation), que solo difieren en cómo formatean la salida.
+func (r *runner) prepareStartup(project, old string, p payload) (ctxText string, daemonUp bool) {
 	if err := r.client.ensureDaemon(r.ctx, r); err != nil {
-		// Sin daemon no hay backend; aun así se imprime el protocolo (es útil al modelo).
-		fmt.Fprint(r.out, r.assetMismatchBanner())
-		fmt.Fprint(r.out, r.updateBanner())
-		fmt.Fprint(r.out, protocolSessionStart)
-		r.injectMetadata(project, p.SessionID)
-		return nil
+		return "", false
 	}
 
 	// Migra el nombre del proyecto si cambió (idempotente en el servidor).
@@ -49,16 +65,7 @@ func (r *runner) sessionStart(p payload) error {
 	code, _ := r.client.warmup(r.ctx)
 	r.klog("POST /embeddings/warmup -> HTTP " + code)
 
-	// Inyecta los banners (desalineación / versión nueva, si aplican) + el protocolo + los metadatos
-	// internos (project/session_id) + el contexto.
-	fmt.Fprint(r.out, r.assetMismatchBanner())
-	fmt.Fprint(r.out, r.updateBanner())
-	fmt.Fprint(r.out, protocolSessionStart)
-	r.injectMetadata(project, p.SessionID)
-	if text := r.client.fetchContext(r.ctx, project); text != "" {
-		fmt.Fprintf(r.out, "\n%s\n", text)
-	}
-	return nil
+	return r.client.fetchContext(r.ctx, project), true
 }
 
 // injectMetadata escribe el bloque de metadatos internos de la conversación (project, session_id, …)

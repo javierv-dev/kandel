@@ -345,6 +345,95 @@ func TestAgentMetadataRender(t *testing.T) {
 	}
 }
 
+func TestAgPreInvocationStartInjectsContext(t *testing.T) {
+	d := newStubDaemon(t)
+	r, out := newTestRunner(t, "ag-pre-invocation", d)
+	cwd := t.TempDir() // sin git → proyecto = basename del cwd
+
+	// invocationNum 0 = arranque: crea sesión e inyecta contexto como injectSteps.
+	if err := r.agPreInvocation(agInput{ConversationID: "conv-1", WorkspacePaths: []string{cwd}, InvocationNum: 0}); err != nil {
+		t.Fatalf("agPreInvocation: %v", err)
+	}
+
+	req := d.find(t, "POST", "/sessions")
+	if req.body["id"] != "conv-1" {
+		t.Errorf("id de sesión incorrecto: %v", req.body["id"])
+	}
+	// La salida debe ser JSON con injectSteps[0].ephemeralMessage conteniendo contexto y metadatos.
+	var payload struct {
+		InjectSteps []struct {
+			EphemeralMessage string `json:"ephemeralMessage"`
+		} `json:"injectSteps"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("la salida no es JSON de Antigravity: %v\n%s", err, out.String())
+	}
+	if len(payload.InjectSteps) != 1 {
+		t.Fatalf("se esperaba 1 injectStep, hubo %d: %s", len(payload.InjectSteps), out.String())
+	}
+	msg := payload.InjectSteps[0].EphemeralMessage
+	if !strings.Contains(msg, "CONTEXTO DE PRUEBA") {
+		t.Errorf("el paso inyectado no trae el contexto:\n%s", msg)
+	}
+	if !strings.Contains(msg, "session_id: conv-1") {
+		t.Errorf("el paso inyectado no trae los metadatos internos:\n%s", msg)
+	}
+	// No debe llevar la jerga de Claude (tools diferidas / ToolSearch), que en Antigravity no aplica.
+	if strings.Contains(msg, "ToolSearch") {
+		t.Errorf("el contexto de Antigravity no debe mencionar ToolSearch:\n%s", msg)
+	}
+}
+
+func TestAgPreInvocationLaterTurnOnlyBackfills(t *testing.T) {
+	d := newStubDaemon(t)
+	r, out := newTestRunner(t, "ag-pre-invocation", d)
+
+	// invocationNum > 0: no crea sesión ni inyecta contexto; solo dispara backfill (que el stub no
+	// registra como sesión). La salida debe ser un objeto vacío (sin injectSteps).
+	if err := r.agPreInvocation(agInput{ConversationID: "conv-2", WorkspacePaths: []string{t.TempDir()}, InvocationNum: 3}); err != nil {
+		t.Fatalf("agPreInvocation: %v", err)
+	}
+	if n := d.count("POST", "/sessions"); n != 0 {
+		t.Errorf("un turno posterior no debe crear sesión, hubo %d", n)
+	}
+	if s := strings.TrimSpace(out.String()); s != "{}" {
+		t.Errorf("un turno posterior debe imprimir {}; salida: %q", s)
+	}
+}
+
+func TestAgStopEndsSession(t *testing.T) {
+	d := newStubDaemon(t)
+	r, out := newTestRunner(t, "ag-stop", d)
+	if err := r.agStop(agInput{ConversationID: "conv-9"}); err != nil {
+		t.Fatalf("agStop: %v", err)
+	}
+	d.find(t, "POST", "/sessions/conv-9/end")
+	// Debe permitir el cierre (decision != "continue").
+	var payload struct {
+		Decision string `json:"decision"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("la salida de Stop no es JSON: %v", err)
+	}
+	if payload.Decision == "continue" {
+		t.Errorf("Stop no debe forzar continue (bloquearía el cierre): %+v", payload)
+	}
+}
+
+func TestParseAgInputTolerant(t *testing.T) {
+	in := parseAgInput(strings.NewReader(`{"conversationId":"c","workspacePaths":["/x"],"invocationNum":2}`))
+	if in.ConversationID != "c" || in.cwd() != "/x" || in.InvocationNum != 2 {
+		t.Errorf("parseo incorrecto: %+v", in)
+	}
+	// Entrada vacía/basura → input en blanco, sin pánico; cwd() tolera la lista vacía.
+	if got := parseAgInput(strings.NewReader("")); got.ConversationID != "" || got.cwd() != "" {
+		t.Errorf("entrada vacía debe dar input en blanco")
+	}
+	if got := parseAgInput(strings.NewReader("no es json")); got.ConversationID != "" {
+		t.Errorf("basura debe dar input en blanco")
+	}
+}
+
 func TestParsePayloadTolerant(t *testing.T) {
 	// JSON válido.
 	p := parsePayload(strings.NewReader(`{"session_id":"a","cwd":"/x","prompt":"p","stdout":"o"}`))

@@ -52,8 +52,16 @@ func Run(ctx context.Context, event, version string, updates ports.ReleaseChecke
 		installedVersion: defaultInstalledVersion,
 		updates:          updates,
 	}
-	payload := parsePayload(stdin)
+	// Los eventos de Antigravity (ag-*) traen otro contrato de stdin (conversationId, workspacePaths,
+	// invocationNum) → se parsean aparte. El resto son los de Claude Code (payload común).
+	switch event {
+	case "ag-pre-invocation":
+		return r.agPreInvocation(parseAgInput(stdin))
+	case "ag-stop":
+		return r.agStop(parseAgInput(stdin))
+	}
 
+	payload := parsePayload(stdin)
 	switch event {
 	case "session-start":
 		return r.sessionStart(payload)
