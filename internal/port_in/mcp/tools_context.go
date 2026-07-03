@@ -32,7 +32,7 @@ func registerContextTools(srv *server.MCPServer, svc Services, allowlist map[str
 	if shouldRegister("mem_capture_passive", allowlist) {
 		srv.AddTool(
 			mcp.NewTool("mem_capture_passive",
-				mcp.WithDescription("Extrae aprendizajes de un texto que incluya una sección '## Key Learnings:' (o 'Aprendizajes:') y guarda cada punto como una memoria de tipo learning. Devuelve cuántos se extrajeron y guardaron."),
+				mcp.WithDescription("Extrae aprendizajes de un texto que incluya una sección '## Key Learnings:' (o 'Aprendizajes:') y guarda cada punto como una memoria de tipo discovery. Devuelve cuántos se extrajeron y guardaron."),
 				mcp.WithTitleAnnotation("Captura pasiva"),
 				mcp.WithString("content", mcp.Required(), mcp.Description("Texto con una sección de aprendizajes en viñetas")),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),

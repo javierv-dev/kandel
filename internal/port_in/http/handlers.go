@@ -351,7 +351,7 @@ type passiveCaptureRequest struct {
 }
 
 // handlePassiveCapture extrae los aprendizajes en viñetas del contenido y guarda cada uno como
-// una memoria de tipo learning. El dedupe lo hace Memory.Save (por hash); aquí se cuentan los
+// una memoria de tipo discovery. El dedupe lo hace Memory.Save (por hash); aquí se cuentan los
 // resultados. Es fire-and-forget desde el hook: nunca debe fallar la sesión del agente.
 func handlePassiveCapture(svc Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
