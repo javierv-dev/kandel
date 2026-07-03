@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -143,6 +144,52 @@ func TestUpdateAppliesPartialChanges(t *testing.T) {
 	// Save + Update encolan una mutación cada uno.
 	if len(sync.enqueued) != 2 {
 		t.Errorf("esperaba 2 mutaciones, hubo %d", len(sync.enqueued))
+	}
+}
+
+// TestUpdateReembedsOnContentChange cubre F2: al cambiar el contenido, Update recalcula el vector
+// (antes lo dejaba obsoleto → mem_search matcheaba el texto viejo).
+func TestUpdateReembedsOnContentChange(t *testing.T) {
+	obs, sync := newFakeObs(), &fakeSync{}
+	emb, vecs := newFakeEmbedder(), newFakeVectorIndex()
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vecs)
+	ctx := context.Background()
+	res, _ := svc.Save(ctx, baseSaveInput())
+
+	callsAfterSave := emb.calls
+	emb.vec = []float32{0, 1, 0} // el nuevo contenido embebe distinto
+	newContent := "contenido totalmente distinto"
+	if _, err := svc.Update(ctx, res.Memory.ID, UpdateInput{Content: &newContent}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if emb.calls <= callsAfterSave {
+		t.Error("Update con contenido nuevo debe re-embeber (no lo hizo)")
+	}
+	if got := vecs.vecs[res.Memory.ID]; len(got) != 3 || got[1] != 1 {
+		t.Errorf("el vector debe reflejar el contenido nuevo, fue %v", got)
+	}
+}
+
+// TestUpdateDropsStaleVectorWhenEmbedderDown cubre F2 en el camino degradado: si el embebedor está
+// caído al re-embeber, el vector obsoleto se BORRA (queda pendiente de backfill) en vez de servir
+// búsquedas contra el texto viejo. El Update en sí no falla.
+func TestUpdateDropsStaleVectorWhenEmbedderDown(t *testing.T) {
+	obs, sync := newFakeObs(), &fakeSync{}
+	emb, vecs := newFakeEmbedder(), newFakeVectorIndex()
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vecs)
+	ctx := context.Background()
+	res, _ := svc.Save(ctx, baseSaveInput())
+	if _, ok := vecs.vecs[res.Memory.ID]; !ok {
+		t.Fatal("precondición: la memoria debe tener vector tras Save")
+	}
+
+	emb.failWith = errors.New("ollama caído")
+	newContent := "contenido nuevo con embebedor caído"
+	if _, err := svc.Update(ctx, res.Memory.ID, UpdateInput{Content: &newContent}); err != nil {
+		t.Fatalf("Update no debe fallar por el embebedor caído: %v", err)
+	}
+	if _, ok := vecs.vecs[res.Memory.ID]; ok {
+		t.Error("con el embebedor caído el vector obsoleto debe borrarse (quedar pendiente de backfill)")
 	}
 }
 

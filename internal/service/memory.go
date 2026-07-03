@@ -250,8 +250,23 @@ func (m *MemoryService) indexVectorTolerant(ctx context.Context, memoryID int64,
 	return false, nil
 }
 
+// reindexVectorTolerant recalcula el vector de una memoria cuyo contenido cambió. A diferencia de
+// indexVectorTolerant (para memorias nuevas, aún sin vector), aquí YA existe un vector guardado y
+// quedó obsoleto: si el embebedor está caído, se BORRA el vector viejo en vez de dejarlo, porque
+// dejarlo haría que mem_search matcheara el texto anterior; al quedar sin vector, el backfill lo
+// regenera después. Un error de escritura en la DB (no del embebedor) sí se propaga.
+func (m *MemoryService) reindexVectorTolerant(ctx context.Context, memoryID int64, content string) error {
+	vector, embErr := m.embedder.Embed(ctx, content)
+	if embErr != nil {
+		m.warnf("memoria #%d actualizada: no se pudo re-embeber (embebedor no disponible: %v); se borra el vector obsoleto y queda pendiente de backfill", memoryID, embErr)
+		return m.vectors.Delete(ctx, memoryID)
+	}
+	return m.vectors.Upsert(ctx, memoryID, vector, m.embedder.Model())
+}
+
 // Update aplica cambios parciales a una memoria viva y reencola su mutación. Si cambia el
-// contenido, recalcula el hash. Devuelve domain.ErrNotFound si la memoria no existe.
+// contenido, recalcula el hash y el vector (embedding). Devuelve domain.ErrNotFound si la memoria
+// no existe.
 func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (domain.Memory, error) {
 	now := m.clock.Now().UTC()
 	var result domain.Memory
@@ -294,6 +309,13 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		}
 		if updated == nil {
 			return domain.ErrNotFound
+		}
+		// Si cambió el contenido, el vector guardado quedó obsoleto: se recalcula (o se borra si el
+		// embebedor está caído) para que la búsqueda semántica no matchee el texto anterior.
+		if in.Content != nil {
+			if err := m.reindexVectorTolerant(ctx, id, o.Content); err != nil {
+				return err
+			}
 		}
 		result = *updated
 		return m.enqueueUpsert(ctx, *updated)
