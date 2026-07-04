@@ -205,6 +205,11 @@ func (m *MemoryService) Recent(ctx context.Context, q ports.RecentQuery) ([]doma
 	return m.memories.Recent(ctx, q)
 }
 
+// Projects lista los nombres de proyectos únicos vivos.
+func (m *MemoryService) Projects(ctx context.Context) ([]string, error) {
+	return m.memories.Projects(ctx)
+}
+
 // Search es la búsqueda semántica del agente: convierte la consulta en vector, pide los vecinos
 // más cercanos al índice y los hidrata a memorias aplicando los filtros de q. Pide un conjunto
 // de candidatos más amplio que el límite final porque luego se filtran por proyecto/alcance/tipo.

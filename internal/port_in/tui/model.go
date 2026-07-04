@@ -21,6 +21,7 @@ type MemoryAccess interface {
 	Search(ctx context.Context, q ports.SearchQuery) ([]domain.SearchResult, error)
 	Delete(ctx context.Context, id int64) error
 	Restore(ctx context.Context, id int64) (domain.Memory, error)
+	Projects(ctx context.Context) ([]string, error)
 }
 
 // ActionLogger registra las acciones de curación de la TUI (borrar/restaurar) para auditoría. La
@@ -36,6 +37,7 @@ type view int
 const (
 	viewList view = iota
 	viewDetail
+	viewProjects
 )
 
 // Model es el estado completo del TUI.
@@ -44,11 +46,15 @@ type Model struct {
 	project  string
 	limit    int
 	memories []domain.Memory
+	scores   []float64
 	cursor   int
 	view     view
 	loading  bool
 	err      error
 	quitting bool
+
+	availableProjects []string
+	projectCursor     int
 
 	// Estado de la búsqueda semántica. searching es true mientras el usuario teclea la consulta
 	// (el resto de teclas se tratan como texto). query es el texto tecleado / la última consulta
@@ -88,6 +94,12 @@ func NewModel(reader MemoryAccess, project string, limit int) Model {
 // memoriesLoadedMsg lleva las memorias cargadas por el comando de carga.
 type memoriesLoadedMsg struct {
 	memories []domain.Memory
+	scores   []float64
+}
+
+// projectsLoadedMsg lleva la lista de proyectos únicos desde la base de datos.
+type projectsLoadedMsg struct {
+	projects []string
 }
 
 // errMsg lleva un error ocurrido en un comando.

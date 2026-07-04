@@ -44,10 +44,12 @@ func (m Model) loadSearch() tea.Cmd {
 			return errMsg{err: err}
 		}
 		memories := make([]domain.Memory, len(results))
+		scores := make([]float64, len(results))
 		for i, r := range results {
 			memories[i] = r.Memory
+			scores[i] = r.Score
 		}
-		return memoriesLoadedMsg{memories: memories}
+		return memoriesLoadedMsg{memories: memories, scores: scores}
 	}
 }
 
@@ -64,6 +66,17 @@ func (m Model) loadDeleted() tea.Cmd {
 			return errMsg{err: err}
 		}
 		return memoriesLoadedMsg{memories: memories}
+	}
+}
+
+// loadProjects devuelve un comando que carga los proyectos disponibles para filtrado.
+func (m Model) loadProjects() tea.Cmd {
+	return func() tea.Msg {
+		projs, err := m.reader.Projects(context.Background())
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return projectsLoadedMsg{projects: projs}
 	}
 }
 
@@ -130,10 +143,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case memoriesLoadedMsg:
 		m.memories = msg.memories
+		m.scores = msg.scores
 		m.loading = false
 		if m.cursor >= len(m.memories) {
 			m.cursor = 0
 		}
+		return m, nil
+
+	case projectsLoadedMsg:
+		// Insertamos la opción "[Todos]" al principio.
+		m.availableProjects = append([]string{"[Todos]"}, msg.projects...)
+		m.projectCursor = 0
+		m.view = viewProjects
+		m.loading = false
 		return m, nil
 
 	case errMsg:
@@ -174,24 +196,47 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.view == viewList && m.cursor > 0 {
 			m.cursor--
+		} else if m.view == viewProjects && m.projectCursor > 0 {
+			m.projectCursor--
 		}
 		return m, nil
 
 	case "down", "j":
 		if m.view == viewList && m.cursor < len(m.memories)-1 {
 			m.cursor++
+		} else if m.view == viewProjects && m.projectCursor < len(m.availableProjects)-1 {
+			m.projectCursor++
 		}
 		return m, nil
 
 	case "enter":
 		if m.view == viewList && len(m.memories) > 0 {
 			m.view = viewDetail
+		} else if m.view == viewProjects {
+			sel := m.availableProjects[m.projectCursor]
+			if sel == "[Todos]" {
+				m.project = ""
+			} else {
+				m.project = sel
+			}
+			m.view = viewList
+			m.loading = true
+			return m, m.reloadCurrent()
 		}
 		return m, nil
 
 	case "esc":
 		if m.view == viewDetail {
 			m.view = viewList
+		} else if m.view == viewProjects {
+			m.view = viewList
+		}
+		return m, nil
+
+	case "p":
+		if m.view == viewList {
+			m.loading = true
+			return m, m.loadProjects()
 		}
 		return m, nil
 

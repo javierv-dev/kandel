@@ -31,6 +31,7 @@ type MemoryUseCases interface {
 	Update(ctx context.Context, id int64, in service.UpdateInput) (domain.Memory, error)
 	Delete(ctx context.Context, id int64) error
 	Restore(ctx context.Context, id int64) (domain.Memory, error)
+	Projects(ctx context.Context) ([]string, error)
 }
 
 // SessionUseCases es la cara de los casos de uso de sesión que la CLI consume.

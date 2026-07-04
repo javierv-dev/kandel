@@ -352,3 +352,23 @@ func normalizeLimit(limit int) int {
 	}
 	return limit
 }
+
+// Projects devuelve la lista de nombres de proyectos únicos de las memorias vivas, ordenada alfabéticamente.
+func (r *MemoryRepo) Projects(ctx context.Context) ([]string, error) {
+	const q = `SELECT DISTINCT project FROM memories WHERE deleted_at IS NULL AND project != '' ORDER BY project ASC`
+	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: projects: %w", err)
+	}
+	defer rows.Close()
+
+	var projects []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
+}

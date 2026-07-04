@@ -81,6 +81,9 @@ type MemoryRepo interface {
 	// UpdateProject renombra el proyecto de todas las memorias que lo tengan; devuelve cuántas
 	// filas cambió. Lo usa la migración de proyecto (renombrado por cambio de remoto git).
 	UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error)
+	// Projects devuelve la lista de nombres de proyectos únicos de las memorias vivas, ordenada
+	// alfabéticamente.
+	Projects(ctx context.Context) ([]string, error)
 }
 
 // SessionRepo persiste y recupera sesiones.
