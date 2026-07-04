@@ -250,6 +250,23 @@ func (f *fakeObs) UpdateProject(_ context.Context, oldProject, newProject string
 	return n, nil
 }
 
+func (f *fakeObs) Projects(_ context.Context) ([]string, error) {
+	seen := map[string]struct{}{}
+	var projects []string
+	for _, o := range f.items {
+		if o.IsDeleted() || o.Project == "" {
+			continue
+		}
+		if _, ok := seen[o.Project]; ok {
+			continue
+		}
+		seen[o.Project] = struct{}{}
+		projects = append(projects, o.Project)
+	}
+	sort.Strings(projects)
+	return projects, nil
+}
+
 // fakePrompts es un PromptRepo en memoria.
 type fakePrompts struct {
 	items  []domain.Prompt

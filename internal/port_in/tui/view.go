@@ -71,7 +71,7 @@ func (m Model) listView() string {
 			marker = "> "
 		}
 		fmt.Fprintf(&b, "%s#%d  [%s]  %s\n", marker, mem.ID, mem.Type, mem.Title)
-		
+
 		// Snippet de contexto
 		snippet := extractSnippet(mem.Content, m.query, m.showingSearch)
 		if snippet != "" {
@@ -109,7 +109,7 @@ func (m Model) listView() string {
 func (m Model) projectsView() string {
 	var b strings.Builder
 	b.WriteString("kandel — seleccionar proyecto\n\n")
-	
+
 	if len(m.availableProjects) == 0 {
 		b.WriteString("  (no hay proyectos)\n")
 	}
@@ -176,7 +176,7 @@ func extractSnippet(content, query string, isSearch bool) string {
 		start = 0
 		prefix = ""
 	}
-	
+
 	end := idx + len(query) + 30
 	suffix := "..."
 	if end >= len(content) {
@@ -198,12 +198,12 @@ func (m Model) detailView() string {
 	}
 	mem := m.memories[m.cursor]
 	var b strings.Builder
-	
+
 	fmt.Fprintf(&b, "ID: %d | Título: %s\n", mem.ID, mem.Title)
 	fmt.Fprintf(&b, "Tipo: %s | Ámbito: %s\n", mem.Type, mem.Scope)
 	fmt.Fprintf(&b, "Proyecto: %s\n\n", mem.Project)
 	fmt.Fprintf(&b, "Detalle:\n%s\n", mem.Content)
-	
+
 	b.WriteString("\n\nesc volver · q salir\n")
 	return b.String()
 }

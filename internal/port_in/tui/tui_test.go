@@ -24,6 +24,8 @@ type fakeReader struct {
 	deleteErr   error
 	restoredID  int64
 	restoreErr  error
+	projects    []string
+	projectsErr error
 }
 
 func (f *fakeReader) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memory, error) {
@@ -46,6 +48,10 @@ func (f *fakeReader) Delete(_ context.Context, id int64) error {
 func (f *fakeReader) Restore(_ context.Context, id int64) (domain.Memory, error) {
 	f.restoredID = id
 	return domain.Memory{ID: id}, f.restoreErr
+}
+
+func (f *fakeReader) Projects(_ context.Context) ([]string, error) {
+	return f.projects, f.projectsErr
 }
 
 // fakeLogger registra las acciones de auditoría recibidas.

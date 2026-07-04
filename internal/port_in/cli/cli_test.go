@@ -25,6 +25,7 @@ type fakeMemory struct {
 	getID       int64
 	getResult   *domain.Memory
 	saveErr     error
+	projects    []string
 }
 
 func (f *fakeMemory) Save(_ context.Context, in service.SaveInput) (service.SaveResult, error) {
@@ -62,6 +63,10 @@ func (f *fakeMemory) Delete(_ context.Context, id int64) error {
 func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error) {
 	f.restoredID = id
 	return domain.Memory{ID: id}, nil
+}
+
+func (f *fakeMemory) Projects(_ context.Context) ([]string, error) {
+	return f.projects, nil
 }
 
 // fakeLifecycle registra las llamadas de ciclo de vida.
