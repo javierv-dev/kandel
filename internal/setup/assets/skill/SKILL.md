@@ -101,9 +101,9 @@ Formato para `mem_save`:
 
 Por defecto, guarda de más: el descarte lo hacen dos compuertas de juicio.
 
-**Compuerta A — ¿entra?** ¿Es una decisión / convención / preferencia / restricción / bugfix con causa
-raíz / descubrimiento no obvio / gotcha / patrón / confirmación o rechazo del usuario / dirección
-concluida? Si NINGUNO aplica → no guardes.
+**Compuerta A — ¿entra?** ¿Disparó alguno de los DISPARADORES DE GUARDADO PROACTIVO de arriba? Si
+NINGUNO aplica → no guardes. (La lista de qué califica vive SOLO en esa sección: esta compuerta la
+referencia, no la repite, para que ambas no se despeguen.)
 
 **Compuerta B — ¿es trivial?** Descarta si CUALQUIERA es "sí":
 1. ¿Ya se deriva del código, git o CLAUDE.md? (no dupliques el repo)
