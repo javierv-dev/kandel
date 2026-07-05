@@ -23,7 +23,10 @@ const (
 	DefaultDimensions = 1024
 )
 
-// Ollama implementa ports.Embedder llamando al endpoint /api/embeddings de un servidor Ollama.
+// Ollama implementa ports.Embedder llamando al endpoint /api/embed de un servidor Ollama. Ese
+// endpoint acepta un texto o un arreglo de textos en `input` y responde `embeddings` (arreglo de
+// vectores), lo que permite embeber contenido y título en una sola petición. Requiere una versión
+// de Ollama con /api/embed (el antiguo /api/embeddings, de un solo texto, ya no se usa).
 type Ollama struct {
 	host       string
 	model      string
@@ -65,25 +68,41 @@ func NewOllama(host, model string, dimensions int, opts ...Option) *Ollama {
 	return o
 }
 
-// embedRequest es el cuerpo de POST /api/embeddings.
+// embedRequest es el cuerpo de POST /api/embed. `input` acepta uno o varios textos; aquí siempre
+// se envía como arreglo para tratar de forma uniforme el caso de un texto y el de varios.
 type embedRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
+	Model string   `json:"model"`
+	Input []string `json:"input"`
 }
 
-// embedResponse es la respuesta de Ollama.
+// embedResponse es la respuesta de /api/embed: un vector por cada texto de entrada, en el mismo
+// orden.
 type embedResponse struct {
-	Embedding []float32 `json:"embedding"`
+	Embeddings [][]float32 `json:"embeddings"`
 }
 
-// Embed convierte texto en un vector llamando a Ollama. Devuelve error si el servidor no
-// responde o si el vector vuelve vacío (no hay memoria buscable sin vector).
+// Embed convierte un texto en un vector. Es un caso particular de EmbedBatch con un solo texto.
 func (o *Ollama) Embed(ctx context.Context, text string) ([]float32, error) {
-	body, err := json.Marshal(embedRequest{Model: o.model, Prompt: text})
+	vectors, err := o.EmbedBatch(ctx, []string{text})
+	if err != nil {
+		return nil, err
+	}
+	return vectors[0], nil
+}
+
+// EmbedBatch convierte varios textos en sus vectores en una sola llamada a Ollama, preservando el
+// orden de entrada. Devuelve error si el servidor no responde, si el número de vectores no coincide
+// con el de textos, o si algún vector vuelve vacío (no hay memoria buscable sin vector). Con lista
+// vacía devuelve una lista vacía sin llamar al backend.
+func (o *Ollama) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return [][]float32{}, nil
+	}
+	body, err := json.Marshal(embedRequest{Model: o.model, Input: texts})
 	if err != nil {
 		return nil, fmt.Errorf("ollama: serializar petición: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.host+"/api/embeddings", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.host+"/api/embed", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("ollama: construir petición: %w", err)
 	}
@@ -102,10 +121,15 @@ func (o *Ollama) Embed(ctx context.Context, text string) ([]float32, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 		return nil, fmt.Errorf("ollama: parsear respuesta: %w", err)
 	}
-	if len(parsed.Embedding) == 0 {
-		return nil, fmt.Errorf("ollama: el modelo %q devolvió un vector vacío", o.model)
+	if len(parsed.Embeddings) != len(texts) {
+		return nil, fmt.Errorf("ollama: el modelo %q devolvió %d vectores para %d textos", o.model, len(parsed.Embeddings), len(texts))
 	}
-	return parsed.Embedding, nil
+	for i, vec := range parsed.Embeddings {
+		if len(vec) == 0 {
+			return nil, fmt.Errorf("ollama: el modelo %q devolvió un vector vacío (texto %d)", o.model, i)
+		}
+	}
+	return parsed.Embeddings, nil
 }
 
 // Dimensions devuelve la dimensión esperada del vector (para validar consistencia en la DB).

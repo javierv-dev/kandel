@@ -309,6 +309,101 @@ func TestSweepDetectionFactualLoneMarksCheckedWithoutJudge(t *testing.T) {
 	}
 }
 
+// Un casi-duplicado con confianza alta se persiste como 'duplicate' y sobrevive la de mayor CALIDAD
+// (más contenido), no la más reciente: el retrieval oculta la de menor calidad (target).
+func TestSweepDetectionDuplicateHidesLowerQuality(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationDuplicate, Confidence: 0.95, Reasoning: "misma cosa"}}
+	// 'rich' es más nueva pero MÁS COMPLETA; 'poor' es más vieja y escueta. Gana 'rich' por calidad.
+	rich := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-Rich", Type: domain.TypeArchitecture, Scope: domain.ScopeProject, Project: "proj",
+		Title: "Arquitectura hexagonal", Content: "descripción larga y detallada de la arquitectura por capas",
+		CreatedAt: time.Unix(2000, 0).UTC(),
+	})
+	poor := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-Poor", Type: domain.TypeArchitecture, Scope: domain.ScopeProject, Project: "proj",
+		Title: "Arquitectura hexagonal", Content: "capas", CreatedAt: time.Unix(1000, 0).UTC(),
+	})
+	_ = obs.SetConflictChecked(context.Background(), poor) // se procesa 'rich', que detecta a 'poor'
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	if _, err := svc.SweepDetection(context.Background()); err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if len(rels.items) != 1 {
+		t.Fatalf("esperaba 1 relación duplicate, hay %d", len(rels.items))
+	}
+	rel := rels.items[0]
+	if rel.Kind != domain.RelationDuplicate || rel.SourceID != "mem-Rich" || rel.TargetID != "mem-Poor" {
+		t.Errorf("duplicate debe conservar la de mayor calidad (source=Rich) y ocultar la pobre (target=Poor): %+v", rel)
+	}
+	_ = rich
+}
+
+// Un casi-duplicado por debajo del umbral de confianza NO se persiste (queda para revisión humana),
+// pero la memoria se marca verificada igual.
+func TestSweepDetectionDuplicateBelowConfidenceNotPersisted(t *testing.T) {
+	obs, vecs, emb, rels := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationDuplicate, Confidence: 0.5, Reasoning: "quizá"}}
+	a := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-A", Type: domain.TypeArchitecture, Scope: domain.ScopeProject, Project: "proj", Title: "Tema", Content: "una descripción",
+	})
+	b := seedNormative(t, obs, vecs, domain.Memory{
+		SyncID: "mem-B", Type: domain.TypeArchitecture, Scope: domain.ScopeProject, Project: "proj", Title: "Tema", Content: "otra descripción",
+	})
+	_ = obs.SetConflictChecked(context.Background(), b)
+	svc := newConflictService(obs, vecs, emb, rels, runner)
+
+	if _, err := svc.SweepDetection(context.Background()); err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if len(rels.items) != 0 {
+		t.Errorf("un duplicate de baja confianza no debe persistirse: %+v", rels.items)
+	}
+	if ma, _ := obs.Get(context.Background(), a); ma == nil || !ma.ConflictChecked {
+		t.Error("la memoria debe quedar verificada aunque no se persista relación")
+	}
+}
+
+// El portón por título rescata una candidata que el coseno de CONTENIDO pierde: contenido por debajo
+// del corte (no sería candidata) pero título por encima del corte de título. Es el caso 1↔47.
+func TestSweepDetectionTitleGateSurfacesCandidate(t *testing.T) {
+	obs, emb, rels := newFakeObs(), newFakeEmbedder(), &fakeRelations{}
+	runner := &fakeRunner{verdict: domain.Verdict{Relation: domain.RelationDuplicate, Confidence: 0.95, Reasoning: "misma cosa reformulada"}}
+	ctx := context.Background()
+
+	processed, err := obs.Add(ctx, domain.Memory{
+		SyncID: "mem-Proc", Type: domain.TypeDecision, Scope: domain.ScopeProject, Project: "proj",
+		Title: "Arquitectura hexagonal", Content: "descripción larga del diseño por capas y sus fronteras",
+	})
+	if err != nil {
+		t.Fatalf("add processed: %v", err)
+	}
+	cand, err := obs.Add(ctx, domain.Memory{
+		SyncID: "mem-Cand", Type: domain.TypeDecision, Scope: domain.ScopeProject, Project: "proj",
+		Title: "Arquitectura hexagonal", Content: "capas",
+	})
+	if err != nil {
+		t.Fatalf("add cand: %v", err)
+	}
+	_ = obs.SetConflictChecked(ctx, cand) // solo se procesa 'processed', que debe descubrir a 'cand'
+
+	// Contenido: la candidata puntúa 0.80, por debajo del corte normativo (0.85) → el gate de contenido la pierde.
+	contentIdx := &fakeScoredIndex{scores: map[int64]float64{processed: 1.0, cand: 0.80}}
+	// Título: la candidata puntúa 0.95, por encima del corte de título (0.88) → el gate de título la rescata.
+	titleIdx := &fakeScoredIndex{scores: map[int64]float64{processed: 1.0, cand: 0.95}}
+
+	svc := NewConflictService(obs, contentIdx, emb, rels, runner, passthroughUoW{}, fixedClock{now: time.Unix(1700000000, 0).UTC()},
+		WithTitleGate(titleIdx, 0))
+
+	if _, err := svc.SweepDetection(ctx); err != nil {
+		t.Fatalf("SweepDetection error: %v", err)
+	}
+	if len(rels.items) != 1 || rels.items[0].Kind != domain.RelationDuplicate {
+		t.Fatalf("el portón por título debía surface la candidata y persistir un duplicate: %+v", rels.items)
+	}
+}
+
 func TestSweepDetectionAbortsWhenEmbedderDown(t *testing.T) {
 	obs, vecs, emb, rels, runner := newFakeObs(), newFakeVectorIndex(), newFakeEmbedder(), &fakeRelations{}, &fakeRunner{}
 	emb.failWith = errors.New("ollama caído")

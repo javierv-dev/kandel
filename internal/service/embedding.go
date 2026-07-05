@@ -17,10 +17,11 @@ const defaultBackfillBatch = 100
 // vector en MemoryService.Save; este servicio existe para los datos previos o para forzar un
 // recálculo, expuesto por los comandos "embeddings backfill/reembed".
 type EmbeddingService struct {
-	memories ports.MemoryRepo
-	embedder ports.Embedder
-	vectors  ports.VectorIndex
-	batch    int
+	memories     ports.MemoryRepo
+	embedder     ports.Embedder
+	vectors      ports.VectorIndex
+	titleVectors ports.VectorIndex // índice del vector del título; nil = no se rellenan títulos
+	batch        int
 	// mu serializa los backfills: el barrido del daemon, los disparos por hook y el comando manual
 	// pueden coincidir; sin esto correrían a la vez y reembeberían las mismas memorias dos veces.
 	mu sync.Mutex
@@ -54,6 +55,18 @@ func WithPostBackfill(hook func(ctx context.Context)) EmbeddingOption {
 	return func(s *EmbeddingService) {
 		if hook != nil {
 			s.postBackfill = hook
+		}
+	}
+}
+
+// WithTitleBackfill activa el relleno del vector del TÍTULO junto al del contenido. El backfill se
+// dirige por los pendientes del índice de contenido (título y contenido se escriben siempre juntos,
+// así que comparten estado): al recalcular una memoria se embeben ambos en una sola llamada. Un
+// índice nil se ignora.
+func WithTitleBackfill(titleVectors ports.VectorIndex) EmbeddingOption {
+	return func(s *EmbeddingService) {
+		if titleVectors != nil {
+			s.titleVectors = titleVectors
 		}
 	}
 }
@@ -109,32 +122,52 @@ func (s *EmbeddingService) Warmup(ctx context.Context) error {
 }
 
 // backfill es la implementación sin candado; lo toman Backfill (bloqueante) y SweepBackfill (TryLock).
+// Corre en dos frentes sobre la misma fila de vectores: primero el CONTENIDO (memorias sin fila o de
+// otro modelo; reembed llena de paso el título cuando el índice de títulos está activo), y luego el
+// TÍTULO (memorias con contenido al día pero sin vector de título: el hueco típico tras la migración).
 func (s *EmbeddingService) backfill(ctx context.Context) (BackfillResult, error) {
 	model := s.embedder.Model()
 	var result BackfillResult
-	for {
-		ids, err := s.vectors.PendingEmbedding(ctx, model, s.batch)
-		if err != nil {
+	if err := s.drainPending(ctx, s.vectors, model, func(id int64) (bool, error) {
+		return s.reembed(ctx, id, model)
+	}, &result); err != nil {
+		return result, err
+	}
+	if s.titleVectors != nil {
+		if err := s.drainPending(ctx, s.titleVectors, model, func(id int64) (bool, error) {
+			return s.reembedTitle(ctx, id, model)
+		}, &result); err != nil {
 			return result, err
 		}
+	}
+	return result, nil
+}
+
+// drainPending vacía una cola de pendientes por lotes reanudables: pide un lote a idx.PendingEmbedding,
+// lo rellena con fill y repite hasta que no queden. Corta si un lote no progresa (p. ej. las filas
+// desaparecieron en una carrera), para evitar un bucle infinito. Comparte la mecánica de los dos frentes.
+func (s *EmbeddingService) drainPending(ctx context.Context, idx ports.VectorIndex, model string, fill func(id int64) (bool, error), result *BackfillResult) error {
+	for {
+		ids, err := idx.PendingEmbedding(ctx, model, s.batch)
+		if err != nil {
+			return err
+		}
 		if len(ids) == 0 {
-			return result, nil
+			return nil
 		}
 		progressed := false
 		for _, id := range ids {
-			done, err := s.reembed(ctx, id, model)
+			done, err := fill(id)
 			if err != nil {
-				return result, err
+				return err
 			}
 			if done {
 				result.Embedded++
 				progressed = true
 			}
 		}
-		// Salvaguarda: si un lote no escribió ningún vector (p. ej. todas las filas
-		// desaparecieron en una carrera), no hay forma de avanzar; cortar evita un bucle infinito.
 		if !progressed {
-			return result, nil
+			return nil
 		}
 	}
 }
@@ -162,11 +195,47 @@ func (s *EmbeddingService) reembed(ctx context.Context, id int64, model string) 
 	if mem == nil {
 		return false, nil
 	}
+	// Con el índice de títulos activo, embebe contenido y título en una sola llamada y guarda ambos;
+	// sin él, solo el contenido (conducta previa).
+	if s.titleVectors != nil {
+		vectors, err := s.embedder.EmbedBatch(ctx, []string{mem.Content, mem.Title})
+		if err != nil {
+			return false, err
+		}
+		if err := s.vectors.Upsert(ctx, id, vectors[0], model); err != nil {
+			return false, err
+		}
+		if err := s.titleVectors.Upsert(ctx, id, vectors[1], model); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 	vector, err := s.embedder.Embed(ctx, mem.Content)
 	if err != nil {
 		return false, err
 	}
 	if err := s.vectors.Upsert(ctx, id, vector, model); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// reembedTitle calcula y guarda solo el vector del TÍTULO de una memoria (su fila de contenido ya
+// existe). Es el frente de backfill que rellena el título faltante tras la migración. Devuelve false
+// (sin error) si la memoria ya no existe, para que el barrido la salte sin abortar.
+func (s *EmbeddingService) reembedTitle(ctx context.Context, id int64, model string) (bool, error) {
+	mem, err := s.memories.Get(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if mem == nil {
+		return false, nil
+	}
+	vector, err := s.embedder.Embed(ctx, mem.Title)
+	if err != nil {
+		return false, err
+	}
+	if err := s.titleVectors.Upsert(ctx, id, vector, model); err != nil {
 		return false, err
 	}
 	return true, nil

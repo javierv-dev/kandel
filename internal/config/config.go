@@ -72,6 +72,9 @@ var (
 	// ConflictFactualCutoff es el corte de la pasada de supersede factual; vacío = default del servicio.
 	ConflictFactualCutoff = Key{File: "conflict_factual_cutoff", Env: "KANDEL_CONFLICT_FACTUAL_CUTOFF", Default: "",
 		Doc: "corte de similitud de la pasada de supersede factual (0..1); vacío = default del servicio (0.90)"}
+	// ConflictTitleCutoff es el corte del portón por título de la detección de casi-duplicados; vacío = default.
+	ConflictTitleCutoff = Key{File: "conflict_title_cutoff", Env: "KANDEL_CONFLICT_TITLE_CUTOFF", Default: "",
+		Doc: "corte de similitud del portón por título de casi-duplicados (0..1); vacío = default del servicio (0.88)"}
 	// NormativeThreshold es el umbral del aviso "demasiadas normativas"; vacío = default del servicio.
 	NormativeThreshold = Key{File: "normative_threshold", Env: "KANDEL_NORMATIVE_THRESHOLD", Default: "",
 		Doc: "umbral del aviso 'demasiadas normativas'; vacío = default del servicio (50)"}
@@ -91,7 +94,7 @@ var (
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
 	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncDir, LogDir,
-	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
+	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 
 // configFileName es el nombre del archivo dentro del directorio de datos.

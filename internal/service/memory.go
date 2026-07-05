@@ -74,6 +74,7 @@ type MemoryService struct {
 	clock        ports.Clock
 	embedder     ports.Embedder
 	vectors      ports.VectorIndex
+	titleVectors ports.VectorIndex // índice del vector del título; nil = deshabilitado (solo contenido)
 	dedupeWindow time.Duration
 	warnf        func(format string, args ...any)
 }
@@ -88,6 +89,17 @@ func WithWarnLogger(warnf func(format string, args ...any)) MemoryOption {
 	return func(m *MemoryService) {
 		if warnf != nil {
 			m.warnf = warnf
+		}
+	}
+}
+
+// WithTitleVectors activa el guardado del vector del TÍTULO (columna vector_title en memory_vectors),
+// que sostiene la detección de casi-duplicados por título. Sin esta opción, Save/Update solo manejan
+// el vector del contenido (conducta previa intacta). Un índice nil se ignora.
+func WithTitleVectors(titleVectors ports.VectorIndex) MemoryOption {
+	return func(m *MemoryService) {
+		if titleVectors != nil {
+			m.titleVectors = titleVectors
 		}
 	}
 }
@@ -182,7 +194,7 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 		candidate.ID = id
 		// Save es tolerante: si el embebedor falla, la memoria se guarda igual (sin vector) y queda
 		// pendiente de backfill (§6.bis del plan, "Tolerancia a embebedor caído").
-		deferred, err := m.indexVectorTolerant(ctx, id, candidate.Content)
+		deferred, err := m.indexVectorsTolerant(ctx, id, candidate.Content, candidate.Title)
 		if err != nil {
 			return err
 		}
@@ -255,6 +267,46 @@ func (m *MemoryService) indexVectorTolerant(ctx context.Context, memoryID int64,
 	return false, nil
 }
 
+// indexVectorsTolerant calcula y guarda los vectores de una memoria nueva. Con el índice de títulos
+// activo (WithTitleVectors), embebe contenido y título en UNA sola llamada (EmbedBatch → /api/embed)
+// y guarda ambos; sin él, delega en indexVectorTolerant (solo contenido, conducta previa). Es
+// TOLERANTE igual que indexVectorTolerant: si el embebedor está caído, no aborta la transacción; la
+// memoria queda sin vectores y pendiente de backfill. Devuelve true si el embebedor falló (vectores
+// diferidos). Un error de escritura en la DB (no del embebedor) sí se propaga.
+func (m *MemoryService) indexVectorsTolerant(ctx context.Context, memoryID int64, content, title string) (deferred bool, err error) {
+	if m.titleVectors == nil {
+		return m.indexVectorTolerant(ctx, memoryID, content)
+	}
+	vectors, embErr := m.embedder.EmbedBatch(ctx, []string{content, title})
+	if embErr != nil {
+		m.warnf("memoria #%d guardada SIN vectores (embebedor no disponible: %v); pendiente de backfill", memoryID, embErr)
+		return true, nil
+	}
+	if err := m.vectors.Upsert(ctx, memoryID, vectors[0], m.embedder.Model()); err != nil {
+		return false, err
+	}
+	if err := m.titleVectors.Upsert(ctx, memoryID, vectors[1], m.embedder.Model()); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+// reindexTitleVectorTolerant recalcula el vector del título cuando cambió. Igual que
+// reindexVectorTolerant pero sobre el índice de títulos: si el embebedor está caído, BORRA el vector
+// de título obsoleto (dejarlo haría que el portón por título matcheara el texto anterior) y queda
+// pendiente de backfill. No hace nada si el índice de títulos no está activo.
+func (m *MemoryService) reindexTitleVectorTolerant(ctx context.Context, memoryID int64, title string) error {
+	if m.titleVectors == nil {
+		return nil
+	}
+	vector, embErr := m.embedder.Embed(ctx, title)
+	if embErr != nil {
+		m.warnf("memoria #%d actualizada: no se pudo re-embeber el título (embebedor no disponible: %v); se borra el vector de título obsoleto y queda pendiente de backfill", memoryID, embErr)
+		return m.titleVectors.Delete(ctx, memoryID)
+	}
+	return m.titleVectors.Upsert(ctx, memoryID, vector, m.embedder.Model())
+}
+
 // reindexVectorTolerant recalcula el vector de una memoria cuyo contenido cambió. A diferencia de
 // indexVectorTolerant (para memorias nuevas, aún sin vector), aquí YA existe un vector guardado y
 // quedó obsoleto: si el embebedor está caído, se BORRA el vector viejo en vez de dejarlo, porque
@@ -321,6 +373,14 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		// embebedor está caído) para que la búsqueda semántica no matchee el texto anterior.
 		if in.Content != nil {
 			if err := m.reindexVectorTolerant(ctx, id, o.Content); err != nil {
+				return err
+			}
+		}
+		// Si cambió el título y el índice de títulos está activo, su vector también quedó obsoleto:
+		// se recalcula (o se borra si el embebedor está caído) para que el portón por título no
+		// matchee el título anterior.
+		if in.Title != nil {
+			if err := m.reindexTitleVectorTolerant(ctx, id, o.Title); err != nil {
 				return err
 			}
 		}

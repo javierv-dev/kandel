@@ -295,6 +295,57 @@ func TestSaveIndexesVector(t *testing.T) {
 	}
 }
 
+// Con WithTitleVectors activo, Save indexa el vector del título en su índice paralelo además del de
+// contenido, y lo hace en UNA sola llamada al embebedor (EmbedBatch de [contenido, título]).
+func TestSaveIndexesTitleVector(t *testing.T) {
+	obs := newFakeObs()
+	sync := &fakeSync{}
+	emb := newFakeEmbedder()
+	vidx := newFakeVectorIndex()
+	tidx := newFakeVectorIndex()
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vidx,
+		WithTitleVectors(tidx))
+
+	res, err := svc.Save(context.Background(), baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, ok := vidx.vecs[res.Memory.ID]; !ok {
+		t.Error("Save debe indexar el vector de contenido")
+	}
+	if _, ok := tidx.vecs[res.Memory.ID]; !ok {
+		t.Error("Save debe indexar el vector del título en su índice paralelo")
+	}
+	// Una sola llamada al embebedor: EmbedBatch cubre contenido y título en un viaje.
+	if emb.calls != 1 {
+		t.Errorf("Save debe llamar al embebedor una vez (EmbedBatch), llamó %d", emb.calls)
+	}
+}
+
+// Con WithTitleVectors, si el embebedor está caído no se indexa NINGÚN vector (ni contenido ni
+// título) y la memoria queda pendiente de backfill.
+func TestSaveTitleVectorToleratesEmbedderFailure(t *testing.T) {
+	obs := newFakeObs()
+	sync := &fakeSync{}
+	emb := newFakeEmbedder()
+	emb.failWith = errInducedSvc
+	vidx := newFakeVectorIndex()
+	tidx := newFakeVectorIndex()
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vidx,
+		WithTitleVectors(tidx), WithWarnLogger(func(string, ...any) {}))
+
+	res, err := svc.Save(context.Background(), baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save no debe fallar con el embebedor caído: %v", err)
+	}
+	if !res.EmbeddingDeferred {
+		t.Error("EmbeddingDeferred debe ser true cuando el embebedor falla")
+	}
+	if _, ok := tidx.vecs[res.Memory.ID]; ok {
+		t.Error("no debe haber vector de título cuando el embebedor falla")
+	}
+}
+
 // Save es TOLERANTE al embebedor caído: la memoria se guarda igual (sin vector), marcando
 // EmbeddingDeferred, registrando un aviso y dejándola pendiente de backfill. No se pierde nada.
 func TestSaveToleratesEmbedderFailure(t *testing.T) {

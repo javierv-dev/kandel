@@ -154,6 +154,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_memrel_pair_judged ON memory_relations(
 ) WHERE judgment_status = 'judged';
 `
 
+// schemaV3 añade el vector del TÍTULO a memory_vectors como una COLUMNA más, en la misma fila que el
+// de contenido: ambos comparten memory_id, model y dimensions (salen del mismo embebedor en una sola
+// llamada), así que no hace falta duplicarlos en otra tabla. Sirve a la detección de casi-duplicados
+// (§20.E-ter): dos memorias que dicen lo mismo con otras palabras tienen coseno de CONTENIDO medio
+// (no cruzan el corte) pero coseno de TÍTULO alto; el portón por título encuentra las candidatas que
+// el de contenido pierde.
+//   - Se renombra vector -> vector_content para nombres coherentes (queda sitio para vector_details).
+//     RENAME COLUMN preserva los datos (no es destructivo); es seguro en SQLite moderno.
+//   - vector_title es NULLABLE: las memorias previas quedan con NULL hasta que el backfill lo rellene,
+//     y `vector_title IS NULL` es justamente el criterio de "falta el título" del backfill.
+const schemaV3 = `
+ALTER TABLE memory_vectors RENAME COLUMN vector TO vector_content;
+ALTER TABLE memory_vectors ADD COLUMN vector_title BLOB;
+`
+
 // migration es un paso de evolución del esquema, identificado por un número de versión
 // estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
 // de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
@@ -172,6 +187,7 @@ type migration struct {
 var migrations = []migration{
 	{version: 1, sql: schemaV1},
 	{version: 2, sql: schemaV2},
+	{version: 3, sql: schemaV3},
 }
 
 // migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base

@@ -82,6 +82,7 @@ func run(args []string) error {
 	relationRepo := sqlite.NewRelationRepo(db)
 	syncRepo := sqlite.NewSyncRepo(db)
 	vectorIndex := sqlite.NewVectorIndex(db)
+	titleVectorIndex := sqlite.NewTitleVectorIndex(db)
 	uow := sqlite.NewUnitOfWork(db)
 	agentRunner := llm.FromEnv()
 	embedder := embedding.NewOllama(
@@ -92,17 +93,20 @@ func run(args []string) error {
 
 	// Casos de uso (service/).
 	memoryService := service.NewMemoryService(memoryRepo, syncRepo, uow, clk, embedder, vectorIndex,
-		service.WithWarnLogger(embeddingWarnLogger()))
+		service.WithWarnLogger(embeddingWarnLogger()),
+		service.WithTitleVectors(titleVectorIndex))
 	sessionService := service.NewSessionService(sessionRepo, syncRepo, uow, clk)
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)
 	conflictService := service.NewConflictService(memoryRepo, vectorIndex, embedder, relationRepo, agentRunner, uow, clk,
 		service.WithDetectionTuning(conflictCutoff(), conflictTopK()),
-		service.WithFactualTuning(conflictFactualCutoff()))
+		service.WithFactualTuning(conflictFactualCutoff()),
+		service.WithTitleGate(titleVectorIndex, conflictTitleCutoff()))
 	// El backfill de vectores engancha la detección de conflictos diferida: al ponerse al día los
 	// vectores, se barren las normativas sin verificar (§20.F). Acoplamiento flojo vía callback.
 	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex,
-		service.WithPostBackfill(detectionSweep(conflictService)))
+		service.WithPostBackfill(detectionSweep(conflictService)),
+		service.WithTitleBackfill(titleVectorIndex))
 	syncService := service.NewSyncService(syncRepo, git.New(syncDir()), memoryRepo, uow, clk, "")
 	contextService := service.NewContextService(sessionRepo, memoryRepo, relationRepo,
 		service.WithNormativeThreshold(normativeThreshold()))
@@ -114,7 +118,7 @@ func run(args []string) error {
 	updateChecker := release.NewChecker()
 	doctor := diagnostic.NewRunner(
 		diagnostic.EmbedderCheck{Embedder: embedder},
-		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, Model: embedder.Model()},
+		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, TitleVectors: titleVectorIndex, Model: embedder.Model()},
 		diagnostic.InstalledAssetsCheck{Running: version, Probe: installedAssetsProbe{}},
 		diagnostic.LatestReleaseCheck{Running: version, Checker: updateChecker},
 	)
@@ -199,6 +203,20 @@ func conflictCutoff() float64 {
 // KANDEL_CONFLICT_FACTUAL_CUTOFF; 0 (o inválido) deja el valor por defecto del servicio.
 func conflictFactualCutoff() float64 {
 	raw := strings.TrimSpace(config.Resolve(config.ConflictFactualCutoff))
+	if raw == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil || f <= 0 {
+		return 0
+	}
+	return f
+}
+
+// conflictTitleCutoff lee el corte del portón por título de KANDEL_CONFLICT_TITLE_CUTOFF; 0 (o
+// inválido) deja el valor por defecto del servicio.
+func conflictTitleCutoff() float64 {
+	raw := strings.TrimSpace(config.Resolve(config.ConflictTitleCutoff))
 	if raw == "" {
 		return 0
 	}

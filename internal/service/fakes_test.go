@@ -419,6 +419,17 @@ func (e *fakeEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
 	}
 	return e.vec, nil
 }
+func (e *fakeEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float32, error) {
+	e.calls++
+	if e.failWith != nil {
+		return nil, e.failWith
+	}
+	vectors := make([][]float32, len(texts))
+	for i := range texts {
+		vectors[i] = e.vec
+	}
+	return vectors, nil
+}
 func (e *fakeEmbedder) Dimensions() int { return len(e.vec) }
 func (e *fakeEmbedder) Model() string   { return "fake" }
 
@@ -461,6 +472,42 @@ func (v *fakeVectorIndex) Delete(_ context.Context, memoryID int64) error {
 // PendingEmbedding no se ejercita en los tests de MemoryService (el backfill tiene sus propios
 // dobles en embedding_test.go); aquí basta con cumplir el contrato.
 func (v *fakeVectorIndex) PendingEmbedding(_ context.Context, _ string, _ int) ([]int64, error) {
+	return nil, nil
+}
+
+// fakeScoredIndex es un VectorIndex cuyo Nearest devuelve scores fijos por memoryID (ignora la
+// consulta). Sirve para probar el portón por título: modelar que una candidata puntúa BAJO por
+// contenido pero ALTO por título.
+type fakeScoredIndex struct {
+	scores map[int64]float64
+}
+
+func (f *fakeScoredIndex) Upsert(_ context.Context, memoryID int64, _ []float32, _ string) error {
+	return nil
+}
+
+func (f *fakeScoredIndex) Nearest(_ context.Context, _ []float32, limit int) ([]ports.Neighbor, error) {
+	ids := make([]int64, 0, len(f.scores))
+	for id := range f.scores {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return f.scores[ids[i]] > f.scores[ids[j]] })
+	var out []ports.Neighbor
+	for _, id := range ids {
+		out = append(out, ports.Neighbor{MemoryID: id, Score: f.scores[id]})
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeScoredIndex) Delete(_ context.Context, memoryID int64) error {
+	delete(f.scores, memoryID)
+	return nil
+}
+
+func (f *fakeScoredIndex) PendingEmbedding(_ context.Context, _ string, _ int) ([]int64, error) {
 	return nil, nil
 }
 

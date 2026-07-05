@@ -28,6 +28,17 @@ const (
 	defaultConflictTopK = 3
 	// detectBatch es el tamaño de lote del barrido de detección (reanudable, no carga todo en RAM).
 	detectBatch = 100
+	// defaultTitleCutoff es el corte del portón por TÍTULO (§20.E-ter). Un título muy parecido es raro
+	// entre memorias distintas y común entre casi-duplicados, así que es un disparador de alta
+	// precisión: surface candidatas que el coseno de contenido (más bajo en paráfrasis) pierde, sin
+	// bajar el corte de contenido ni inundar al juez.
+	defaultTitleCutoff = 0.88
+	// duplicateConfidenceThreshold es la confianza mínima del juez para AUTO-OCULTAR un casi-duplicado.
+	// Por debajo, el par se deja para revisión humana (bandeja Salud de memoria, Capa 3) en vez de
+	// ocultar algo por una corazonada del modelo. Fijado en 0.85 a partir de datos reales: un duplicado
+	// obvio (memorias 1↔47, "Arquitectura hexagonal") lo juzga el modelo con 0.87, así que 0.90 dejaba
+	// fuera duplicados legítimos.
+	duplicateConfidenceThreshold = 0.85
 )
 
 // ConflictService detecta y juzga conflictos entre memorias. La detección de candidatos es el
@@ -35,16 +46,18 @@ const (
 // a los candidatos. Con el núcleo vectorial el punto ciego léxico del viejo desaparece: se
 // encuentran candidatos por significado aunque no compartan palabras.
 type ConflictService struct {
-	memories  ports.MemoryRepo
-	vectors   ports.VectorIndex
-	embedder  ports.Embedder
-	relations ports.RelationRepo
-	runner    ports.AgentRunner
-	uow       ports.UnitOfWork
-	clock     ports.Clock
+	memories     ports.MemoryRepo
+	vectors      ports.VectorIndex
+	titleVectors ports.VectorIndex // índice del vector del título para el portón por título; nil = deshabilitado
+	embedder     ports.Embedder
+	relations    ports.RelationRepo
+	runner       ports.AgentRunner
+	uow          ports.UnitOfWork
+	clock        ports.Clock
 
 	cutoff        float64 // corte de similitud para pasar al juez LLM (pasada normativa)
 	factualCutoff float64 // corte de la pasada de supersede factual (§20.E-bis), más alto
+	titleCutoff   float64 // corte del portón por título (§20.E-ter)
 	topK          int     // máximo de candidatas juzgadas por memoria
 	// mu serializa el barrido de detección: el daemon (tras el backfill) y el hook pueden
 	// coincidir; sin esto se juzgarían las mismas memorias dos veces.
@@ -78,6 +91,20 @@ func WithFactualTuning(cutoff float64) ConflictOption {
 	}
 }
 
+// WithTitleGate activa el portón por título de la detección de casi-duplicados (§20.E-ter): además
+// de las candidatas por coseno de contenido, se buscan las de título muy parecido (índice paralelo).
+// Un índice nil se ignora. titleCutoff no positivo conserva el default.
+func WithTitleGate(titleVectors ports.VectorIndex, titleCutoff float64) ConflictOption {
+	return func(c *ConflictService) {
+		if titleVectors != nil {
+			c.titleVectors = titleVectors
+		}
+		if titleCutoff > 0 {
+			c.titleCutoff = titleCutoff
+		}
+	}
+}
+
 // NewConflictService construye el servicio con sus dependencias inyectadas.
 func NewConflictService(memories ports.MemoryRepo, vectors ports.VectorIndex, embedder ports.Embedder, relations ports.RelationRepo, runner ports.AgentRunner, uow ports.UnitOfWork, clock ports.Clock, opts ...ConflictOption) *ConflictService {
 	c := &ConflictService{
@@ -90,6 +117,7 @@ func NewConflictService(memories ports.MemoryRepo, vectors ports.VectorIndex, em
 		clock:         clock,
 		cutoff:        defaultConflictCutoff,
 		factualCutoff: defaultFactualCutoff,
+		titleCutoff:   defaultTitleCutoff,
 		topK:          defaultConflictTopK,
 	}
 	for _, opt := range opts {
@@ -250,23 +278,13 @@ func (c *ConflictService) detectFactualOne(ctx context.Context, mem domain.Memor
 // verificar para reintentar). El vector propio se recalcula aquí en vez de reusar el almacenado para no
 // depender de que el backfill ya haya corrido. cutoff y judge son lo único que cambia entre pasadas.
 func (c *ConflictService) detect(ctx context.Context, mem domain.Memory, cutoff float64, judge func(context.Context, domain.Memory, domain.Memory) error) error {
-	vector, err := c.embedder.Embed(ctx, mem.Content)
-	if err != nil {
-		return err
-	}
-	neighbors, err := c.vectors.Nearest(ctx, vector, c.topK*candidatePoolFactor+1)
+	candidateIDs, err := c.candidateIDs(ctx, mem, cutoff)
 	if err != nil {
 		return err
 	}
 	judged := 0
-	for _, n := range neighbors {
-		if n.MemoryID == mem.ID {
-			continue // no es candidata de sí misma
-		}
-		if n.Score < cutoff {
-			break // vecinos ordenados por cercanía: por debajo del corte, el resto también
-		}
-		cand, err := c.memories.Get(ctx, n.MemoryID)
+	for _, id := range candidateIDs {
+		cand, err := c.memories.Get(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -295,6 +313,59 @@ func (c *ConflictService) detect(ctx context.Context, mem domain.Memory, cutoff 
 	return c.memories.SetConflictChecked(ctx, mem.ID)
 }
 
+// candidateIDs reúne los ids de las candidatas a juzgar de mem: las cercanas por coseno de CONTENIDO
+// (≥ cutoff) y, si el índice de títulos está activo, también las de TÍTULO muy parecido (≥ titleCutoff,
+// §20.E-ter). Une ambas fuentes preservando el orden (primero por contenido, luego las que solo aporta
+// el título), sin la propia memoria ni repetidas. El vector propio se recalcula aquí (contenido y título
+// en una sola llamada) en vez de reusar el almacenado, para no depender de que el backfill ya haya corrido.
+func (c *ConflictService) candidateIDs(ctx context.Context, mem domain.Memory, cutoff float64) ([]int64, error) {
+	var contentVec, titleVec []float32
+	if c.titleVectors != nil {
+		vectors, err := c.embedder.EmbedBatch(ctx, []string{mem.Content, mem.Title})
+		if err != nil {
+			return nil, err
+		}
+		contentVec, titleVec = vectors[0], vectors[1]
+	} else {
+		v, err := c.embedder.Embed(ctx, mem.Content)
+		if err != nil {
+			return nil, err
+		}
+		contentVec = v
+	}
+
+	pool := c.topK*candidatePoolFactor + 1
+	ordered := make([]int64, 0, pool)
+	seen := map[int64]bool{mem.ID: true} // la propia memoria nunca es candidata de sí misma
+	appendAbove := func(neighbors []ports.Neighbor, cut float64) {
+		for _, n := range neighbors {
+			if n.Score < cut {
+				break // vecinos ordenados por cercanía: por debajo del corte, el resto también
+			}
+			if seen[n.MemoryID] {
+				continue
+			}
+			seen[n.MemoryID] = true
+			ordered = append(ordered, n.MemoryID)
+		}
+	}
+
+	contentNeighbors, err := c.vectors.Nearest(ctx, contentVec, pool)
+	if err != nil {
+		return nil, err
+	}
+	appendAbove(contentNeighbors, cutoff)
+
+	if c.titleVectors != nil {
+		titleNeighbors, err := c.titleVectors.Nearest(ctx, titleVec, pool)
+		if err != nil {
+			return nil, err
+		}
+		appendAbove(titleNeighbors, c.titleCutoff)
+	}
+	return ordered, nil
+}
+
 // judgePair invoca al juez LLM sobre un par y delega en resolveAndPersist la resolución. Es la ruta
 // del barrido automático; ignora la relación efímera que devuelve (solo le importa persistir el
 // conflicto, si lo hay).
@@ -317,7 +388,9 @@ func (c *ConflictService) judgeFactualPair(ctx context.Context, newMem, cand dom
 	if err != nil {
 		return err
 	}
-	if verdict.Relation != domain.RelationSupersedes {
+	// La pasada factual solo oculta hechos caducos: reemplazos (supersedes) y casi-duplicados
+	// (duplicate). El resto de verbos no dispara banner para un humano y se descarta.
+	if verdict.Relation != domain.RelationSupersedes && verdict.Relation != domain.RelationDuplicate {
 		return nil
 	}
 	_, err = c.resolveAndPersist(ctx, newMem, cand, verdict)
@@ -331,15 +404,25 @@ func (c *ConflictService) judgeFactualPair(ctx context.Context, newMem, cand dom
 // mem_compare. Si es conflicto, aplica resolveDirection (el scope precede, no el tipo) y persiste la
 // relación resuelta de forma idempotente.
 func (c *ConflictService) resolveAndPersist(ctx context.Context, newMem, cand domain.Memory, verdict domain.Verdict) (domain.MemoryRelation, error) {
-	if verdict.Relation != domain.RelationConflictsWith && verdict.Relation != domain.RelationSupersedes {
-		return domain.MemoryRelation{
-			SourceID:   newMem.SyncID,
-			TargetID:   cand.SyncID,
-			Kind:       verdict.Relation,
-			Reason:     verdict.Reasoning,
-			Confidence: verdict.Confidence,
-			Status:     domain.JudgmentJudged,
-		}, nil
+	ephemeral := domain.MemoryRelation{
+		SourceID:   newMem.SyncID,
+		TargetID:   cand.SyncID,
+		Kind:       verdict.Relation,
+		Reason:     verdict.Reasoning,
+		Confidence: verdict.Confidence,
+		Status:     domain.JudgmentJudged,
+	}
+	// Un casi-duplicado solo se AUTO-OCULTA con confianza alta; por debajo del umbral se deja para
+	// revisión humana (Capa 3) y se devuelve efímero, sin ocultar nada por una corazonada del modelo.
+	if verdict.Relation == domain.RelationDuplicate && verdict.Confidence < duplicateConfidenceThreshold {
+		return ephemeral, nil
+	}
+	// Los verbos no conflictivos (related/compatible/scoped/not_conflict) no persisten: ni banner ni
+	// cascada. Solo conflicts_with, supersedes y duplicate resuelven y se guardan.
+	if verdict.Relation != domain.RelationConflictsWith &&
+		verdict.Relation != domain.RelationSupersedes &&
+		verdict.Relation != domain.RelationDuplicate {
+		return ephemeral, nil
 	}
 	source, target, kind := resolveDirection(newMem, cand, verdict.Relation)
 	resolved := domain.Verdict{Relation: kind, Reasoning: verdict.Reasoning, Confidence: verdict.Confidence}
@@ -355,6 +438,11 @@ func (c *ConflictService) resolveAndPersist(ctx context.Context, newMem, cand do
 //   - mismo scope + conflicts_with: contradicción real que decide un humano; se conserva
 //     conflicts_with (source = la memoria recién verificada) para que el banner la muestre.
 func resolveDirection(newMem, cand domain.Memory, relation domain.RelationType) (source, target domain.Memory, kind domain.RelationType) {
+	// Casi-duplicado: sobrevive la de mayor CALIDAD (no la más reciente ni la de cierto scope), porque
+	// ambas dicen lo mismo y queremos conservar la copia más completa. El sentido lo fija resolveDuplicateDirection.
+	if relation == domain.RelationDuplicate {
+		return resolveDuplicateDirection(newMem, cand)
+	}
 	if newMem.Scope != cand.Scope {
 		proj, glob := newMem, cand
 		if cand.Scope == domain.ScopeProject {
@@ -369,6 +457,29 @@ func resolveDirection(newMem, cand domain.Memory, relation domain.RelationType) 
 		return newMem, cand, domain.RelationSupersedes
 	}
 	return newMem, cand, domain.RelationConflictsWith
+}
+
+// resolveDuplicateDirection decide, para un casi-duplicado, cuál memoria sobrevive (source) y cuál se
+// oculta (target). Gana la de mayor CALIDAD; el target es el que la recuperación excluye (§20.D). La
+// dirección es determinista, así que ambos lados del par producen el mismo sentido (idempotencia).
+func resolveDuplicateDirection(a, b domain.Memory) (source, target domain.Memory, kind domain.RelationType) {
+	if memoryQualityLess(a, b) {
+		return b, a, domain.RelationDuplicate // a es de menor calidad → sobrevive b
+	}
+	return a, b, domain.RelationDuplicate
+}
+
+// memoryQualityLess indica si a es de MENOR calidad que b, para elegir superviviente en un duplicado.
+// Criterio, en orden: más contenido (la copia más completa), luego más veces vista/revisada
+// (revision_count + duplicate_count), y como desempate final la más reciente.
+func memoryQualityLess(a, b domain.Memory) bool {
+	if la, lb := len(a.Content), len(b.Content); la != lb {
+		return la < lb
+	}
+	if sa, sb := a.RevisionCount+a.DuplicateCount, b.RevisionCount+b.DuplicateCount; sa != sb {
+		return sa < sb
+	}
+	return a.CreatedAt.Before(b.CreatedAt)
 }
 
 // comparable indica si dos normativas son comparables: mismo proyecto, o alguna es global (una
@@ -462,12 +573,18 @@ ID: %[4]s
 Título: %[5]s
 Contenido: %[6]s
 
+Primero decide si son LA MISMA cosa. Dos memorias son "duplicate" si dicen el mismo conocimiento
+reformulado y ninguna aporta información sustancial que la otra no tenga; si cada una aporta algo
+distinto, NO es duplicate (será compatible o related). Si una ACTUALIZA o corrige a la otra (info
+más nueva/mejor), es supersedes, no duplicate.
+
 Elige EXACTAMENTE UNA relación de este vocabulario cerrado:
+- duplicate        — dicen lo MISMO reformulado; ninguna añade nada sustancial que la otra no tenga
 - conflicts_with   — afirman cosas contradictorias
-- supersedes       — una reemplaza o anula a la otra
+- supersedes       — una reemplaza, actualiza o corrige a la otra
 - scoped           — una es un caso más específico de la otra
 - related           — comparten tema pero no se contradicen
-- compatible       — son consistentes y se complementan
+- compatible       — son consistentes y se complementan (cada una aporta algo distinto)
 - not_conflict     — no se relacionan; sin solape semántico relevante
 
 Responde con un único objeto JSON en una línea y nada más:

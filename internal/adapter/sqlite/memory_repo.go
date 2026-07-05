@@ -118,14 +118,15 @@ func (r *MemoryRepo) Restore(ctx context.Context, id int64) error {
 	return nil
 }
 
-// supersededClause excluye memorias reemplazadas: una memoria queda fuera si es el target_id de
-// una relación 'supersedes' ya juzgada (su source, más reciente, la reemplaza). Maneja cadenas
-// A→B→C solo (cada eslabón anterior es target de un supersedes juzgado). Las memorias con sync_id
-// NULL nunca casan, así que no se excluyen. Se apoya en idx_memrel_target(target_id, judgment_status).
+// supersededClause excluye memorias ocultadas por una relación juzgada: una memoria queda fuera si
+// es el target_id de una relación 'supersedes' (su source, más reciente, la reemplaza) o 'duplicate'
+// (su source, de mayor calidad, la conserva) ya juzgada. Maneja cadenas A→B→C solo (cada eslabón
+// anterior es target). Las memorias con sync_id NULL nunca casan, así que no se excluyen. Se apoya en
+// idx_memrel_target(target_id, judgment_status).
 const supersededClause = ` AND NOT EXISTS (
 		SELECT 1 FROM memory_relations r
 		WHERE r.target_id = memories.sync_id
-		  AND r.relation = 'supersedes'
+		  AND r.relation IN ('supersedes', 'duplicate')
 		  AND r.judgment_status = 'judged')`
 
 // Recent lista memorias por recencia (camino de navegación del usuario y base de las bandejas de la

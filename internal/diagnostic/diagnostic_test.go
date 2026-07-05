@@ -3,6 +3,7 @@ package diagnostic
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/javierv-dev/kandel/internal/ports"
@@ -89,6 +90,31 @@ func TestPendingEmbeddingsErrorIsError(t *testing.T) {
 func TestPendingEmbeddingsNilVectorsSkips(t *testing.T) {
 	if f := (PendingEmbeddingsCheck{Vectors: nil}).Run(context.Background()); f != nil {
 		t.Errorf("sin índice no debe producir hallazgos: %+v", f)
+	}
+}
+
+// Con el contenido al día pero títulos pendientes, el chequeo debe avisar (warning) y mencionar el título.
+func TestPendingEmbeddingsTitlePendingIsWarning(t *testing.T) {
+	f := PendingEmbeddingsCheck{
+		Vectors:      fakeVectors{pending: nil},           // contenido al día
+		TitleVectors: fakeVectors{pending: []int64{1, 2}}, // dos títulos pendientes
+	}.Run(context.Background())
+	if len(f) != 1 || f[0].Severity != SeverityWarning {
+		t.Fatalf("títulos pendientes deben dar warning: %+v", f)
+	}
+	if !strings.Contains(f[0].Message, "título") {
+		t.Errorf("el mensaje debe mencionar el título: %q", f[0].Message)
+	}
+}
+
+// Con contenido y título al día, el chequeo es info.
+func TestPendingEmbeddingsAllHealthyWithTitle(t *testing.T) {
+	f := PendingEmbeddingsCheck{
+		Vectors:      fakeVectors{pending: nil},
+		TitleVectors: fakeVectors{pending: nil},
+	}.Run(context.Background())
+	if len(f) != 1 || f[0].Severity != SeverityInfo {
+		t.Errorf("contenido y título al día deben dar info: %+v", f)
 	}
 }
 

@@ -18,6 +18,10 @@ const (
 	RelationConflictsWith RelationType = "conflicts_with"
 	// RelationSupersedes indica que una reemplaza/anula a la otra.
 	RelationSupersedes RelationType = "supersedes"
+	// RelationDuplicate indica que ambas dicen lo MISMO reformulado (casi-duplicado): ninguna aporta
+	// info sustancial que la otra no tenga. Se resuelve ocultando la de menor calidad, conservando la
+	// más completa (a diferencia de supersedes, que es una ACTUALIZACIÓN, no una repetición).
+	RelationDuplicate RelationType = "duplicate"
 	// RelationNotConflict indica que no hay solape semántico relevante.
 	RelationNotConflict RelationType = "not_conflict"
 )
@@ -26,7 +30,7 @@ const (
 func (k RelationType) Valid() bool {
 	switch k {
 	case RelationPending, RelationRelated, RelationCompatible, RelationScoped,
-		RelationConflictsWith, RelationSupersedes, RelationNotConflict:
+		RelationConflictsWith, RelationSupersedes, RelationDuplicate, RelationNotConflict:
 		return true
 	default:
 		return false

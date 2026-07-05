@@ -57,6 +57,73 @@ func TestVectorUpsertAndNearestRanking(t *testing.T) {
 	}
 }
 
+// Contenido y título comparten fila pero columnas distintas: el vector de una columna NO aparece en
+// el Nearest de la otra, y el título requiere una fila de contenido existente (Upsert de título es UPDATE).
+func TestContentAndTitleVectorsAreSeparateColumns(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	content := NewVectorIndex(db)
+	title := NewTitleVectorIndex(db)
+	ctx := context.Background()
+
+	id := seedMemory(t, db, "m1")
+	if err := content.Upsert(ctx, id, []float32{1, 0}, "fake"); err != nil {
+		t.Fatalf("Upsert contenido: %v", err)
+	}
+	// Con vector_title aún NULL, el índice de títulos no ve nada (la columna se salta).
+	got, err := title.Nearest(ctx, []float32{1, 0}, 5)
+	if err != nil {
+		t.Fatalf("Nearest título: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("el índice de títulos no debe ver el vector de contenido, vio %d", len(got))
+	}
+	// Escribir el título rellena su columna sobre la misma fila.
+	if err := title.Upsert(ctx, id, []float32{0, 1}, "fake"); err != nil {
+		t.Fatalf("Upsert título: %v", err)
+	}
+	tGot, _ := title.Nearest(ctx, []float32{0, 1}, 5)
+	if len(tGot) != 1 || tGot[0].MemoryID != id {
+		t.Errorf("el índice de títulos debe ver su propio vector: %+v", tGot)
+	}
+	// El de contenido sigue viendo su vector, intacto tras escribir el título.
+	cGot, _ := content.Nearest(ctx, []float32{1, 0}, 5)
+	if len(cGot) != 1 || cGot[0].MemoryID != id {
+		t.Errorf("el índice de contenido debe conservar su vector: %+v", cGot)
+	}
+}
+
+// El backfill de título (PendingEmbedding del índice de título) detecta memorias con contenido al día
+// pero sin vector_title, y deja de listarlas una vez rellenado.
+func TestTitlePendingEmbedding(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	content := NewVectorIndex(db)
+	title := NewTitleVectorIndex(db)
+	ctx := context.Background()
+
+	id := seedMemory(t, db, "m1")
+	if err := content.Upsert(ctx, id, []float32{1, 0}, "fake"); err != nil {
+		t.Fatalf("Upsert contenido: %v", err)
+	}
+	// Contenido presente, título ausente → pendiente de título.
+	pend, err := title.PendingEmbedding(ctx, "fake", 0)
+	if err != nil {
+		t.Fatalf("PendingEmbedding título: %v", err)
+	}
+	if len(pend) != 1 || pend[0] != id {
+		t.Fatalf("se esperaba la memoria pendiente de título: %+v", pend)
+	}
+	// Tras rellenar el título, ya no está pendiente.
+	if err := title.Upsert(ctx, id, []float32{0, 1}, "fake"); err != nil {
+		t.Fatalf("Upsert título: %v", err)
+	}
+	pend2, _ := title.PendingEmbedding(ctx, "fake", 0)
+	if len(pend2) != 0 {
+		t.Errorf("no debe quedar pendiente de título tras rellenarlo: %+v", pend2)
+	}
+}
+
 func TestVectorUpsertReplaces(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

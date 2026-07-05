@@ -3,6 +3,7 @@ package diagnostic
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/javierv-dev/kandel/internal/ports"
 )
@@ -136,41 +137,61 @@ func (c LatestReleaseCheck) Run(ctx context.Context) []Finding {
 	}}
 }
 
-// PendingEmbeddingsCheck cuenta cuántas memorias vivas no tienen vector al día (faltante o de otro
-// modelo). No es un fallo: son memorias accesibles por lectura directa pero invisibles a la
-// búsqueda semántica hasta reindexarlas. Por eso es info/warning, no error.
+// PendingEmbeddingsCheck cuenta cuántas memorias vivas no tienen su vector al día (faltante o de otro
+// modelo), tanto el del CONTENIDO como el del TÍTULO. No es un fallo: son memorias accesibles por
+// lectura directa pero invisibles a la búsqueda semántica (contenido) o a la detección de
+// casi-duplicados por título (título) hasta reindexarlas. Por eso es info/warning, no error.
 type PendingEmbeddingsCheck struct {
-	Vectors ports.VectorIndex
-	Model   string
+	Vectors      ports.VectorIndex
+	TitleVectors ports.VectorIndex // opcional; si se da, también verifica el vector del título
+	Model        string
 }
 
 // Name identifica el chequeo.
 func (PendingEmbeddingsCheck) Name() string { return "pending_embeddings" }
 
-// Run lista las memorias pendientes de vector.
+// Run cuenta las memorias pendientes de vector de contenido y de título.
 func (c PendingEmbeddingsCheck) Run(ctx context.Context) []Finding {
 	if c.Vectors == nil {
 		return nil
 	}
-	ids, err := c.Vectors.PendingEmbedding(ctx, c.Model, 0)
+	contentIDs, err := c.Vectors.PendingEmbedding(ctx, c.Model, 0)
 	if err != nil {
 		return []Finding{{
 			Check:    c.Name(),
 			Severity: SeverityError,
-			Message:  "no se pudo consultar las memorias pendientes de vector: " + err.Error(),
+			Message:  "no se pudo consultar las memorias pendientes de vector de contenido: " + err.Error(),
 		}}
 	}
-	if len(ids) == 0 {
+	var titleIDs []int64
+	if c.TitleVectors != nil {
+		titleIDs, err = c.TitleVectors.PendingEmbedding(ctx, c.Model, 0)
+		if err != nil {
+			return []Finding{{
+				Check:    c.Name(),
+				Severity: SeverityError,
+				Message:  "no se pudo consultar las memorias pendientes de vector de título: " + err.Error(),
+			}}
+		}
+	}
+	if len(contentIDs) == 0 && len(titleIDs) == 0 {
 		return []Finding{{
 			Check:    c.Name(),
 			Severity: SeverityInfo,
-			Message:  "todas las memorias tienen su vector al día",
+			Message:  "todas las memorias tienen su vector (contenido y título) al día",
 		}}
+	}
+	var parts []string
+	if len(contentIDs) > 0 {
+		parts = append(parts, fmt.Sprintf("%d sin vector de contenido (no aparecen en la búsqueda semántica)", len(contentIDs)))
+	}
+	if len(titleIDs) > 0 {
+		parts = append(parts, fmt.Sprintf("%d sin vector de título (no participan en la detección de casi-duplicados por título)", len(titleIDs)))
 	}
 	return []Finding{{
 		Check:    c.Name(),
 		Severity: SeverityWarning,
-		Message:  fmt.Sprintf("%d memoria(s) sin vector al día; no aparecen en la búsqueda semántica", len(ids)),
+		Message:  "memorias con vector pendiente: " + strings.Join(parts, "; "),
 		NextStep: "corre `kandel embeddings backfill` para reindexarlas",
 	}}
 }
