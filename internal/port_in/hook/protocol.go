@@ -26,7 +26,9 @@ Llama a ` + "`mem_save`" + ` INMEDIATAMENTE después de CUALQUIERA de estos:
 
 **Autochequeo después de CADA tarea**: "¿Acabo yo o el usuario de tomar una decisión, confirmar una recomendación, expresar una preferencia, arreglar un bug, aprender algo o establecer una convención? Si es así → mem_save AHORA."
 
-Al guardar, enruta el type por lo que ES: decisión→decision, gusto/convención del usuario→preference (suele global), patrón/idioma de código o estructura→architecture, causa raíz de bug→bugfix, hecho/aprendizaje/config→discovery (default). scope=global solo si aplica a TODOS tus proyectos; si no, project. Marca resolution=open si el usuario deja algo sin resolver. Pasa también el project y el session_id que aparecen en el bloque "[uso interno kandel]" de esta conversación, para ligar la memoria a la charla que la originó.
+Al guardar, enruta el type por lo que ES: decisión→decision, gusto/convención del usuario→preference (suele global), patrón/idioma de código o estructura→architecture, causa raíz de bug→bugfix, hecho/aprendizaje/config→discovery (default), narrativa/avance del desarrollo→journal (la bitácora). scope=global solo si aplica a TODOS tus proyectos; si no, project. Marca resolution=open si el usuario deja algo sin resolver. Pasa también el project y el session_id que aparecen en el bloque "[uso interno kandel]" de esta conversación, para ligar la memoria a la charla que la originó.
+
+BITÁCORA (type=journal): registra el avance del desarrollo por hito (fecha + qué + por qué). Es un log APPEND-ONLY exento del filtro de trivialidad (aunque sea cronológico/efímero, SÍ se guarda). Mientras el tema está en vuelo, la entrada va con resolution=open (es el "estado actual", editable con mem_update); cuando el tema se cierra, pásala a resolution=resolved. Si una decisión de la bitácora restringe el trabajo futuro, guárdala ADEMÁS como type=decision (regla vigente).
 
 ### BUSCA EN LA MEMORIA cuando (solo cuando de verdad ayude — no en peticiones triviales):
 Las sesiones y memorias recientes YA se inyectan más abajo al iniciar la sesión, así que NO necesitas
@@ -61,7 +63,7 @@ const postCompactionHeader = `## Memoria persistente kandel — PROTOCOLO ACTIVO
 INSTRUCCIÓN CRÍTICA POST-COMPACTACIÓN — sigue estos pasos EN ORDEN:`
 
 // postCompactionFooter cierra el bloque post-compactación tras los pasos interpolados.
-const postCompactionFooter = `3. Si necesitas más detalle sobre un tema concreto, llama a mem_search con palabras clave relevantes.
-4. Solo ENTONCES continúa con lo que pidió el usuario.
+const postCompactionFooter = `2. Si necesitas más detalle sobre un tema concreto, llama a mem_search con palabras clave relevantes.
+3. Solo ENTONCES continúa con lo que pidió el usuario.
 
-Todos los pasos son OBLIGATORIOS. Sin ellos, pierdes el contexto y empiezas a ciegas.`
+El contexto reciente ya viene re-inyectado abajo. Estos pasos recuperan el resto; sin ellos empiezas a ciegas.`

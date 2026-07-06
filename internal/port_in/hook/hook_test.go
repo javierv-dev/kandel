@@ -315,7 +315,7 @@ func TestPostCompactionInjectsProtocol(t *testing.T) {
 		t.Errorf("post-compactación debe asegurar la sesión")
 	}
 	s := out.String()
-	if !strings.Contains(s, "post-compactación") || !strings.Contains(s, "mem_save") {
+	if !strings.Contains(s, "post-compactación") || !strings.Contains(s, "mem_context") {
 		t.Errorf("falta el protocolo post-compactación:\n%s", s)
 	}
 	if !strings.Contains(s, "CONTEXTO DE PRUEBA") {

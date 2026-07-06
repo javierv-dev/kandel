@@ -132,9 +132,7 @@ func (r *runner) postCompaction(p payload) error {
 // re-inyectarlos) y, opcionalmente, el contexto recuperado.
 func (r *runner) printPostCompaction(project, sessionID, context string) {
 	fmt.Fprintln(r.out, postCompactionHeader)
-	fmt.Fprintf(r.out, "\n1. PRIMERO: Llama a mem_save con lo logrado antes de la compactación (type discovery salvo que sea decisión/convención). Usa project: '%s'.\n", project)
-	fmt.Fprint(r.out, "   Esto preserva —y deja buscable— lo que se hizo antes de la compactación.\n\n")
-	fmt.Fprintf(r.out, "2. LUEGO: Llama a mem_context con project: '%s' para recuperar el historial reciente de sesiones y memorias.\n", project)
+	fmt.Fprintf(r.out, "\n1. Llama a mem_context con project: '%s' para recuperar el historial reciente (bitácora y memorias).\n", project)
 	fmt.Fprintln(r.out, postCompactionFooter)
 	r.injectMetadata(project, sessionID)
 	if context != "" {

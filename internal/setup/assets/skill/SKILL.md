@@ -75,6 +75,7 @@ Formato para `mem_save`:
   - `architecture` — estructura del sistema y patrones/idiomas de código recurrentes
   - `bugfix` — la causa raíz de un bug resuelto
   - `discovery` — un hecho del sistema/entorno, aprendizaje o configuración (CATCH-ALL, por defecto)
+  - `journal` — una entrada de BITÁCORA (narrativa del desarrollo por hito). Ver la sección "BITÁCORA" abajo
 - **scope**: `project` (def.) | `global`. Usa `global` para lo que aplica en TODOS tus proyectos (típico de `preference`); `project` para lo específico de este repo. (Ya no existe `personal`.)
 - **resolution** (opcional): pon `open` cuando el usuario deje algo SIN resolver (aparecerá en la bandeja "Pendientes"). Para cerrarlo, guarda una memoria NUEVA que lo reemplace, en vez de editar la vieja.
 - **project** y **session_id**: reutiliza los valores del bloque "[uso interno kandel]" inyectado en la conversación. El `session_id` liga la memoria a la charla que la originó (trazabilidad); si no aparece, omítelo.
@@ -97,6 +98,35 @@ Formato para `mem_save`:
   reciente gana). Es una **red de seguridad automática**, no un sustituto: cuesta un juicio y conserva la
   vieja como histórico, así que `mem_update` sigue siendo el camino preferente cuando puedes usarlo.
 
+## BITÁCORA (type=journal)
+
+La bitácora es la narrativa del desarrollo DENTRO de kandel: un log **append-only**, datado y buscable.
+Complementa a los otros tipos —no los reemplaza— y tiene su propia mecánica.
+
+**Cuándo escribir una entrada**: tras cada avance relevante (decisión, fix, paso de implementación, cambio
+de archivos, bloqueo). Granularidad **por hito**.
+
+**Molde** (rellena el esqueleto; libertad en el contenido):
+- **title**: `YYYY-MM-DD — <hito corto y navegable>`
+- **content**:
+  **Fase**: plan / área
+  **Qué se hizo**: narrativa (QUÉ y POR QUÉ)
+  **Decisión**: OPCIONAL — solo si el punto de la entrada es decidir algo
+  **Archivos**: rutas clave tocadas
+  **Resultado**: estado del gate / tests
+  **Siguiente paso**: qué sigue o qué bloquea (OBLIGATORIO — es el cursor "dónde nos quedamos")
+
+**Estado actual vs historial** (usa `resolution`):
+- Mientras el tema está EN VUELO, la entrada va con `resolution=open`: es el "estado actual", **mutable**.
+  Edítala con `mem_update` a medida que avanzas (no crees una fila nueva por cada cambio del mismo tema).
+- Cuando el tema se CIERRA, pásala a `resolution=resolved`: pasa al historial, ya inmutable.
+- Puede haber varias `open` a la vez (temas en paralelo). Al retomar, identifica la que corresponde por su
+  título/tema; si ninguna casa, crea una nueva `open`.
+
+**journal vs decision** (regla de promoción): la entrada de bitácora NARRA lo que pasó. Si una decisión de
+ahí **restringe el trabajo futuro** (regla vigente que hay que obedecer), guárdala ADEMÁS como
+`type=decision`. Si es solo "qué elegimos hoy, en contexto", con la entrada `journal` basta.
+
 ## FILTRO DE CAPTURA (qué merece memoria)
 
 Por defecto, guarda de más: el descarte lo hacen dos compuertas de juicio.
@@ -111,6 +141,10 @@ referencia, no la repite, para que ambas no se despeguen.)
 3. ¿Es genérico/obvio, no específico de este proyecto?
 4. ¿Le falta un "por qué" o contenido sustantivo?
 Si B lo descartaría pero el usuario insiste, guarda SOLO el "por qué" no obvio.
+
+> **Excepción — la BITÁCORA (`type=journal`) está EXENTA de la Compuerta B.** Una entrada de bitácora es
+> cronológica/efímera por naturaleza (el punto 2 la mataría), pero ESO es justo lo que queremos preservar.
+> Guárdala igual siguiendo el molde de la sección "BITÁCORA".
 
 ## CUÁNDO BUSCAR EN LA MEMORIA
 
