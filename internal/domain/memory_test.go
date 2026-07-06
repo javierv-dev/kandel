@@ -46,6 +46,7 @@ func TestMemoryTypeIsNormative(t *testing.T) {
 		{TypeArchitecture, false},
 		{TypeBugfix, false},
 		{TypeDiscovery, false},
+		{TypeJournal, false}, // la bitácora no es normativa: fuera de la detección de conflictos.
 	}
 	for _, tc := range tests {
 		if got := tc.typ.IsNormative(); got != tc.want {
@@ -66,11 +67,22 @@ func TestMemoryTypeIsFactual(t *testing.T) {
 		{TypeDiscovery, true},
 		{TypeDecision, false},
 		{TypePreference, false},
+		{TypeJournal, false}, // la bitácora tampoco es factual: no entra al supersede.
 	}
 	for _, tc := range tests {
 		if got := tc.typ.IsFactual(); got != tc.want {
 			t.Errorf("%q.IsFactual() = %v, se esperaba %v", tc.typ, got, tc.want)
 		}
+	}
+}
+
+func TestMemoryTypeValidAndScope(t *testing.T) {
+	// journal es un tipo reconocido y su scope por defecto es project (la bitácora es del repo).
+	if !TypeJournal.Valid() {
+		t.Error("TypeJournal debe ser un tipo válido")
+	}
+	if got := DefaultScopeForType(TypeJournal); got != ScopeProject {
+		t.Errorf("DefaultScopeForType(journal) = %q, se esperaba project", got)
 	}
 }
 

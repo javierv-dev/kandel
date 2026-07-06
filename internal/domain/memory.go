@@ -19,12 +19,18 @@ const (
 	TypeBugfix MemoryType = "bugfix"
 	// TypeDiscovery: un hecho del sistema/entorno, aprendizaje o configuración (catch-all).
 	TypeDiscovery MemoryType = "discovery"
+	// TypeJournal: una entrada de bitácora (narrativa cronológica del desarrollo). NO es normativa ni
+	// factual: queda fuera de la detección de conflictos/supersede a propósito (cada entrada es un
+	// registro puntual, no una regla ni un hecho que reemplace a otro). Se recupera por la bandeja
+	// "Bitácora" (acotada) y por mem_search. El estado open/resolved distingue el cursor "estado
+	// actual" (mutable) del historial ya cerrado (Plan 2).
+	TypeJournal MemoryType = "journal"
 )
 
 // Valid indica si el tipo es uno de los reconocidos.
 func (t MemoryType) Valid() bool {
 	switch t {
-	case TypeDecision, TypePreference, TypeArchitecture, TypeBugfix, TypeDiscovery:
+	case TypeDecision, TypePreference, TypeArchitecture, TypeBugfix, TypeDiscovery, TypeJournal:
 		return true
 	default:
 		return false
