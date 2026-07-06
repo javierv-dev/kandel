@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -64,6 +66,29 @@ const searchPoolFactor = 5
 
 // minSearchPool es el tamaño mínimo del conjunto de candidatos a rankear.
 const minSearchPool = 50
+
+// defaultSearchLimit es el tope final de resultados cuando el llamante no fija uno (>0). Refleja el
+// mismo valor por defecto que aplica el adaptador (normalizeLimit) para no cambiar el conteo.
+const defaultSearchLimit = 20
+
+// journalRecencyMaxBoost y journalRecencyHalfLife parametrizan el empujón de recencia de la bitácora
+// (P3): un pequeño sumando al score, acotado a [0, journalRecencyMaxBoost], que decae con la
+// antigüedad. Solo lo reciben las entradas journal; entre resultados de similitud parecida, una
+// bitácora reciente gana a una vieja (evita recuperar "rancio"). No muta el score reportado: solo
+// afecta al orden.
+const (
+	journalRecencyMaxBoost = 0.05
+	journalRecencyHalfLife = 7 * 24 * time.Hour
+)
+
+// journalRecencyBoost devuelve el empujón de recencia para una antigüedad dada: journalRecencyMaxBoost
+// cuando es fresca, la mitad a una vida media, tendiendo a 0 al envejecer. Nunca es negativo.
+func journalRecencyBoost(age time.Duration) float64 {
+	if age < 0 {
+		age = 0
+	}
+	return journalRecencyMaxBoost * math.Exp2(-float64(age)/float64(journalRecencyHalfLife))
+}
 
 // MemoryService implementa los casos de uso sobre memorias. Aquí vive la lógica de dedupe
 // exacto, fusión por tema y decaimiento, fuera del SQL y testeable con repos fake.
@@ -240,7 +265,45 @@ func (m *MemoryService) Search(ctx context.Context, q ports.SearchQuery) ([]doma
 	if err != nil {
 		return nil, err
 	}
-	return m.memories.Search(ctx, q, neighbors)
+	// Se piden al repo TODOS los supervivientes (sin recortar al límite final) para poder re-rankear
+	// por recencia ANTES de cortar: si el repo recortara primero por score puro, una journal reciente
+	// que quedó fuera del top-N no podría recuperarse. Con q.Type/proyecto/alcance ya filtra el repo.
+	full := q
+	full.Limit = len(neighbors)
+	results, err := m.memories.Search(ctx, full, neighbors)
+	if err != nil {
+		return nil, err
+	}
+	m.rankByRecency(results)
+	return truncateResults(results, q.Limit), nil
+}
+
+// rankByRecency reordena los resultados aplicando el empujón de recencia SOLO a las entradas journal
+// (P3). Es estable: los no-journal conservan su orden por score, así que una búsqueda sin bitácora
+// queda idéntica a la del repo. No muta el score reportado; el orden usa un score ajustado local.
+func (m *MemoryService) rankByRecency(results []domain.SearchResult) {
+	now := m.clock.Now()
+	adjusted := func(r domain.SearchResult) float64 {
+		if r.Memory.Type == domain.TypeJournal {
+			return r.Score + journalRecencyBoost(now.Sub(r.Memory.CreatedAt))
+		}
+		return r.Score
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		return adjusted(results[i]) > adjusted(results[j])
+	})
+}
+
+// truncateResults recorta al límite final (el default cuando no es positivo), replicando el tope que
+// antes aplicaba el adaptador tras haberse re-rankeado en el servicio.
+func truncateResults(results []domain.SearchResult, limit int) []domain.SearchResult {
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	if len(results) > limit {
+		return results[:limit]
+	}
+	return results
 }
 
 // indexVector calcula el vector del contenido y lo guarda en el índice, anotando el modelo.

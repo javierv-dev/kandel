@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -439,6 +440,59 @@ func TestSearchEmbedsAndFilters(t *testing.T) {
 	}
 	if len(results) != 2 {
 		t.Errorf("Search filtrada por 'proj' debe devolver 2, fue %d", len(results))
+	}
+}
+
+func TestJournalRecencyBoost(t *testing.T) {
+	// Fresca → boost máximo; a una vida media → la mitad; muy vieja → ~0; negativa → máximo.
+	if got := journalRecencyBoost(0); got != journalRecencyMaxBoost {
+		t.Errorf("boost(0) = %v, se esperaba %v", got, journalRecencyMaxBoost)
+	}
+	if got := journalRecencyBoost(journalRecencyHalfLife); math.Abs(got-journalRecencyMaxBoost/2) > 1e-9 {
+		t.Errorf("boost(vida media) = %v, se esperaba %v", got, journalRecencyMaxBoost/2)
+	}
+	if got := journalRecencyBoost(100 * journalRecencyHalfLife); got > 1e-6 {
+		t.Errorf("boost de una entrada muy vieja debe tender a 0, fue %v", got)
+	}
+	if got := journalRecencyBoost(-time.Hour); got != journalRecencyMaxBoost {
+		t.Errorf("boost de antigüedad negativa se acota al máximo, fue %v", got)
+	}
+}
+
+func TestSearchJournalRecencyRerank(t *testing.T) {
+	// Dos journals: la vieja puntúa MÁS por coseno, pero la reciente gana tras el boost de recencia.
+	obs, sync := newFakeObs(), &fakeSync{}
+	clk := &mutableClock{now: clockNow}
+	vidx := &fakeScoredIndex{scores: map[int64]float64{}}
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, clk, newFakeEmbedder(), vidx)
+	ctx := context.Background()
+
+	older, err := svc.Save(ctx, SaveInput{Project: "Proj", Type: domain.TypeJournal, Title: "vieja", Content: "entrada vieja"})
+	if err != nil {
+		t.Fatalf("Save vieja: %v", err)
+	}
+	clk.now = clockNow.Add(30 * 24 * time.Hour) // la reciente se guarda 30 días después
+	newer, err := svc.Save(ctx, SaveInput{Project: "Proj", Type: domain.TypeJournal, Title: "reciente", Content: "entrada reciente"})
+	if err != nil {
+		t.Fatalf("Save reciente: %v", err)
+	}
+	// La vieja gana por coseno puro (0.80 > 0.78); el boost de recencia debe darle la vuelta.
+	vidx.scores[older.Memory.ID] = 0.80
+	vidx.scores[newer.Memory.ID] = 0.78
+
+	results, err := svc.Search(ctx, ports.SearchQuery{Query: "algo", Project: "proj", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("se esperaban 2 resultados, fueron %d", len(results))
+	}
+	if results[0].Memory.ID != newer.Memory.ID {
+		t.Errorf("la journal reciente debe rankear primero tras el boost, fue id=%d", results[0].Memory.ID)
+	}
+	// El score reportado NO se muta: sigue siendo el coseno puro (el boost solo reordena).
+	if results[0].Score != 0.78 {
+		t.Errorf("el boost no debe mutar el score reportado, fue %v", results[0].Score)
 	}
 }
 
