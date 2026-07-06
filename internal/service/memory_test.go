@@ -76,6 +76,32 @@ func TestSaveDuplicateWithinWindow(t *testing.T) {
 	}
 }
 
+func TestSaveJournalSkipsDedupe(t *testing.T) {
+	// La bitácora (journal) está exenta del dedupe: dos entradas idénticas seguidas son DOS filas,
+	// no un duplicado contado. Es un log append-only.
+	svc, obs, _ := newMemoryFixture()
+	ctx := context.Background()
+	in := SaveInput{
+		Project: "Proj",
+		Type:    domain.TypeJournal,
+		Title:   "2026-07-06 — avance",
+		Content: "Se hizo lo mismo dos veces.",
+	}
+	if _, err := svc.Save(ctx, in); err != nil {
+		t.Fatalf("Save 1: %v", err)
+	}
+	res, err := svc.Save(ctx, in)
+	if err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+	if res.Outcome != SaveCreated {
+		t.Errorf("una journal idéntica debe crear fila nueva, fue %v", res.Outcome)
+	}
+	if len(obs.items) != 2 {
+		t.Errorf("dos journals idénticas deben ser 2 filas, hay %d", len(obs.items))
+	}
+}
+
 func TestSaveDuplicateOutsideWindowCreatesNew(t *testing.T) {
 	obs := newFakeObs()
 	sync := &fakeSync{}

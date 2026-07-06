@@ -313,6 +313,72 @@ func TestRecentFiltersByTypesAndResolved(t *testing.T) {
 	}
 }
 
+func TestRecentFiltersByResolution(t *testing.T) {
+	// El filtro Resolution restringe a UNA resolución exacta (lo usa la bandeja "Bitácora" para
+	// separar journal 'open' de journal 'resolved').
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	open := sampleMemory()
+	open.SyncID, open.Type, open.Resolution = "mem-open", domain.TypeJournal, domain.ResolutionOpen
+	open.NormalizedHash = "h-open"
+	if _, err := repo.Add(ctx, open); err != nil {
+		t.Fatalf("Add open: %v", err)
+	}
+	resolved := sampleMemory()
+	resolved.SyncID, resolved.Type, resolved.Resolution = "mem-res", domain.TypeJournal, domain.ResolutionResolved
+	resolved.NormalizedHash = "h-res"
+	if _, err := repo.Add(ctx, resolved); err != nil {
+		t.Fatalf("Add resolved: %v", err)
+	}
+
+	gotOpen, err := repo.Recent(ctx, ports.RecentQuery{
+		Project: "proj", Types: []domain.MemoryType{domain.TypeJournal}, Resolution: domain.ResolutionOpen, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Recent open: %v", err)
+	}
+	if len(gotOpen) != 1 || gotOpen[0].Resolution != domain.ResolutionOpen {
+		t.Fatalf("filtro Resolution=open mal aplicado: %+v", gotOpen)
+	}
+
+	gotResolved, _ := repo.Recent(ctx, ports.RecentQuery{
+		Project: "proj", Types: []domain.MemoryType{domain.TypeJournal}, Resolution: domain.ResolutionResolved, Limit: 10,
+	})
+	if len(gotResolved) != 1 || gotResolved[0].Resolution != domain.ResolutionResolved {
+		t.Fatalf("filtro Resolution=resolved mal aplicado: %+v", gotResolved)
+	}
+}
+
+func TestPendingResolutionExcludesJournal(t *testing.T) {
+	// Una journal 'open' es el estado actual de la bitácora, NO un pendiente por resolver.
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	dec := sampleMemory()
+	dec.SyncID, dec.Resolution, dec.NormalizedHash = "mem-dec", domain.ResolutionOpen, "h-dec"
+	if _, err := repo.Add(ctx, dec); err != nil {
+		t.Fatalf("Add decision open: %v", err)
+	}
+	jour := sampleMemory()
+	jour.SyncID, jour.Type, jour.Resolution, jour.NormalizedHash = "mem-jour", domain.TypeJournal, domain.ResolutionOpen, "h-jour"
+	if _, err := repo.Add(ctx, jour); err != nil {
+		t.Fatalf("Add journal open: %v", err)
+	}
+
+	got, err := repo.PendingResolution(ctx, "proj", 10)
+	if err != nil {
+		t.Fatalf("PendingResolution: %v", err)
+	}
+	if len(got) != 1 || got[0].Type == domain.TypeJournal {
+		t.Fatalf("PendingResolution no debe incluir journal: %+v", got)
+	}
+}
+
 func TestPendingResolutionExcludesSuperseded(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

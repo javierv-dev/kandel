@@ -168,12 +168,14 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 
 	var result SaveResult
 	err := m.uow.Do(ctx, func(ctx context.Context) error {
-		// 1. Dedupe exacto dentro de la ventana.
+		// 1. Dedupe exacto dentro de la ventana. La bitácora (journal) se exime: es un log
+		// append-only donde cada entrada es un registro puntual, así que dos entradas iguales
+		// seguidas son DOS filas, no un duplicado que contar.
 		dup, err := m.memories.FindByHash(ctx, project, scope, hash)
 		if err != nil {
 			return err
 		}
-		if dup != nil && now.Sub(dup.CreatedAt) <= m.dedupeWindow {
+		if in.Type != domain.TypeJournal && dup != nil && now.Sub(dup.CreatedAt) <= m.dedupeWindow {
 			dup.DuplicateCount++
 			dup.LastSeenAt = now
 			dup.UpdatedAt = now

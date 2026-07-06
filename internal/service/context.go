@@ -17,6 +17,11 @@ const (
 	contextFactual = 8
 	// contextPending es un tope generoso de pendientes (en la práctica hay pocos).
 	contextPending = 100
+	// contextJournalOpen acota los hilos de bitácora "abiertos" (estado actual). En la práctica hay
+	// muy pocos temas vivos a la vez; el tope solo evita un caso patológico.
+	contextJournalOpen = 5
+	// contextJournalHistory es la ventana del historial de bitácora ya cerrado (P2 = 3).
+	contextJournalHistory = 3
 	// defaultNormativeThreshold dispara el aviso de mantenimiento "demasiadas normativas".
 	defaultNormativeThreshold = 50
 )
@@ -89,6 +94,29 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		return "", err
 	}
 
+	// Bandeja "Bitácora" — estado actual: entradas journal abiertas (resolution = open). Es el cursor
+	// "dónde nos quedamos"; mutable, se edita in-place hasta que el tema se cierra (resolution = resolved).
+	journalOpen, err := c.memories.Recent(ctx, ports.RecentQuery{
+		Project:    project,
+		Types:      []domain.MemoryType{domain.TypeJournal},
+		Resolution: domain.ResolutionOpen,
+		Limit:      contextJournalOpen,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// Bandeja "Bitácora" — historial reciente: últimas entradas journal ya cerradas (resolution = resolved).
+	journalHistory, err := c.memories.Recent(ctx, ports.RecentQuery{
+		Project:    project,
+		Types:      []domain.MemoryType{domain.TypeJournal},
+		Resolution: domain.ResolutionResolved,
+		Limit:      contextJournalHistory,
+	})
+	if err != nil {
+		return "", err
+	}
+
 	// Conflictos reales sin resolver (contradicciones mismo-scope que decide un humano). Se cuentan
 	// aparte porque viven en memory_relations, no en las normativas ya cargadas. Un fallo aquí no debe
 	// tumbar la inyección entera: se degrada a 0 (sin banner de conflictos).
@@ -99,7 +127,8 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 
 	health := healthBanners(normatives, openConflicts, c.threshold)
 
-	if len(normatives) == 0 && len(pendings) == 0 && len(factual) == 0 && len(health) == 0 {
+	if len(normatives) == 0 && len(pendings) == 0 && len(factual) == 0 &&
+		len(journalOpen) == 0 && len(journalHistory) == 0 && len(health) == 0 {
 		return "", nil
 	}
 
@@ -117,6 +146,22 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 	if len(pendings) > 0 {
 		b.WriteString("### Pendientes por resolver\n")
 		for _, m := range pendings {
+			writeMemoryLine(&b, m)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(journalOpen) > 0 {
+		b.WriteString("### Bitácora — estado actual\n")
+		for _, m := range journalOpen {
+			writeMemoryLine(&b, m)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(journalHistory) > 0 {
+		b.WriteString("### Bitácora — historial reciente\n")
+		for _, m := range journalHistory {
 			writeMemoryLine(&b, m)
 		}
 		b.WriteString("\n")

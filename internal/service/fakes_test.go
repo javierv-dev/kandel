@@ -132,6 +132,9 @@ func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memor
 		if q.ExcludeResolved && o.Resolution == domain.ResolutionResolved {
 			continue
 		}
+		if q.Resolution != "" && o.Resolution != q.Resolution {
+			continue
+		}
 		out = append(out, o)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
@@ -190,6 +193,10 @@ func (f *fakeObs) PendingResolution(_ context.Context, project string, limit int
 	var out []domain.Memory
 	for _, o := range f.items {
 		if o.IsDeleted() || (project != "" && o.Project != project) {
+			continue
+		}
+		// La bitácora abierta no es un pendiente por resolver: se excluye (igual que el repo real).
+		if o.Type == domain.TypeJournal {
 			continue
 		}
 		if o.Resolution == domain.ResolutionOpen {

@@ -157,6 +157,10 @@ func (r *MemoryRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.
 	if q.ExcludeResolved {
 		query += ` AND resolution != 'resolved'`
 	}
+	if q.Resolution != "" {
+		query += ` AND resolution = ?`
+		args = append(args, string(q.Resolution))
+	}
 	if q.ExcludeSuperseded {
 		query += supersededClause
 	}
@@ -244,11 +248,14 @@ func (r *MemoryRepo) FindByHash(ctx context.Context, project string, scope domai
 
 // PendingResolution lista memorias vivas pendientes por resolver (resolution = 'open'), de la
 // más antigua a la más nueva (como una cola de TODO: lo más viejo primero). Excluye las
-// reemplazadas: un pendiente superseded ya se resolvió por su reemplazo (§20.D/§20.G).
+// reemplazadas: un pendiente superseded ya se resolvió por su reemplazo (§20.D/§20.G). Excluye
+// también las entradas de bitácora (type = 'journal'): una journal 'open' es el "estado actual" del
+// diario, no un pendiente por resolver — vive en la bandeja "Bitácora", no en "Pendientes".
 func (r *MemoryRepo) PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error) {
 	query := `SELECT ` + memoryColumns + ` FROM memories
 		WHERE deleted_at IS NULL
-		  AND resolution = 'open'` + supersededClause
+		  AND resolution = 'open'
+		  AND type != 'journal'` + supersededClause
 	args := []any{}
 	if project != "" {
 		query += ` AND project = ?`

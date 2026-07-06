@@ -24,6 +24,10 @@ type RecentQuery struct {
 	// ExcludeResolved omite las memorias ya resueltas (resolution = 'resolved'). Lo usa la bandeja
 	// "Siempre" para no mostrar pendientes cerrados; las de resolución vacía u 'open' sí pasan.
 	ExcludeResolved bool
+	// Resolution, si no está vacío, restringe a las memorias con ESA resolución exacta. Lo usa la
+	// bandeja "Bitácora" para separar el estado actual (journal 'open') del historial (journal
+	// 'resolved'). Es más específico que ExcludeResolved (que solo excluye 'resolved').
+	Resolution domain.Resolution
 	// OnlyDeleted invierte el filtro base: en vez de las vivas, devuelve SOLO las borradas
 	// lógicamente (deleted_at IS NOT NULL). Lo usa la papelera de la TUI para poder restaurarlas.
 	OnlyDeleted bool

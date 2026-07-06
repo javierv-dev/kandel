@@ -50,6 +50,33 @@ func TestContextFormatBandejas(t *testing.T) {
 	}
 }
 
+func TestContextJournalBandeja(t *testing.T) {
+	ctx := context.Background()
+	memories := newFakeObs()
+	// Entrada de bitácora abierta (estado actual, cursor mutable).
+	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeJournal, Title: "2026-07-06 — tema en vuelo", Content: "trabajando el journal", Resolution: domain.ResolutionOpen})
+	// Entrada de bitácora cerrada (historial).
+	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeJournal, Title: "2026-07-05 — tema cerrado", Content: "resumen de sesión eliminado", Resolution: domain.ResolutionResolved})
+
+	svc := NewContextService(memories, &fakeRelations{})
+	out, err := svc.Format(ctx, "kandel", domain.Scope(""))
+	if err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	for _, want := range []string{
+		"### Bitácora — estado actual", "tema en vuelo",
+		"### Bitácora — historial reciente", "tema cerrado",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("el contexto no contiene %q:\n%s", want, out)
+		}
+	}
+	// Una journal abierta NO es un pendiente: no debe aparecer en "Pendientes por resolver".
+	if strings.Contains(out, "### Pendientes por resolver") {
+		t.Errorf("la bitácora abierta no debe colarse en Pendientes:\n%s", out)
+	}
+}
+
 func TestContextHealthTooManyNormatives(t *testing.T) {
 	ctx := context.Background()
 	memories := newFakeObs()
