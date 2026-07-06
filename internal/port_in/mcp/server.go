@@ -25,7 +25,6 @@ type MemoryPort interface {
 // SessionPort es la cara de los casos de uso de sesión que el MCP consume.
 type SessionPort interface {
 	Start(ctx context.Context, in service.StartInput) (domain.Session, error)
-	End(ctx context.Context, id, summary string) error
 	Get(ctx context.Context, id string) (*domain.Session, error)
 	MostRecentActive(ctx context.Context, project string) (string, bool, error)
 }
@@ -75,7 +74,6 @@ HERRAMIENTAS PRINCIPALES:
   mem_search — busca por significado trabajo, decisiones o contexto de sesiones anteriores (búsqueda semántica)
   mem_context — recupera memorias recientes (al inicio de sesión o tras una compactación)
   mem_get — obtiene el contenido completo de una memoria por su id
-  mem_session_summary — guarda el resumen de fin de sesión
 
 REGLA DE GUARDADO PROACTIVO: llama a mem_save justo después de CUALQUIER decisión, arreglo de bug,
 descubrimiento o convención — no solo cuando te lo pidan.`

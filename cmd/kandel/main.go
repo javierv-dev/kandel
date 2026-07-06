@@ -108,7 +108,7 @@ func run(args []string) error {
 		service.WithPostBackfill(detectionSweep(conflictService)),
 		service.WithTitleBackfill(titleVectorIndex))
 	syncService := service.NewSyncService(syncRepo, git.New(syncDir()), memoryRepo, uow, clk, "")
-	contextService := service.NewContextService(sessionRepo, memoryRepo, relationRepo,
+	contextService := service.NewContextService(memoryRepo, relationRepo,
 		service.WithNormativeThreshold(normativeThreshold()))
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
 	// El seed construye su generador bajo demanda: el agente y el modelo se resuelven en el comando

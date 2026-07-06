@@ -10,7 +10,6 @@ type Session struct {
 	Directory string
 	StartedAt time.Time
 	EndedAt   *time.Time // nil mientras la sesión sigue abierta
-	Summary   string     // resumen al cerrar; vacío si no hay
 }
 
 // IsOpen indica si la sesión aún no se ha cerrado.

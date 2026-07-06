@@ -340,14 +340,13 @@ func (f *fakeSessions) Create(_ context.Context, s domain.Session) error {
 	return nil
 }
 
-func (f *fakeSessions) End(_ context.Context, id, summary string) error {
+func (f *fakeSessions) End(_ context.Context, id string) error {
 	s, ok := f.items[id]
 	if !ok {
 		return nil
 	}
 	t := time.Now().UTC()
 	s.EndedAt = &t
-	s.Summary = summary
 	f.items[id] = s
 	return nil
 }

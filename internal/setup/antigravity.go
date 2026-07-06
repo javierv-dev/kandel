@@ -64,7 +64,7 @@ const (
 const antigravityRulesBlock = `## Memoria persistente kandel (protocolo activo)
 
 Tienes memoria persistente entre sesiones mediante las herramientas MCP del servidor **kandel**
-(mem_save, mem_search, mem_context, mem_get, mem_update, mem_session_summary, …). El almacén es
+(mem_save, mem_search, mem_context, mem_get, mem_update, …). El almacén es
 COMPARTIDO con cualquier otro agente que use kandel en este mismo proyecto: lo que guardes aquí lo verá
 también Claude Code, y viceversa.
 
@@ -76,7 +76,7 @@ Reglas:
   arreglo de bug (con su causa raíz), una convención, un descubrimiento no obvio, un patrón, o una
   preferencia/rechazo del usuario.
 - Si una memoria quedó obsoleta y conoces su id, usa **mem_update** en vez de crear otra.
-- Antes de terminar una tarea, llama a **mem_session_summary** con lo logrado y los próximos pasos.`
+- Guarda en el momento en que ocurre lo que vale la pena recordar, no al terminar: la sesión se cierra sola.`
 
 func (a antigravity) Install(home, version string, out io.Writer) error {
 	_, mcpFile, rulesFile, hooksFile, skillFile := a.paths(home)

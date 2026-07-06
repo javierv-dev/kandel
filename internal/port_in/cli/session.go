@@ -59,18 +59,17 @@ func sessionStart(ctx context.Context, args []string, app *App) error {
 	return nil
 }
 
-// sessionEnd cierra una sesión con un resumen opcional.
+// sessionEnd cierra una sesión (marca su instante de cierre).
 func sessionEnd(ctx context.Context, args []string, app *App) error {
 	fs := flag.NewFlagSet("session end", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
-	summary := fs.String("summary", "", "resumen de la sesión")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
 		return fmt.Errorf("session end: falta el id")
 	}
-	if err := app.Session.End(ctx, fs.Arg(0), *summary); err != nil {
+	if err := app.Session.End(ctx, fs.Arg(0)); err != nil {
 		return err
 	}
 	fmt.Fprintf(app.Out, "sesión cerrada: %s\n", fs.Arg(0))

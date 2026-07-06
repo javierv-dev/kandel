@@ -40,14 +40,11 @@ func TestSessionEnd(t *testing.T) {
 	if _, err := svc.Start(ctx, StartInput{ID: "s1", Project: "proj", Directory: "/d"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := svc.End(ctx, "s1", "resumen"); err != nil {
+	if err := svc.End(ctx, "s1"); err != nil {
 		t.Fatalf("End: %v", err)
 	}
 	if sessions.items["s1"].IsOpen() {
 		t.Error("tras End la sesión debe estar cerrada")
-	}
-	if sessions.items["s1"].Summary != "resumen" {
-		t.Errorf("summary no coincide: %q", sessions.items["s1"].Summary)
 	}
 	// Start + End encolan una mutación cada uno.
 	if len(sync.enqueued) != 2 {
@@ -57,7 +54,7 @@ func TestSessionEnd(t *testing.T) {
 
 func TestSessionEndMissing(t *testing.T) {
 	svc, _, _ := newSessionFixture()
-	err := svc.End(context.Background(), "nope", "x")
+	err := svc.End(context.Background(), "nope")
 	if err != domain.ErrNotFound {
 		t.Errorf("End de sesión inexistente debe dar ErrNotFound, fue %v", err)
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 func TestContextFormatEmpty(t *testing.T) {
-	svc := NewContextService(newFakeSessions(), newFakeObs(), &fakeRelations{})
+	svc := NewContextService(newFakeObs(), &fakeRelations{})
 	out, err := svc.Format(context.Background(), "kandel", domain.Scope(""))
 	if err != nil {
 		t.Fatalf("Format error: %v", err)
@@ -21,9 +21,6 @@ func TestContextFormatEmpty(t *testing.T) {
 
 func TestContextFormatBandejas(t *testing.T) {
 	ctx := context.Background()
-	sessions := newFakeSessions()
-	sessions.Create(ctx, domain.Session{ID: "s1", Project: "kandel", Summary: "trabajo previo"})
-
 	memories := newFakeObs()
 	// Normativa (Siempre) sin verificar → alimenta el banner de salud.
 	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDecision, Title: "Usar JWT", Content: "decisión de auth"})
@@ -32,7 +29,7 @@ func TestContextFormatBandejas(t *testing.T) {
 	// Factual reciente.
 	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDiscovery, Title: "Ollama tarda", Content: "cold start 7s"})
 
-	svc := NewContextService(sessions, memories, &fakeRelations{})
+	svc := NewContextService(memories, &fakeRelations{})
 	out, err := svc.Format(ctx, "Kandel", domain.Scope(""))
 	if err != nil {
 		t.Fatalf("Format error: %v", err)
@@ -41,7 +38,6 @@ func TestContextFormatBandejas(t *testing.T) {
 		"### Siempre presente (normativas)", "Usar JWT",
 		"### Pendientes por resolver", "Elegir cola",
 		"### Recientes", "Ollama tarda",
-		"### Sesiones recientes", "trabajo previo",
 		"### Salud de memoria", "sin verificar",
 	} {
 		if !strings.Contains(out, want) {
@@ -62,7 +58,7 @@ func TestContextHealthTooManyNormatives(t *testing.T) {
 		memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDecision, Title: title, Content: "x", ConflictChecked: true})
 	}
 
-	svc := NewContextService(newFakeSessions(), memories, &fakeRelations{}, WithNormativeThreshold(2))
+	svc := NewContextService(memories, &fakeRelations{}, WithNormativeThreshold(2))
 	out, err := svc.Format(ctx, "kandel", domain.Scope(""))
 	if err != nil {
 		t.Fatalf("Format error: %v", err)
@@ -85,7 +81,7 @@ func TestContextHealthOpenConflicts(t *testing.T) {
 	rels := &fakeRelations{}
 	rels.Insert(ctx, domain.MemoryRelation{SourceID: "mem-A", TargetID: "mem-B", Kind: domain.RelationConflictsWith, Status: domain.JudgmentJudged})
 
-	svc := NewContextService(newFakeSessions(), memories, rels)
+	svc := NewContextService(memories, rels)
 	out, err := svc.Format(ctx, "kandel", domain.Scope(""))
 	if err != nil {
 		t.Fatalf("Format error: %v", err)

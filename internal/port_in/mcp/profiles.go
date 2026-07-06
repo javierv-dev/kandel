@@ -18,8 +18,6 @@ var ProfileAgent = map[string]bool{
 	"mem_context":         true,
 	"mem_get":             true,
 	"mem_session_start":   true,
-	"mem_session_end":     true,
-	"mem_session_summary": true,
 	"mem_update":          true,
 	"mem_pending":         true,
 	"mem_save_prompt":     true,

@@ -12,7 +12,6 @@ import (
 // Límites de cuántos elementos entran en cada bandeja del contexto inyectado. Las normativas van
 // SIN tope (son must-see); el resto se acota para no inundar la ventana del agente al arrancar.
 const (
-	contextSessions = 5
 	// contextFactual es la ventana chica de continuidad factual: unas pocas recientes como ancla;
 	// el resto se recupera bajo demanda con mem_search durante la tarea (factual perezoso, §20.D).
 	contextFactual = 8
@@ -24,10 +23,9 @@ const (
 
 // ContextService arma el bloque de contexto que se inyecta al agente al arrancar una sesión (o tras
 // una compactación). Se organiza en bandejas (§20.D): normativas siempre presentes, pendientes por
-// resolver, factuales recientes, sesiones y salud de memoria. Es lectura directa (no depende del
+// resolver, factuales recientes y salud de memoria. Es lectura directa (no depende del
 // embebedor). Los prompts crudos ya NO se inyectan (solo quedan buscables).
 type ContextService struct {
-	sessions  ports.SessionRepo
 	memories  ports.MemoryRepo
 	relations ports.RelationRepo
 	threshold int // umbral del aviso "demasiadas normativas"
@@ -47,8 +45,8 @@ func WithNormativeThreshold(n int) ContextOption {
 }
 
 // NewContextService construye el servicio con sus repos inyectados.
-func NewContextService(sessions ports.SessionRepo, memories ports.MemoryRepo, relations ports.RelationRepo, opts ...ContextOption) *ContextService {
-	c := &ContextService{sessions: sessions, memories: memories, relations: relations, threshold: defaultNormativeThreshold}
+func NewContextService(memories ports.MemoryRepo, relations ports.RelationRepo, opts ...ContextOption) *ContextService {
+	c := &ContextService{memories: memories, relations: relations, threshold: defaultNormativeThreshold}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -91,11 +89,6 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		return "", err
 	}
 
-	sessions, err := c.sessions.Recent(ctx, project, contextSessions)
-	if err != nil {
-		return "", err
-	}
-
 	// Conflictos reales sin resolver (contradicciones mismo-scope que decide un humano). Se cuentan
 	// aparte porque viven en memory_relations, no en las normativas ya cargadas. Un fallo aquí no debe
 	// tumbar la inyección entera: se degrada a 0 (sin banner de conflictos).
@@ -106,7 +99,7 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 
 	health := healthBanners(normatives, openConflicts, c.threshold)
 
-	if len(normatives) == 0 && len(pendings) == 0 && len(factual) == 0 && len(sessions) == 0 && len(health) == 0 {
+	if len(normatives) == 0 && len(pendings) == 0 && len(factual) == 0 && len(health) == 0 {
 		return "", nil
 	}
 
@@ -133,18 +126,6 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		b.WriteString("### Recientes\n")
 		for _, m := range factual {
 			writeMemoryLine(&b, m)
-		}
-		b.WriteString("\n")
-	}
-
-	if len(sessions) > 0 {
-		b.WriteString("### Sesiones recientes\n")
-		for _, s := range sessions {
-			summary := ""
-			if t := strings.TrimSpace(s.Summary); t != "" {
-				summary = ": " + truncate(t, 200)
-			}
-			fmt.Fprintf(&b, "- **%s** (%s)%s\n", s.Project, s.StartedAt.Format("2006-01-02 15:04"), summary)
 		}
 		b.WriteString("\n")
 	}

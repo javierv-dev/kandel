@@ -141,7 +141,7 @@ func TestStartSessionMissingID(t *testing.T) {
 
 func TestEndSessionNotFound(t *testing.T) {
 	sess := &fakeSession{endErr: domain.ErrNotFound}
-	rec := do(t, Services{Session: sess}, http.MethodPost, "/sessions/x/end", `{"summary":"fin"}`)
+	rec := do(t, Services{Session: sess}, http.MethodPost, "/sessions/x/end", ``)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, se esperaba 404", rec.Code)
 	}
@@ -308,7 +308,7 @@ func (f *fakeSession) Start(_ context.Context, in service.StartInput) (domain.Se
 	f.started = in
 	return domain.Session{ID: in.ID, Project: in.Project}, nil
 }
-func (f *fakeSession) End(_ context.Context, _, _ string) error { return f.endErr }
+func (f *fakeSession) End(_ context.Context, _ string) error { return f.endErr }
 func (f *fakeSession) Get(_ context.Context, id string) (*domain.Session, error) {
 	if id == "missing" {
 		return nil, nil

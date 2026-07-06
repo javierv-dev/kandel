@@ -48,11 +48,11 @@ func (s *SessionService) Start(ctx context.Context, in StartInput) (domain.Sessi
 	return session, nil
 }
 
-// End cierra una sesión con un resumen y reencola su mutación. Devuelve domain.ErrNotFound si la
+// End cierra una sesión y reencola su mutación. Devuelve domain.ErrNotFound si la
 // sesión no existe.
-func (s *SessionService) End(ctx context.Context, id, summary string) error {
+func (s *SessionService) End(ctx context.Context, id string) error {
 	return s.uow.Do(ctx, func(ctx context.Context) error {
-		if err := s.sessions.End(ctx, id, summary); err != nil {
+		if err := s.sessions.End(ctx, id); err != nil {
 			return err
 		}
 		session, err := s.sessions.Get(ctx, id)

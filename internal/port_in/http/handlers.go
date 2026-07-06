@@ -255,20 +255,11 @@ func handleStartSession(svc Services) http.HandlerFunc {
 	}
 }
 
-// endSessionRequest es el cuerpo de POST /sessions/{id}/end.
-type endSessionRequest struct {
-	Summary string `json:"summary"`
-}
-
-// handleEndSession cierra una sesión con un resumen.
+// handleEndSession cierra una sesión (marca su instante de cierre). No lleva cuerpo.
 func handleEndSession(svc Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		var body endSessionRequest
-		if r.ContentLength != 0 && !decodeBody(w, r, &body) {
-			return
-		}
-		if err := svc.Session.End(r.Context(), id, body.Summary); err != nil {
+		if err := svc.Session.End(r.Context(), id); err != nil {
 			writeError(w, statusForError(err), err.Error())
 			return
 		}

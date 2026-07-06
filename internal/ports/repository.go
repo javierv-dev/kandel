@@ -90,8 +90,8 @@ type MemoryRepo interface {
 type SessionRepo interface {
 	// Create abre una sesión nueva.
 	Create(ctx context.Context, s domain.Session) error
-	// End cierra una sesión y le adjunta un resumen.
-	End(ctx context.Context, id, summary string) error
+	// End cierra una sesión (marca su instante de cierre).
+	End(ctx context.Context, id string) error
 	// Get recupera una sesión por id; nil si no existe.
 	Get(ctx context.Context, id string) (*domain.Session, error)
 	// Recent lista las sesiones más recientes de un proyecto.

@@ -22,13 +22,14 @@ func NewSessionRepo(db *DB) *SessionRepo {
 	return &SessionRepo{db: db.sql}
 }
 
-// Create abre una sesión nueva con su instante de inicio ya fijado por el servicio.
+// Create abre una sesión nueva con su instante de inicio ya fijado por el servicio. La columna
+// summary quedó muerta (se eliminó el resumen de sesión); se deja NULL sin nombrarla.
 func (r *SessionRepo) Create(ctx context.Context, s domain.Session) error {
-	const q = `INSERT INTO sessions (id, project, directory, started_at, ended_at, summary)
-		VALUES (?, ?, ?, ?, ?, ?)`
+	const q = `INSERT INTO sessions (id, project, directory, started_at, ended_at)
+		VALUES (?, ?, ?, ?, ?)`
 	_, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		s.ID, s.Project, s.Directory, formatTime(s.StartedAt),
-		endedAtValue(s), nullString(s.Summary),
+		endedAtValue(s),
 	)
 	if err != nil {
 		return fmt.Errorf("sqlite: crear sesión: %w", err)
@@ -36,10 +37,10 @@ func (r *SessionRepo) Create(ctx context.Context, s domain.Session) error {
 	return nil
 }
 
-// End cierra una sesión y le adjunta un resumen. El instante de cierre lo pone la base de datos.
-func (r *SessionRepo) End(ctx context.Context, id, summary string) error {
-	const q = `UPDATE sessions SET ended_at = datetime('now'), summary = ? WHERE id = ?`
-	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, nullString(summary), id); err != nil {
+// End cierra una sesión. El instante de cierre lo pone la base de datos.
+func (r *SessionRepo) End(ctx context.Context, id string) error {
+	const q = `UPDATE sessions SET ended_at = datetime('now') WHERE id = ?`
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, id); err != nil {
 		return fmt.Errorf("sqlite: cerrar sesión: %w", err)
 	}
 	return nil
@@ -47,7 +48,7 @@ func (r *SessionRepo) End(ctx context.Context, id, summary string) error {
 
 // Get recupera una sesión por id; (nil, nil) si no existe.
 func (r *SessionRepo) Get(ctx context.Context, id string) (*domain.Session, error) {
-	const q = `SELECT id, project, directory, started_at, ended_at, ifnull(summary, '')
+	const q = `SELECT id, project, directory, started_at, ended_at
 		FROM sessions WHERE id = ?`
 	s, err := scanSession(execFromCtx(ctx, r.db).QueryRowContext(ctx, q, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -61,7 +62,7 @@ func (r *SessionRepo) Get(ctx context.Context, id string) (*domain.Session, erro
 
 // Recent lista las sesiones más recientes de un proyecto (por inicio descendente).
 func (r *SessionRepo) Recent(ctx context.Context, project string, limit int) ([]domain.Session, error) {
-	query := `SELECT id, project, directory, started_at, ended_at, ifnull(summary, '')
+	query := `SELECT id, project, directory, started_at, ended_at
 		FROM sessions`
 	args := []any{}
 	if project != "" {
@@ -125,7 +126,7 @@ func scanSession(sc rowScanner) (domain.Session, error) {
 		started string
 		ended   sql.NullString
 	)
-	if err := sc.Scan(&s.ID, &s.Project, &s.Directory, &started, &ended, &s.Summary); err != nil {
+	if err := sc.Scan(&s.ID, &s.Project, &s.Directory, &started, &ended); err != nil {
 		return domain.Session{}, err
 	}
 	var err error

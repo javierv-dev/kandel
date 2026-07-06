@@ -37,15 +37,12 @@ func TestSessionCreateGetAndEnd(t *testing.T) {
 		t.Errorf("started_at no coincide: %v", got.StartedAt)
 	}
 
-	if err := repo.End(ctx, "s1", "resumen final"); err != nil {
+	if err := repo.End(ctx, "s1"); err != nil {
 		t.Fatalf("End: %v", err)
 	}
 	got, _ = repo.Get(ctx, "s1")
 	if got.IsOpen() {
 		t.Error("tras End la sesión debe estar cerrada")
-	}
-	if got.Summary != "resumen final" {
-		t.Errorf("summary no coincide: %q", got.Summary)
 	}
 }
 
@@ -88,7 +85,7 @@ func TestSessionMostRecentActive(t *testing.T) {
 	}
 
 	// Tras cerrar la más reciente, la activa pasa a ser la otra.
-	if err := repo.End(ctx, "new", ""); err != nil {
+	if err := repo.End(ctx, "new"); err != nil {
 		t.Fatalf("End: %v", err)
 	}
 	id, ok, _ = repo.MostRecentActive(ctx, "proj")

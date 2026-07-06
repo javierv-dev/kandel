@@ -9,9 +9,9 @@ Tienes herramientas de memoria kandel (servidor MCP: kandel). Este protocolo es 
 ### LAS TOOLS ESTÁN DIFERIDAS — DEBES cargarlas con ToolSearch antes de llamar cualquier tool mem_*
 Los esquemas de las tools mem_* NO se cargan por defecto: llamar una sin cargarla falla. Carga el
 conjunto principal con UN SOLO ToolSearch (hazlo la primera vez que la memoria sea relevante en la sesión):
-  ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context,mcp__kandel__mem_session_summary,mcp__kandel__mem_get,mcp__kandel__mem_save_prompt
+  ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context,mcp__kandel__mem_get,mcp__kandel__mem_save_prompt
 
-Otras tools (cárgalas con ToolSearch cuando las necesites): mem_update, mem_session_start, mem_session_end, mem_capture_passive, mem_pending, mem_compare, mem_judge, mem_delete (lógico/reversible), mem_restore
+Otras tools (cárgalas con ToolSearch cuando las necesites): mem_update, mem_session_start, mem_capture_passive, mem_pending, mem_compare, mem_judge, mem_delete (lógico/reversible), mem_restore
 
 ### GUARDADO PROACTIVO — no esperes a que el usuario lo pida
 Llama a ` + "`mem_save`" + ` INMEDIATAMENTE después de CUALQUIERA de estos:
@@ -39,8 +39,8 @@ Respeta las "normativas" (reglas vigentes). Revisa "Pendientes por resolver" y o
 "Recientes" es una ventana chica: usa mem_search para más contexto factual del tema. Si hay avisos en
 "Salud de memoria" (normativas sin verificar / demasiadas), coméntaselos al usuario.
 
-### CIERRE DE SESIÓN — antes de decir "listo":
-Llama a ` + "`mem_session_summary`" + ` con: Objetivo, Descubrimientos, Logrado, Próximos pasos, Archivos relevantes.`
+La sesión se cierra sola (hook determinista); no necesitas llamar a ninguna tool al terminar. Guarda
+lo que valga la pena con ` + "`mem_save`" + ` en el momento en que ocurre, no al final.`
 
 // firstMessageContext es el additionalContext que el hook UserPromptSubmit inyecta SOLO en el
 // primer mensaje de la sesión. Recordatorio CONDICIONAL (no una orden incondicional): el contexto

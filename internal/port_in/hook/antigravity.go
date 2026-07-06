@@ -46,7 +46,7 @@ func (in agInput) cwd() string {
 const agStartHeader = "## Memoria persistente kandel — contexto del proyecto\n" +
 	"El protocolo completo está en tus reglas globales (memoria kandel). Abajo van los metadatos de esta " +
 	"conversación (úsalos en mem_save) y el contexto reciente del proyecto. Guarda con mem_save de forma " +
-	"proactiva y, antes de terminar, llama a mem_session_summary."
+	"proactiva, en el momento en que ocurre lo que vale la pena recordar."
 
 // agPreInvocation maneja el hook PreInvocation de Antigravity. En la primera invocación de la sesión
 // (invocationNum==0) hace de arranque: corre los efectos de arranque (prepareStartup) e inyecta el

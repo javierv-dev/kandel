@@ -169,14 +169,6 @@ func TestHandleRestore(t *testing.T) {
 	}
 }
 
-func TestHandleSessionSummaryRequiresSummary(t *testing.T) {
-	svc := Services{Session: &fakeSession{}}
-	res, _ := handleSessionEnd(svc, true)(context.Background(), callWith(map[string]any{"id": "s1"}))
-	if !res.IsError {
-		t.Error("mem_session_summary sin summary debe devolver error de tool")
-	}
-}
-
 func TestHandleSavePrompt(t *testing.T) {
 	pr := &fakePrompt{}
 	svc := Services{Prompt: pr, DefaultProject: "kandel"}
@@ -382,18 +374,10 @@ func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error)
 	return domain.Memory{ID: id}, nil
 }
 
-type fakeSession struct {
-	endedID string
-	summary string
-}
+type fakeSession struct{}
 
 func (f *fakeSession) Start(_ context.Context, in service.StartInput) (domain.Session, error) {
 	return domain.Session{ID: in.ID, Project: in.Project}, nil
-}
-func (f *fakeSession) End(_ context.Context, id, summary string) error {
-	f.endedID = id
-	f.summary = summary
-	return nil
 }
 func (f *fakeSession) Get(_ context.Context, _ string) (*domain.Session, error) { return nil, nil }
 func (f *fakeSession) MostRecentActive(_ context.Context, _ string) (string, bool, error) {

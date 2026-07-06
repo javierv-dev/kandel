@@ -15,13 +15,13 @@ con `ToolSearch` antes de llamar cualquier tool `mem_*` (los hooks SessionStart/
 lo recuerdan). Carga el conjunto principal con UN SOLO ToolSearch la primera vez que la memoria sea relevante:
 
 ```
-ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context,mcp__kandel__mem_session_summary,mcp__kandel__mem_get,mcp__kandel__mem_save_prompt
+ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context,mcp__kandel__mem_get,mcp__kandel__mem_save_prompt
 ```
 
 Tools principales:
-- `mem_save`, `mem_search`, `mem_context`, `mem_session_summary`
+- `mem_save`, `mem_search`, `mem_context`
 - `mem_get`, `mem_update`
-- `mem_session_start`, `mem_session_end`, `mem_save_prompt`
+- `mem_session_start`, `mem_save_prompt`
 
 **Plan B**: si las tools no están disponibles inesperadamente, ejecuta `kandel install claude-code`
 otra vez y reinicia Claude Code. Repara la config del MCP, los hooks y la skill.
@@ -138,35 +138,17 @@ pide una acción distinta:
   normativas"), coméntaselos al usuario. Las normativas se obedecen igual; el aviso es por
   mantenimiento o por riesgo de contradicción aún no comprobada.
 
-## PROTOCOLO DE CIERRE DE SESIÓN (obligatorio)
+## CIERRE DE SESIÓN
 
-Antes de terminar una sesión o decir "listo" / "ya está", DEBES:
-1. Llamar a `mem_session_summary` con esta estructura:
-
-## Objetivo
-[En qué estábamos trabajando esta sesión]
-
-## Instrucciones
-[Preferencias o restricciones del usuario descubiertas — omite si no hay]
-
-## Descubrimientos
-- [Hallazgos técnicos, gotchas, aprendizajes no obvios]
-
-## Logrado
-- [Lo completado con sus detalles clave]
-
-## Próximos pasos
-- [Lo que falta por hacer — para la próxima sesión]
-
-## Archivos relevantes
-- ruta/al/archivo — [qué hace o qué cambió]
-
-Esto NO es opcional. Si lo omites, la próxima sesión empieza a ciegas.
+No hay ritual de cierre: la sesión se cierra sola por hook determinista (`Stop`). No llames a ninguna
+tool "al terminar". El conocimiento se preserva guardándolo con `mem_save` **en el momento** en que
+ocurre (una decisión, un bug resuelto, una convención, un descubrimiento), no en un resumen final.
 
 ## TRAS UNA COMPACTACIÓN
 
 Si ves un mensaje sobre compactación o reinicio de contexto:
-1. INMEDIATAMENTE llama a `mem_session_summary` con el contenido del resumen compactado — esto persiste lo que se hizo antes de la compactación
+1. INMEDIATAMENTE llama a `mem_save` con lo logrado antes de la compactación (type `discovery`, salvo
+   que sea una decisión/convención) — esto persiste, y deja **buscable**, lo hecho antes de compactar
 2. Luego llama a `mem_context` para recuperar cualquier contexto adicional de sesiones anteriores
 3. Solo ENTONCES continúa trabajando
 

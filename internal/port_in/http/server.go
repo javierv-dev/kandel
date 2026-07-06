@@ -25,7 +25,7 @@ type MemoryPort interface {
 // SessionPort es la cara de los casos de uso de sesión que la API consume.
 type SessionPort interface {
 	Start(ctx context.Context, in service.StartInput) (domain.Session, error)
-	End(ctx context.Context, id, summary string) error
+	End(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*domain.Session, error)
 }
 
