@@ -10,7 +10,7 @@ import (
 // Change es una fila del change-feed: el estado ACTUAL de una entidad lista para replicarse al hub.
 // A diferencia de SyncMutation (que es una entrada de cola con su Seq local), Change es lo que viaja
 // por la red: identidad + operación + payload + el árbitro de LWW (UpdatedAt). El hub no interpreta
-// el payload (es tonto de dominio); solo lo guarda keyed por Key y ordena con su server_seq.
+// el payload (no conoce el dominio); solo lo guarda keyed por Key y ordena con su server_seq.
 type Change struct {
 	Key       string        // sync_id: identidad estable de la entidad
 	Op        domain.SyncOp // upsert | delete (delete = tombstone)
