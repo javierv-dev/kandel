@@ -7,10 +7,10 @@ import (
 	"github.com/javierv-dev/kandel/internal/domain"
 )
 
-// SyncRepo gobierna la cola de mutaciones, el estado de chunks sincronizados y los leases.
-// Está aislado del resto de repos a propósito: solo lo toca service/sync. La regla de oro es
-// que encolar una mutación ocurre en la MISMA transacción que el cambio que la origina (la
-// transacción viaja en el context), para que nunca exista un dato sin su mutación.
+// SyncRepo gobierna la cola de mutaciones, el cursor del change-feed y los leases. Está aislado del
+// resto de repos a propósito: solo lo toca service/sync. La regla de oro es que encolar una mutación
+// ocurre en la MISMA transacción que el cambio que la origina (la transacción viaja en el context),
+// para que nunca exista un dato sin su mutación.
 type SyncRepo interface {
 	// EnqueueMutation añade una mutación a la cola. Si el context lleva una transacción abierta
 	// por la unidad de trabajo, se encola dentro de ella (atómico con el cambio que la origina).
@@ -21,10 +21,11 @@ type SyncRepo interface {
 	// Ack confirma como replicadas las mutaciones con los Seq indicados.
 	Ack(ctx context.Context, target string, seqs []int64) error
 
-	// RecordChunk marca un chunk como ya sincronizado con un destino (idempotencia de envío).
-	RecordChunk(ctx context.Context, target, chunkID string) error
-	// SyncedChunks devuelve el conjunto de chunks ya sincronizados con un destino.
-	SyncedChunks(ctx context.Context, target string) (map[string]bool, error)
+	// GetCursor devuelve el cursor del destino: el mayor server_seq del hub ya aplicado localmente.
+	// Un destino sin cursor devuelve 0 (arranque en frío: el Pull traerá el estado actual completo).
+	GetCursor(ctx context.Context, target string) (int64, error)
+	// SetCursor guarda el cursor del destino tras aplicar un Pull.
+	SetCursor(ctx context.Context, target string, cursor int64) error
 
 	// AcquireLease intenta tomar el lease de sincronización de un destino; false si está tomado.
 	AcquireLease(ctx context.Context, target, owner string, ttl time.Duration) (bool, error)

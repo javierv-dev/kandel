@@ -91,31 +91,28 @@ func (r *SyncRepo) Ack(ctx context.Context, target string, seqs []int64) error {
 	return nil
 }
 
-// RecordChunk marca un chunk como ya sincronizado con un destino (idempotente).
-func (r *SyncRepo) RecordChunk(ctx context.Context, target, chunkID string) error {
-	const q = `INSERT OR IGNORE INTO sync_chunks (target_key, chunk_id) VALUES (?, ?)`
-	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, target, chunkID); err != nil {
-		return fmt.Errorf("sqlite: registrar chunk: %w", err)
+// GetCursor devuelve el cursor del destino (mayor server_seq del hub ya aplicado); 0 si no hay fila.
+func (r *SyncRepo) GetCursor(ctx context.Context, target string) (int64, error) {
+	var cursor int64
+	err := execFromCtx(ctx, r.db).QueryRowContext(ctx,
+		`SELECT cursor FROM sync_cursor WHERE target = ?`, target).Scan(&cursor)
+	if err == sql.ErrNoRows {
+		return 0, nil
 	}
-	return nil
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: leer cursor: %w", err)
+	}
+	return cursor, nil
 }
 
-// SyncedChunks devuelve el conjunto de chunks ya sincronizados con un destino.
-func (r *SyncRepo) SyncedChunks(ctx context.Context, target string) (map[string]bool, error) {
-	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, `SELECT chunk_id FROM sync_chunks WHERE target_key = ?`, target)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: leer chunks: %w", err)
+// SetCursor guarda (upsert) el cursor del destino tras aplicar un Pull.
+func (r *SyncRepo) SetCursor(ctx context.Context, target string, cursor int64) error {
+	const q = `INSERT INTO sync_cursor (target, cursor) VALUES (?, ?)
+		ON CONFLICT (target) DO UPDATE SET cursor = excluded.cursor`
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q, target, cursor); err != nil {
+		return fmt.Errorf("sqlite: guardar cursor: %w", err)
 	}
-	defer rows.Close()
-	out := make(map[string]bool)
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out[id] = true
-	}
-	return out, rows.Err()
+	return nil
 }
 
 // AcquireLease intenta tomar el lease de un destino. Lo concede si está libre, vencido o ya es

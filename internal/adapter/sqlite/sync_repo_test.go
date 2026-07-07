@@ -108,27 +108,39 @@ func TestSyncEnqueueRollback(t *testing.T) {
 	}
 }
 
-func TestSyncChunks(t *testing.T) {
+func TestSyncCursor(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewSyncRepo(db)
 	ctx := context.Background()
 
-	if err := repo.RecordChunk(ctx, "remote", "chunk-a"); err != nil {
-		t.Fatalf("RecordChunk: %v", err)
-	}
-	// Idempotente: registrar dos veces no falla.
-	if err := repo.RecordChunk(ctx, "remote", "chunk-a"); err != nil {
-		t.Fatalf("RecordChunk repetido: %v", err)
-	}
-	_ = repo.RecordChunk(ctx, "remote", "chunk-b")
-	_ = repo.RecordChunk(ctx, "otro", "chunk-c")
-
-	got, err := repo.SyncedChunks(ctx, "remote")
+	// Un destino sin cursor arranca en 0 (arranque en frío).
+	got, err := repo.GetCursor(ctx, "remote")
 	if err != nil {
-		t.Fatalf("SyncedChunks: %v", err)
+		t.Fatalf("GetCursor inicial: %v", err)
 	}
-	if len(got) != 2 || !got["chunk-a"] || !got["chunk-b"] {
-		t.Errorf("chunks de 'remote' incorrectos: %+v", got)
+	if got != 0 {
+		t.Errorf("un destino nuevo debe tener cursor 0, fue %d", got)
+	}
+
+	// SetCursor guarda y GetCursor lo devuelve.
+	if err := repo.SetCursor(ctx, "remote", 42); err != nil {
+		t.Fatalf("SetCursor: %v", err)
+	}
+	if got, _ := repo.GetCursor(ctx, "remote"); got != 42 {
+		t.Errorf("cursor esperado 42, fue %d", got)
+	}
+
+	// SetCursor de nuevo sobreescribe (upsert, no inserta duplicado).
+	if err := repo.SetCursor(ctx, "remote", 100); err != nil {
+		t.Fatalf("SetCursor upsert: %v", err)
+	}
+	if got, _ := repo.GetCursor(ctx, "remote"); got != 100 {
+		t.Errorf("cursor esperado 100 tras upsert, fue %d", got)
+	}
+
+	// Los destinos son independientes.
+	if got, _ := repo.GetCursor(ctx, "otro"); got != 0 {
+		t.Errorf("otro destino debe seguir en 0, fue %d", got)
 	}
 }
 

@@ -57,9 +57,12 @@ var (
 	// Port es el puerto del daemon HTTP (mismo origen de verdad para hooks y servidor).
 	Port = Key{File: "port", Env: "KANDEL_PORT", Default: "8765",
 		Doc: "puerto del daemon HTTP"}
-	// SyncDir es el directorio de chunks de sync (relativo al cwd por defecto, para versionarlo con git).
-	SyncDir = Key{File: "sync_dir", Env: "KANDEL_SYNC_DIR", Default: ".kandel",
-		Doc: "directorio de chunks de sincronización"}
+	// SyncURL es la URL del hub de sincronización (change-feed). Vacío = sync deshabilitado.
+	SyncURL = Key{File: "sync_url", Env: "KANDEL_SYNC_URL", Default: "",
+		Doc: "URL del hub de sincronización (p. ej. http://localhost:8766); vacío = sync deshabilitado"}
+	// SyncToken es el token de auth y namespace del usuario en el hub. Vacío = sync deshabilitado.
+	SyncToken = Key{File: "sync_token", Env: "KANDEL_SYNC_TOKEN", Default: "",
+		Doc: "token de auth/namespace del hub; vacío = sync deshabilitado"}
 	// LogDir es el directorio de logs; vacío = ~/.kandel/logs.
 	LogDir = Key{File: "log_dir", Env: "KANDEL_LOG_DIR", Default: "",
 		Doc: "directorio de logs; vacío = ~/.kandel/logs"}
@@ -93,7 +96,7 @@ var (
 
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
-	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncDir, LogDir,
+	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncURL, SyncToken, LogDir,
 	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 

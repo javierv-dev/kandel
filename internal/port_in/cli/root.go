@@ -76,10 +76,11 @@ type ConflictUseCases interface {
 	RecordVerdict(ctx context.Context, sourceID, targetID int64, verdict domain.Verdict) (domain.MemoryRelation, error)
 }
 
-// SyncUseCases es la cara de la sincronización: exportar la cola e importar chunks ajenos.
+// SyncUseCases es la cara de la sincronización por change-feed contra el hub: subir lo local (Push)
+// y bajar lo ajeno (Pull).
 type SyncUseCases interface {
-	Export(ctx context.Context) (service.ExportResult, error)
-	Import(ctx context.Context) (service.ImportResult, error)
+	Push(ctx context.Context) (service.PushResult, error)
+	Pull(ctx context.Context) (service.PullResult, error)
 }
 
 // ContextUseCases arma el bloque de contexto del proyecto. La CLI no lo usa directamente; viaja

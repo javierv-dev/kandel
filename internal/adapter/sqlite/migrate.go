@@ -169,6 +169,27 @@ ALTER TABLE memory_vectors RENAME COLUMN vector TO vector_content;
 ALTER TABLE memory_vectors ADD COLUMN vector_title BLOB;
 `
 
+// schemaV4 añade el cursor del sync por change-feed (modelo servidor, ver PLAN-SYNC-SERVIDOR.md §4.4).
+// Cada máquina guarda un entero por destino (target): el mayor server_seq que ya aplicó del hub. Es la
+// pieza que sustituye al conjunto sync_chunks del modelo viejo (chunk+manifest). Additiva: la tabla
+// nace vacía y `cursor=0` es justamente el arranque en frío (baja el estado actual completo).
+const schemaV4 = `
+CREATE TABLE IF NOT EXISTS sync_cursor (
+	target TEXT PRIMARY KEY,
+	cursor INTEGER NOT NULL DEFAULT 0
+);
+`
+
+// schemaV5 elimina sync_chunks, la tabla de contabilidad del modelo viejo (chunk+manifest), ya
+// muerta tras pasar a change-feed (Fase 3). Es un DROP explícito y seguro, no una violación de la
+// regla additiva: esa regla protege DATOS DE USUARIO, y sync_chunks solo guardaba metadatos
+// regenerables (qué chunks se enviaron), sin memorias ni claves foráneas que la referencien. El plan
+// (§21.C) admite drops precisamente por migración explícita como esta. Preferimos esquema limpio a
+// dejar tablas huérfanas con nombres que confunden.
+const schemaV5 = `
+DROP TABLE IF EXISTS sync_chunks;
+`
+
 // migration es un paso de evolución del esquema, identificado por un número de versión
 // estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
 // de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
@@ -178,8 +199,10 @@ type migration struct {
 }
 
 // migrations es la lista ordenada de migraciones del esquema. REGLAS (§21.C del plan):
-//   - **Additivas, nunca destructivas:** añadir tablas/columnas, jamás DROP/rename directo
-//     (rename/drop => crear-copiar-swap en una migración explícita).
+//   - **Preservar los datos de usuario:** la regla protege memorias/sesiones/etc., nunca un DROP que
+//     pierda datos valiosos. Añadir tablas/columnas es lo normal; un rename es crear-copiar-swap.
+//     Un DROP solo es admisible sobre una tabla MUERTA sin datos valiosos (p. ej. contabilidad
+//     regenerable) y siempre por migración explícita (ver v5: elimina sync_chunks).
 //   - **Append-only:** solo se AÑADEN entradas al final, con version = anterior + 1. Nunca se
 //     edita una migración ya publicada: rompería las bases que ya la aplicaron.
 //   - La v1 es el esquema base (§21): todo idempotente (IF NOT EXISTS), seguro sobre una base
@@ -188,6 +211,8 @@ var migrations = []migration{
 	{version: 1, sql: schemaV1},
 	{version: 2, sql: schemaV2},
 	{version: 3, sql: schemaV3},
+	{version: 4, sql: schemaV4},
+	{version: 5, sql: schemaV5},
 }
 
 // migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base

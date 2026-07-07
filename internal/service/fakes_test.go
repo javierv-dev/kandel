@@ -35,11 +35,11 @@ func (f *fakeSync) EnqueueMutation(ctx context.Context, m domain.SyncMutation) e
 func (f *fakeSync) ListPending(context.Context, string, int64, int) ([]domain.SyncMutation, error) {
 	return nil, nil
 }
-func (f *fakeSync) Ack(context.Context, string, []int64) error        { return nil }
-func (f *fakeSync) RecordChunk(context.Context, string, string) error { return nil }
-func (f *fakeSync) SyncedChunks(context.Context, string) (map[string]bool, error) {
-	return map[string]bool{}, nil
+func (f *fakeSync) Ack(context.Context, string, []int64) error { return nil }
+func (f *fakeSync) GetCursor(context.Context, string) (int64, error) {
+	return 0, nil
 }
+func (f *fakeSync) SetCursor(context.Context, string, int64) error { return nil }
 func (f *fakeSync) AcquireLease(context.Context, string, string, time.Duration) (bool, error) {
 	return true, nil
 }

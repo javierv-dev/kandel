@@ -16,7 +16,7 @@ import (
 
 	"github.com/javierv-dev/kandel/internal/adapter/clock"
 	"github.com/javierv-dev/kandel/internal/adapter/embedding"
-	"github.com/javierv-dev/kandel/internal/adapter/git"
+	"github.com/javierv-dev/kandel/internal/adapter/httpsync"
 	"github.com/javierv-dev/kandel/internal/adapter/llm"
 	"github.com/javierv-dev/kandel/internal/adapter/release"
 	"github.com/javierv-dev/kandel/internal/adapter/sqlite"
@@ -107,7 +107,8 @@ func run(args []string) error {
 	embeddingService := service.NewEmbeddingService(memoryRepo, embedder, vectorIndex,
 		service.WithPostBackfill(detectionSweep(conflictService)),
 		service.WithTitleBackfill(titleVectorIndex))
-	syncService := service.NewSyncService(syncRepo, git.New(syncDir()), memoryRepo, uow, clk, "")
+	syncClient := httpsync.NewClient(config.Resolve(config.SyncURL))
+	syncService := service.NewSyncService(syncRepo, syncClient, memoryRepo, uow, config.Resolve(config.SyncToken))
 	contextService := service.NewContextService(memoryRepo, relationRepo,
 		service.WithNormativeThreshold(normativeThreshold()))
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
@@ -162,13 +163,6 @@ func databasePath() (string, error) {
 		return "", fmt.Errorf("no se pudo crear el directorio de datos %q: %w", dataDir, err)
 	}
 	return filepath.Join(dataDir, "kandel.db"), nil
-}
-
-// syncDir resuelve el directorio donde viven los chunks de sincronización. KANDEL_SYNC_DIR lo
-// sobreescribe; por defecto es ".kandel" relativo al directorio de trabajo (pensado para vivir
-// dentro del repositorio del proyecto y versionarse con git).
-func syncDir() string {
-	return config.Resolve(config.SyncDir)
 }
 
 // detectionSweep envuelve el barrido de detección de conflictos como el callback que dispara el

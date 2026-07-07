@@ -4,170 +4,191 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/javierv-dev/kandel/internal/chunkcodec"
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// exportBatchLimit acota cuántas mutaciones entran en un chunk de exportación.
-const exportBatchLimit = 500
+// pushBatchLimit acota cuántas mutaciones se drenan de la cola en un Push.
+const pushBatchLimit = 500
 
-// SyncService orquesta la sincronización local-first: la cola de mutaciones es la fuente de verdad
-// de lo que falta replicar; el Transport solo mueve chunks (a un directorio git hoy, a un servidor
-// mañana). Exportar drena la cola a un chunk; importar aplica los chunks ajenos de forma
-// idempotente (por sync_id), de modo que reimportar no duplica.
+// syncNamespaceMemory es el namespace del hub para las memorias. El transporte es genérico: otras
+// clases (skills, …) usarían otro namespace con el mismo cliente.
+const syncNamespaceMemory = "memory"
+
+// SyncService orquesta la sincronización local-first por change-feed contra el hub. La cola de
+// mutaciones (SyncRepo) es la fuente de verdad de lo que falta subir; el cursor recuerda hasta dónde
+// se ha bajado. Push manda el estado ACTUAL de las memorias cambiadas y el hub arbitra por LWW
+// (updated_at); Pull trae lo ajeno y lo aplica con el mismo guard LWW del lado cliente, de forma
+// idempotente por sync_id.
 type SyncService struct {
-	sync      ports.SyncRepo
-	transport ports.Transport
-	memories  ports.MemoryRepo
-	uow       ports.UnitOfWork
-	clock     ports.Clock
-	target    string
+	sync     ports.SyncRepo
+	client   ports.SyncClient
+	memories ports.MemoryRepo
+	uow      ports.UnitOfWork
+	target   string
 }
 
-// NewSyncService construye el servicio. target es la clave del destino de sincronización.
-func NewSyncService(sync ports.SyncRepo, transport ports.Transport, memories ports.MemoryRepo, uow ports.UnitOfWork, clock ports.Clock, target string) *SyncService {
+// NewSyncService construye el servicio. target es la clave del destino (a la vez token/namespace del
+// usuario en el hub); vacío usa el destino por defecto.
+func NewSyncService(sync ports.SyncRepo, client ports.SyncClient, memories ports.MemoryRepo, uow ports.UnitOfWork, target string) *SyncService {
 	if target == "" {
 		target = defaultSyncTarget
 	}
-	return &SyncService{sync: sync, transport: transport, memories: memories, uow: uow, clock: clock, target: target}
+	return &SyncService{sync: sync, client: client, memories: memories, uow: uow, target: target}
 }
 
-// ExportResult resume una exportación.
-type ExportResult struct {
-	ChunkID string // id del chunk escrito; vacío si no había nada que exportar
-	Count   int    // número de mutaciones incluidas
+// PushResult resume un Push.
+type PushResult struct {
+	Count int // número de filas (memorias) enviadas al hub
 }
 
-// Export drena las mutaciones pendientes del destino a un chunk nuevo, lo escribe en el transporte,
-// actualiza el manifiesto, lo marca como sincronizado y confirma (Ack) las mutaciones. Si no hay
-// pendientes, no escribe nada. Es seguro reejecutar: tras el Ack, las mismas mutaciones ya no
-// vuelven a salir.
-func (s *SyncService) Export(ctx context.Context) (ExportResult, error) {
-	pending, err := s.sync.ListPending(ctx, s.target, 0, exportBatchLimit)
+// Push drena las mutaciones pendientes, arma una fila por sync_id con el ESTADO ACTUAL de cada memoria
+// y la manda al hub. Tras un envío correcto confirma (Ack) toda la cola. Es seguro reejecutar: el hub
+// aplica LWW por updated_at, así que reenviar una fila igual o más vieja no hace daño.
+//
+// Solo se replican memorias (como en el modelo anterior). Las mutaciones de otras entidades
+// (sesiones, prompts) se drenan igual para no dejar la cola creciendo, pero no viajan: su sync se
+// abordaría en otro namespace más adelante.
+func (s *SyncService) Push(ctx context.Context) (PushResult, error) {
+	pending, err := s.sync.ListPending(ctx, s.target, 0, pushBatchLimit)
 	if err != nil {
-		return ExportResult{}, err
+		return PushResult{}, err
 	}
 	if len(pending) == 0 {
-		return ExportResult{}, nil
+		return PushResult{}, nil
 	}
 
-	data, chunkID, err := chunkcodec.Encode(pending)
-	if err != nil {
-		return ExportResult{}, err
-	}
-	entry := ports.ChunkEntry{ChunkID: chunkID, Count: len(pending), Size: int64(len(data))}
-	if err := s.transport.WriteChunk(chunkID, data, entry); err != nil {
-		return ExportResult{}, err
-	}
-
-	manifest, err := s.transport.ReadManifest()
-	if err != nil {
-		return ExportResult{}, err
-	}
-	if !manifestHas(manifest, chunkID) {
-		manifest.Chunks = append(manifest.Chunks, entry)
-		if err := s.transport.WriteManifest(manifest); err != nil {
-			return ExportResult{}, err
-		}
-	}
-
-	if err := s.sync.RecordChunk(ctx, s.target, chunkID); err != nil {
-		return ExportResult{}, err
-	}
+	// Colapsa la cola a una entrada por sync_id (la última gana), en orden de primera aparición.
+	var order []string
+	seen := map[string]bool{}
+	project := map[string]string{}
+	occurred := map[string]domain.SyncMutation{}
 	seqs := make([]int64, 0, len(pending))
 	for _, m := range pending {
 		seqs = append(seqs, m.Seq)
-	}
-	if err := s.sync.Ack(ctx, s.target, seqs); err != nil {
-		return ExportResult{}, err
-	}
-	return ExportResult{ChunkID: chunkID, Count: len(pending)}, nil
-}
-
-// ImportResult resume una importación.
-type ImportResult struct {
-	ChunksImported   int
-	MutationsApplied int
-}
-
-// Import lee el manifiesto del transporte y aplica los chunks que aún no están registrados como
-// sincronizados, en orden. Cada chunk se verifica por su id antes de aplicarse. Las mutaciones se
-// aplican de forma idempotente por sync_id. Reimportar no hace nada (los chunks ya registrados se
-// saltan).
-func (s *SyncService) Import(ctx context.Context) (ImportResult, error) {
-	manifest, err := s.transport.ReadManifest()
-	if err != nil {
-		return ImportResult{}, err
-	}
-	synced, err := s.sync.SyncedChunks(ctx, s.target)
-	if err != nil {
-		return ImportResult{}, err
-	}
-
-	var result ImportResult
-	for _, entry := range manifest.Chunks {
-		if synced[entry.ChunkID] {
+		if m.Entity != domain.SyncEntityMemory {
 			continue
 		}
-		data, err := s.transport.ReadChunk(entry.ChunkID)
+		if !seen[m.EntityKey] {
+			seen[m.EntityKey] = true
+			order = append(order, m.EntityKey)
+		}
+		project[m.EntityKey] = m.Project
+		occurred[m.EntityKey] = m
+	}
+
+	changes := make([]ports.Change, 0, len(order))
+	for _, key := range order {
+		cur, err := s.memories.GetBySyncID(ctx, key)
 		if err != nil {
-			return result, err
+			return PushResult{}, err
 		}
-		if err := chunkcodec.VerifyID(data, entry.ChunkID); err != nil {
-			return result, err
+		if cur == nil {
+			// La memoria ya no está viva (borrada o nunca existió): manda un tombstone. El updated_at
+			// del borrado es el de la mutación que lo originó, para que el LWW lo arbitre bien.
+			changes = append(changes, ports.Change{
+				Key:       key,
+				Op:        domain.SyncOpDelete,
+				Payload:   []byte("{}"),
+				UpdatedAt: occurred[key].OccurredAt,
+				Project:   project[key],
+			})
+			continue
 		}
-		mutations, err := chunkcodec.Decode(data)
+		payload, err := json.Marshal(cur)
 		if err != nil {
-			return result, err
+			return PushResult{}, err
 		}
-		// Cada chunk se aplica en una transacción: o entra entero o no entra.
-		err = s.uow.Do(ctx, func(ctx context.Context) error {
-			for _, m := range mutations {
-				applied, err := s.applyMutation(ctx, m)
-				if err != nil {
-					return err
-				}
-				if applied {
-					result.MutationsApplied++
-				}
-			}
-			return s.sync.RecordChunk(ctx, s.target, entry.ChunkID)
+		changes = append(changes, ports.Change{
+			Key:       key,
+			Op:        domain.SyncOpUpsert,
+			Payload:   payload,
+			UpdatedAt: cur.UpdatedAt,
+			Project:   cur.Project,
 		})
-		if err != nil {
-			return result, err
+	}
+
+	if err := s.client.Push(ctx, syncNamespaceMemory, s.target, changes); err != nil {
+		return PushResult{}, err
+	}
+	if err := s.sync.Ack(ctx, s.target, seqs); err != nil {
+		return PushResult{}, err
+	}
+	return PushResult{Count: len(changes)}, nil
+}
+
+// PullResult resume un Pull.
+type PullResult struct {
+	Applied   int   // número de filas aplicadas localmente
+	NewCursor int64 // cursor tras el Pull
+}
+
+// Pull pide al hub las filas con server_seq mayor al cursor local y las aplica de forma idempotente
+// por sync_id, con guard LWW (solo pisa si el entrante es más nuevo). El apply y el avance del cursor
+// van en una sola transacción: o entra el lote entero y el cursor avanza, o no cambia nada.
+func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
+	cursor, err := s.sync.GetCursor(ctx, s.target)
+	if err != nil {
+		return PullResult{}, err
+	}
+	changes, newCursor, err := s.client.Pull(ctx, syncNamespaceMemory, s.target, cursor)
+	if err != nil {
+		return PullResult{}, err
+	}
+
+	result := PullResult{NewCursor: newCursor}
+	err = s.uow.Do(ctx, func(ctx context.Context) error {
+		for _, ch := range changes {
+			applied, err := s.applyChange(ctx, ch)
+			if err != nil {
+				return err
+			}
+			if applied {
+				result.Applied++
+			}
 		}
-		result.ChunksImported++
+		return s.sync.SetCursor(ctx, s.target, newCursor)
+	})
+	if err != nil {
+		return PullResult{}, err
 	}
 	return result, nil
 }
 
-// applyMutation aplica una mutación al estado local. Solo trata memorias en este slice (la entidad
-// central); las demás entidades se ignoran sin error (su importación se añade más adelante).
-// Devuelve true si aplicó algo.
-func (s *SyncService) applyMutation(ctx context.Context, m domain.SyncMutation) (bool, error) {
-	if m.Entity != domain.SyncEntityMemory {
-		return false, nil
-	}
-	existing, err := s.memories.GetBySyncID(ctx, m.EntityKey)
+// applyChange aplica una fila entrante al estado local con guard LWW. Devuelve true si aplicó algo.
+// Solo trata memorias (las demás clases se ignoran sin error). El apply esquiva MemoryService.Save a
+// propósito (import atómico, sin embeber ni juzgar en el camino): el backfill recalcula el vector y el
+// barrido de conflictos corre después. Por eso, para tipos normativo/factual, fuerza
+// ConflictChecked=false al importar, así el barrido del destino re-evalúa la memoria importada contra
+// las suyas (fix §6.4 del plan).
+func (s *SyncService) applyChange(ctx context.Context, ch ports.Change) (bool, error) {
+	existing, err := s.memories.GetBySyncID(ctx, ch.Key)
 	if err != nil {
 		return false, err
 	}
-	if m.Op == domain.SyncOpDelete {
+
+	if ch.Op == domain.SyncOpDelete {
 		if existing == nil {
 			return false, nil // ya no está: idempotente
+		}
+		if !existing.UpdatedAt.Before(ch.UpdatedAt) {
+			return false, nil // guard LWW: lo local es igual o más nuevo → no se borra
 		}
 		return true, s.memories.SoftDelete(ctx, existing.ID)
 	}
 
 	var incoming domain.Memory
-	if err := json.Unmarshal(m.Payload, &incoming); err != nil {
+	if err := json.Unmarshal(ch.Payload, &incoming); err != nil {
 		return false, err
 	}
-	incoming.SyncID = m.EntityKey
+	incoming.SyncID = ch.Key
+	forceRecheck(&incoming)
+
 	if existing != nil {
-		// Conserva el id local; el resto del estado se reemplaza con el entrante.
-		incoming.ID = existing.ID
+		if !incoming.UpdatedAt.After(existing.UpdatedAt) {
+			return false, nil // guard LWW: lo local es igual o más nuevo → no se pisa
+		}
+		incoming.ID = existing.ID // conserva el id local; el resto se reemplaza con el entrante
 		_, err := s.memories.Update(ctx, existing.ID, incoming)
 		return true, err
 	}
@@ -177,12 +198,11 @@ func (s *SyncService) applyMutation(ctx context.Context, m domain.SyncMutation) 
 	return true, err
 }
 
-// manifestHas indica si el manifiesto ya contiene un chunk con ese id.
-func manifestHas(m *ports.Manifest, chunkID string) bool {
-	for _, e := range m.Chunks {
-		if e.ChunkID == chunkID {
-			return true
-		}
+// forceRecheck marca la memoria importada como no-verificada para que el barrido de conflictos del
+// destino la vuelva a evaluar. Solo aplica a tipos normativo/factual (los que participan en la
+// detección); el resto no la necesita.
+func forceRecheck(m *domain.Memory) {
+	if m.Type.IsNormative() || m.Type.IsFactual() {
+		m.ConflictChecked = false
 	}
-	return false
 }

@@ -127,19 +127,19 @@ func (f *fakeConflict) RecordVerdict(_ context.Context, _, _ int64, _ domain.Ver
 
 // fakeSync registra las llamadas de sincronización.
 type fakeSync struct {
-	exportResult service.ExportResult
-	importResult service.ImportResult
-	exported     bool
-	imported     bool
+	pushResult service.PushResult
+	pullResult service.PullResult
+	pushed     bool
+	pulled     bool
 }
 
-func (f *fakeSync) Export(context.Context) (service.ExportResult, error) {
-	f.exported = true
-	return f.exportResult, nil
+func (f *fakeSync) Push(context.Context) (service.PushResult, error) {
+	f.pushed = true
+	return f.pushResult, nil
 }
-func (f *fakeSync) Import(context.Context) (service.ImportResult, error) {
-	f.imported = true
-	return f.importResult, nil
+func (f *fakeSync) Pull(context.Context) (service.PullResult, error) {
+	f.pulled = true
+	return f.pullResult, nil
 }
 
 // fakeSeed registra las llamadas del seed para comprobar el flujo del comando.
@@ -277,30 +277,18 @@ func TestDoctorWarningDoesNotFail(t *testing.T) {
 	}
 }
 
-func TestSyncExportByDefault(t *testing.T) {
+func TestSyncPushAndPull(t *testing.T) {
 	app, _, _, out, _ := newTestApp()
-	sync := &fakeSync{exportResult: service.ExportResult{ChunkID: "abc", Count: 2}}
+	sync := &fakeSync{pushResult: service.PushResult{Count: 2}, pullResult: service.PullResult{Applied: 3}}
 	app.Sync = sync
 	if err := Dispatch(context.Background(), []string{"sync"}, app); err != nil {
 		t.Fatalf("sync devolvió error: %v", err)
 	}
-	if !sync.exported || sync.imported {
-		t.Error("sync sin flags debe exportar, no importar")
+	if !sync.pushed || !sync.pulled {
+		t.Error("sync debe hacer push y pull")
 	}
-	if !strings.Contains(out.String(), "abc") {
-		t.Errorf("debe informar el chunk exportado: %q", out.String())
-	}
-}
-
-func TestSyncImportFlag(t *testing.T) {
-	app, _, _, _, _ := newTestApp()
-	sync := &fakeSync{importResult: service.ImportResult{ChunksImported: 1, MutationsApplied: 3}}
-	app.Sync = sync
-	if err := Dispatch(context.Background(), []string{"sync", "--import"}, app); err != nil {
-		t.Fatalf("sync --import devolvió error: %v", err)
-	}
-	if !sync.imported || sync.exported {
-		t.Error("sync --import debe importar, no exportar")
+	if !strings.Contains(out.String(), "2 subida") || !strings.Contains(out.String(), "3 bajada") {
+		t.Errorf("debe informar subidas y bajadas: %q", out.String())
 	}
 }
 
