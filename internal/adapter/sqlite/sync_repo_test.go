@@ -144,6 +144,57 @@ func TestSyncCursor(t *testing.T) {
 	}
 }
 
+func TestSyncConflicts(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewSyncRepo(db)
+	ctx := context.Background()
+
+	c := domain.SyncConflict{
+		SyncID: "j1", Project: "proj", IncomingOp: domain.SyncOpUpsert,
+		Incoming: []byte(`{"title":"remota"}`), IncomingAt: baseTime,
+	}
+	if err := repo.RecordConflict(ctx, c); err != nil {
+		t.Fatalf("RecordConflict: %v", err)
+	}
+	// Upsert por sync_id: registrar otra vez la misma key reemplaza, no duplica.
+	c2 := c
+	c2.Incoming = []byte(`{"title":"remota-v2"}`)
+	if err := repo.RecordConflict(ctx, c2); err != nil {
+		t.Fatalf("RecordConflict upsert: %v", err)
+	}
+	repo.RecordConflict(ctx, domain.SyncConflict{SyncID: "m2", Project: "otro", IncomingOp: domain.SyncOpDelete, Incoming: []byte(`{}`), IncomingAt: baseTime})
+
+	if n, _ := repo.CountConflicts(ctx, ""); n != 2 {
+		t.Errorf("deben quedar 2 conflictos, hay %d", n)
+	}
+	if n, _ := repo.CountConflicts(ctx, "proj"); n != 1 {
+		t.Errorf("el filtro por proyecto debe dar 1, dio %d", n)
+	}
+
+	got, err := repo.GetConflict(ctx, "j1")
+	if err != nil {
+		t.Fatalf("GetConflict: %v", err)
+	}
+	if got == nil || string(got.Incoming) != `{"title":"remota-v2"}` || got.IncomingOp != domain.SyncOpUpsert {
+		t.Errorf("el conflicto debe reflejar el upsert más nuevo: %+v", got)
+	}
+
+	list, _ := repo.ListConflicts(ctx, "proj")
+	if len(list) != 1 || list[0].SyncID != "j1" {
+		t.Errorf("ListConflicts(proj) inesperado: %+v", list)
+	}
+
+	if err := repo.DeleteConflict(ctx, "j1"); err != nil {
+		t.Fatalf("DeleteConflict: %v", err)
+	}
+	if got, _ := repo.GetConflict(ctx, "j1"); got != nil {
+		t.Errorf("el conflicto borrado no debe seguir: %+v", got)
+	}
+	if n, _ := repo.CountConflicts(ctx, ""); n != 1 {
+		t.Errorf("tras borrar debe quedar 1, hay %d", n)
+	}
+}
+
 func TestSyncLease(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewSyncRepo(db)

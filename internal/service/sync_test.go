@@ -10,15 +10,21 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// queueSync es un SyncRepo en memoria centrado en la cola y el cursor.
+// queueSync es un SyncRepo en memoria centrado en la cola, el cursor y la bandeja de conflictos.
 type queueSync struct {
-	pending []domain.SyncMutation
-	acked   map[int64]bool
-	cursors map[string]int64
+	pending   []domain.SyncMutation
+	acked     map[int64]bool
+	cursors   map[string]int64
+	conflicts map[string]domain.SyncConflict
 }
 
 func newQueueSync(pending ...domain.SyncMutation) *queueSync {
-	return &queueSync{pending: pending, acked: map[int64]bool{}, cursors: map[string]int64{}}
+	return &queueSync{
+		pending:   pending,
+		acked:     map[int64]bool{},
+		cursors:   map[string]int64{},
+		conflicts: map[string]domain.SyncConflict{},
+	}
 }
 
 func (q *queueSync) EnqueueMutation(context.Context, domain.SyncMutation) error { return nil }
@@ -43,6 +49,39 @@ func (q *queueSync) GetCursor(_ context.Context, target string) (int64, error) {
 func (q *queueSync) SetCursor(_ context.Context, target string, cursor int64) error {
 	q.cursors[target] = cursor
 	return nil
+}
+func (q *queueSync) RecordConflict(_ context.Context, c domain.SyncConflict) error {
+	q.conflicts[c.SyncID] = c
+	return nil
+}
+func (q *queueSync) ListConflicts(_ context.Context, project string) ([]domain.SyncConflict, error) {
+	var out []domain.SyncConflict
+	for _, c := range q.conflicts {
+		if project == "" || c.Project == project {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+func (q *queueSync) GetConflict(_ context.Context, syncID string) (*domain.SyncConflict, error) {
+	c, ok := q.conflicts[syncID]
+	if !ok {
+		return nil, nil
+	}
+	return &c, nil
+}
+func (q *queueSync) DeleteConflict(_ context.Context, syncID string) error {
+	delete(q.conflicts, syncID)
+	return nil
+}
+func (q *queueSync) CountConflicts(_ context.Context, project string) (int, error) {
+	n := 0
+	for _, c := range q.conflicts {
+		if project == "" || c.Project == project {
+			n++
+		}
+	}
+	return n, nil
 }
 func (q *queueSync) AcquireLease(context.Context, string, string, time.Duration) (bool, error) {
 	return true, nil
@@ -271,7 +310,91 @@ func TestPullDeleteTombstone(t *testing.T) {
 	}
 }
 
+func TestPullDetectsConcurrentEditAndDoesNotOverwrite(t *testing.T) {
+	ctx := context.Background()
+	obs := newFakeObs()
+	local := time.Unix(1700000600, 0).UTC()
+	obs.Add(ctx, domain.Memory{SyncID: "j1", Type: domain.TypeJournal, Scope: domain.ScopeProject, Title: "abierta", Content: "editando", Project: "proj", Resolution: domain.ResolutionOpen, UpdatedAt: local})
+
+	// Hay una mutación local PENDIENTE para j1 (la estoy editando y aún no subo).
+	q := newQueueSync(memMutation(1, "j1"))
+	// Llega la versión remota (otra máquina la cerró), más nueva.
+	remote := domain.Memory{SyncID: "j1", Type: domain.TypeJournal, Scope: domain.ScopeProject, Title: "cerrada", Content: "resuelta", Project: "proj", Resolution: domain.ResolutionResolved, UpdatedAt: local.Add(time.Hour)}
+	client := &fakeClient{pullChanges: []ports.Change{changeFor(remote)}, pullCursor: 3}
+
+	res, err := newSyncService(q, client, obs).Pull(ctx)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if res.Conflicts != 1 || res.Applied != 0 {
+		t.Fatalf("debe detectar 1 conflicto y no aplicar: %+v", res)
+	}
+	// NO se pisó lo local: la memoria sigue como la dejé.
+	if m, _ := obs.GetBySyncID(ctx, "j1"); m == nil || m.Title != "abierta" {
+		t.Errorf("no debe pisarse la edición local: %+v", m)
+	}
+	// La remota quedó en la bandeja de conflictos.
+	if len(q.conflicts) != 1 {
+		t.Errorf("la fila remota debe quedar en la bandeja de conflictos: %+v", q.conflicts)
+	}
+	// El cursor avanza igual (la fila no se pierde, está en la bandeja).
+	if got, _ := q.GetCursor(ctx, "remote"); got != 3 {
+		t.Errorf("el cursor debe avanzar a 3, fue %d", got)
+	}
+}
+
+func TestResolveConflictTakeRemote(t *testing.T) {
+	ctx := context.Background()
+	obs := newFakeObs()
+	local := time.Unix(1700000700, 0).UTC()
+	obs.Add(ctx, domain.Memory{SyncID: "j1", Type: domain.TypeJournal, Scope: domain.ScopeProject, Title: "local", Content: "c", UpdatedAt: local})
+
+	q := newQueueSync()
+	remote := domain.Memory{SyncID: "j1", Type: domain.TypeJournal, Scope: domain.ScopeProject, Title: "remota", Content: "c", UpdatedAt: local.Add(time.Hour)}
+	q.RecordConflict(ctx, domain.SyncConflict{SyncID: "j1", IncomingOp: domain.SyncOpUpsert, Incoming: mustJSON(remote), IncomingAt: remote.UpdatedAt})
+
+	svc := newSyncService(q, &fakeClient{}, obs)
+	if err := svc.ResolveConflict(ctx, "j1", true); err != nil {
+		t.Fatalf("ResolveConflict: %v", err)
+	}
+	if m, _ := obs.GetBySyncID(ctx, "j1"); m == nil || m.Title != "remota" {
+		t.Errorf("tomar la remota debe aplicar su contenido: %+v", m)
+	}
+	if len(q.conflicts) != 0 {
+		t.Error("el conflicto debe quedar resuelto (borrado de la bandeja)")
+	}
+}
+
+func TestResolveConflictKeepLocal(t *testing.T) {
+	ctx := context.Background()
+	obs := newFakeObs()
+	local := time.Unix(1700000800, 0).UTC()
+	obs.Add(ctx, domain.Memory{SyncID: "j1", Type: domain.TypeJournal, Scope: domain.ScopeProject, Title: "local", Content: "c", UpdatedAt: local})
+
+	q := newQueueSync()
+	remote := domain.Memory{SyncID: "j1", Type: domain.TypeJournal, Scope: domain.ScopeProject, Title: "remota", Content: "c", UpdatedAt: local.Add(time.Hour)}
+	q.RecordConflict(ctx, domain.SyncConflict{SyncID: "j1", IncomingOp: domain.SyncOpUpsert, Incoming: mustJSON(remote), IncomingAt: remote.UpdatedAt})
+
+	svc := newSyncService(q, &fakeClient{}, obs)
+	if err := svc.ResolveConflict(ctx, "j1", false); err != nil {
+		t.Fatalf("ResolveConflict: %v", err)
+	}
+	// Conservar la local: NO se pisa; la memoria sigue como estaba.
+	if m, _ := obs.GetBySyncID(ctx, "j1"); m == nil || m.Title != "local" {
+		t.Errorf("conservar la local no debe pisar: %+v", m)
+	}
+	if len(q.conflicts) != 0 {
+		t.Error("el conflicto debe quedar resuelto igualmente")
+	}
+}
+
+func mustJSON(m domain.Memory) []byte {
+	b, _ := json.Marshal(m)
+	return b
+}
+
 var (
-	_ ports.SyncRepo   = (*queueSync)(nil)
-	_ ports.SyncClient = (*fakeClient)(nil)
+	_ ports.SyncRepo           = (*queueSync)(nil)
+	_ ports.SyncClient         = (*fakeClient)(nil)
+	_ ports.SyncConflictReader = (*queueSync)(nil)
 )

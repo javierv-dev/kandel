@@ -40,6 +40,21 @@ func (o SyncOp) Valid() bool {
 	}
 }
 
+// SyncConflict registra una edición concurrente detectada al aplicar un Pull: llegó un cambio remoto
+// para una memoria que localmente tenía una mutación pendiente (sin subir). No se aplica a ciegas —no
+// se pisa el disco local— y queda aquí hasta que el usuario decide (conservar la local o tomar la
+// remota). Es la señal barata de §6.5 del plan de sync: pendiente local + cambio remoto en la misma
+// key = edición concurrente. Consumidor principal: la bitácora abierta (type=journal), un documento
+// vivo que se edita a mano.
+type SyncConflict struct {
+	SyncID     string    // identidad de la memoria en conflicto
+	Project    string    // proyecto de la fila entrante (para filtrar el aviso por proyecto)
+	IncomingOp SyncOp    // operación remota (upsert o delete)
+	Incoming   []byte    // payload remoto: para "tomar la remota" o mostrar el diff
+	IncomingAt time.Time // updated_at remoto
+	DetectedAt time.Time // cuándo se detectó el conflicto
+}
+
 // SyncMutation es una entrada de la cola de sincronización: el registro inmutable de un
 // cambio local listo para replicarse. La cola es la fuente de verdad de qué falta enviar a
 // cada destino (TargetKey); el orden lo fija Seq.

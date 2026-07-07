@@ -40,6 +40,17 @@ func (f *fakeSync) GetCursor(context.Context, string) (int64, error) {
 	return 0, nil
 }
 func (f *fakeSync) SetCursor(context.Context, string, int64) error { return nil }
+func (f *fakeSync) RecordConflict(context.Context, domain.SyncConflict) error {
+	return nil
+}
+func (f *fakeSync) ListConflicts(context.Context, string) ([]domain.SyncConflict, error) {
+	return nil, nil
+}
+func (f *fakeSync) GetConflict(context.Context, string) (*domain.SyncConflict, error) {
+	return nil, nil
+}
+func (f *fakeSync) DeleteConflict(context.Context, string) error        { return nil }
+func (f *fakeSync) CountConflicts(context.Context, string) (int, error) { return 0, nil }
 func (f *fakeSync) AcquireLease(context.Context, string, string, time.Duration) (bool, error) {
 	return true, nil
 }

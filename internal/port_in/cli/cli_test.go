@@ -127,10 +127,13 @@ func (f *fakeConflict) RecordVerdict(_ context.Context, _, _ int64, _ domain.Ver
 
 // fakeSync registra las llamadas de sincronización.
 type fakeSync struct {
-	pushResult service.PushResult
-	pullResult service.PullResult
-	pushed     bool
-	pulled     bool
+	pushResult         service.PushResult
+	pullResult         service.PullResult
+	conflicts          []domain.SyncConflict
+	pushed             bool
+	pulled             bool
+	resolvedID         string
+	resolvedTakeRemote bool
 }
 
 func (f *fakeSync) Push(context.Context) (service.PushResult, error) {
@@ -140,6 +143,14 @@ func (f *fakeSync) Push(context.Context) (service.PushResult, error) {
 func (f *fakeSync) Pull(context.Context) (service.PullResult, error) {
 	f.pulled = true
 	return f.pullResult, nil
+}
+func (f *fakeSync) ListConflicts(context.Context) ([]domain.SyncConflict, error) {
+	return f.conflicts, nil
+}
+func (f *fakeSync) ResolveConflict(_ context.Context, syncID string, takeRemote bool) error {
+	f.resolvedID = syncID
+	f.resolvedTakeRemote = takeRemote
+	return nil
 }
 
 // fakeSeed registra las llamadas del seed para comprobar el flujo del comando.
@@ -305,6 +316,48 @@ func TestSyncOnlyPush(t *testing.T) {
 	}
 	if !sync.pushed || sync.pulled {
 		t.Error("sync --push debe subir, no bajar")
+	}
+}
+
+func TestSyncConflictsList(t *testing.T) {
+	app, _, _, out, _ := newTestApp()
+	sync := &fakeSync{conflicts: []domain.SyncConflict{
+		{SyncID: "j1", Project: "proj", IncomingOp: domain.SyncOpUpsert, Incoming: []byte(`{"title":"cerrada"}`)},
+	}}
+	app.Sync = sync
+	if err := Dispatch(context.Background(), []string{"sync", "conflicts"}, app); err != nil {
+		t.Fatalf("sync conflicts devolvió error: %v", err)
+	}
+	if sync.pushed || sync.pulled {
+		t.Error("listar conflictos no debe tocar el hub")
+	}
+	s := out.String()
+	if !strings.Contains(s, "j1") || !strings.Contains(s, "cerrada") {
+		t.Errorf("debe listar el conflicto con su título remoto: %q", s)
+	}
+}
+
+func TestSyncConflictsResolveTake(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	sync := &fakeSync{}
+	app.Sync = sync
+	if err := Dispatch(context.Background(), []string{"sync", "conflicts", "--take", "j1"}, app); err != nil {
+		t.Fatalf("sync conflicts --take devolvió error: %v", err)
+	}
+	if sync.resolvedID != "j1" || !sync.resolvedTakeRemote {
+		t.Errorf("--take debe resolver j1 tomando la remota: id=%q take=%v", sync.resolvedID, sync.resolvedTakeRemote)
+	}
+}
+
+func TestSyncConflictsResolveKeep(t *testing.T) {
+	app, _, _, _, _ := newTestApp()
+	sync := &fakeSync{}
+	app.Sync = sync
+	if err := Dispatch(context.Background(), []string{"sync", "conflicts", "--keep", "j1"}, app); err != nil {
+		t.Fatalf("sync conflicts --keep devolvió error: %v", err)
+	}
+	if sync.resolvedID != "j1" || sync.resolvedTakeRemote {
+		t.Errorf("--keep debe resolver j1 conservando la local: id=%q take=%v", sync.resolvedID, sync.resolvedTakeRemote)
 	}
 }
 

@@ -115,6 +115,104 @@ func (r *SyncRepo) SetCursor(ctx context.Context, target string, cursor int64) e
 	return nil
 }
 
+// RecordConflict guarda (upsert por sync_id) un conflicto de edición concurrente.
+func (r *SyncRepo) RecordConflict(ctx context.Context, c domain.SyncConflict) error {
+	const q = `INSERT INTO sync_conflicts (sync_id, project, op, payload, incoming_at, detected_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (sync_id) DO UPDATE SET
+			project = excluded.project, op = excluded.op, payload = excluded.payload,
+			incoming_at = excluded.incoming_at, detected_at = excluded.detected_at`
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
+		c.SyncID, c.Project, string(c.IncomingOp), c.Incoming,
+		formatTime(c.IncomingAt), occurredAtOrNow(c.DetectedAt),
+	); err != nil {
+		return fmt.Errorf("sqlite: registrar conflicto: %w", err)
+	}
+	return nil
+}
+
+// ListConflicts devuelve los conflictos pendientes; project vacío devuelve los de todos los proyectos.
+func (r *SyncRepo) ListConflicts(ctx context.Context, project string) ([]domain.SyncConflict, error) {
+	q := `SELECT sync_id, project, op, payload, incoming_at, detected_at FROM sync_conflicts`
+	var args []any
+	if project != "" {
+		q += ` WHERE project = ?`
+		args = append(args, project)
+	}
+	q += ` ORDER BY detected_at ASC`
+	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: listar conflictos: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.SyncConflict
+	for rows.Next() {
+		c, err := scanConflict(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GetConflict devuelve el conflicto de una memoria, o nil si no hay.
+func (r *SyncRepo) GetConflict(ctx context.Context, syncID string) (*domain.SyncConflict, error) {
+	const q = `SELECT sync_id, project, op, payload, incoming_at, detected_at FROM sync_conflicts WHERE sync_id = ?`
+	c, err := scanConflict(execFromCtx(ctx, r.db).QueryRowContext(ctx, q, syncID))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: leer conflicto: %w", err)
+	}
+	return &c, nil
+}
+
+// DeleteConflict elimina el conflicto de una memoria (al resolverlo).
+func (r *SyncRepo) DeleteConflict(ctx context.Context, syncID string) error {
+	if _, err := execFromCtx(ctx, r.db).ExecContext(ctx, `DELETE FROM sync_conflicts WHERE sync_id = ?`, syncID); err != nil {
+		return fmt.Errorf("sqlite: borrar conflicto: %w", err)
+	}
+	return nil
+}
+
+// CountConflicts cuenta los conflictos pendientes de un proyecto (vacío = todos).
+func (r *SyncRepo) CountConflicts(ctx context.Context, project string) (int, error) {
+	q := `SELECT COUNT(*) FROM sync_conflicts`
+	var args []any
+	if project != "" {
+		q += ` WHERE project = ?`
+		args = append(args, project)
+	}
+	var n int
+	if err := execFromCtx(ctx, r.db).QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("sqlite: contar conflictos: %w", err)
+	}
+	return n, nil
+}
+
+// scanConflict escanea una fila de sync_conflicts al modelo de dominio.
+func scanConflict(sc rowScanner) (domain.SyncConflict, error) {
+	var (
+		c                      domain.SyncConflict
+		op                     string
+		incomingAt, detectedAt string
+	)
+	if err := sc.Scan(&c.SyncID, &c.Project, &op, &c.Incoming, &incomingAt, &detectedAt); err != nil {
+		return domain.SyncConflict{}, err
+	}
+	c.IncomingOp = domain.SyncOp(op)
+	var err error
+	if c.IncomingAt, err = parseTime(incomingAt); err != nil {
+		return domain.SyncConflict{}, err
+	}
+	if c.DetectedAt, err = parseTime(detectedAt); err != nil {
+		return domain.SyncConflict{}, err
+	}
+	return c, nil
+}
+
 // AcquireLease intenta tomar el lease de un destino. Lo concede si está libre, vencido o ya es
 // del mismo owner. La condición y el UPDATE van en una sola sentencia para ser atómicos.
 func (r *SyncRepo) AcquireLease(ctx context.Context, target, owner string, ttl time.Duration) (bool, error) {

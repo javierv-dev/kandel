@@ -190,6 +190,20 @@ const schemaV5 = `
 DROP TABLE IF EXISTS sync_chunks;
 `
 
+// schemaV6 añade la bandeja de conflictos de edición concurrente (§6.5 del plan de sync). Guarda la
+// fila remota que NO se aplicó porque había una mutación local pendiente para la misma memoria, hasta
+// que el usuario decida. Keyed por sync_id: una detección más nueva reemplaza a la anterior. Additiva.
+const schemaV6 = `
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+	sync_id     TEXT PRIMARY KEY,
+	project     TEXT NOT NULL DEFAULT '',
+	op          TEXT NOT NULL,
+	payload     BLOB NOT NULL,
+	incoming_at TEXT NOT NULL,
+	detected_at TEXT NOT NULL
+);
+`
+
 // migration es un paso de evolución del esquema, identificado por un número de versión
 // estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
 // de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
@@ -213,6 +227,7 @@ var migrations = []migration{
 	{version: 3, sql: schemaV3},
 	{version: 4, sql: schemaV4},
 	{version: 5, sql: schemaV5},
+	{version: 6, sql: schemaV6},
 }
 
 // migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base

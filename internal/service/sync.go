@@ -120,14 +120,24 @@ func (s *SyncService) Push(ctx context.Context) (PushResult, error) {
 // PullResult resume un Pull.
 type PullResult struct {
 	Applied   int   // número de filas aplicadas localmente
+	Conflicts int   // filas NO aplicadas por edición concurrente (quedan en la bandeja de conflictos)
 	NewCursor int64 // cursor tras el Pull
 }
 
 // Pull pide al hub las filas con server_seq mayor al cursor local y las aplica de forma idempotente
 // por sync_id, con guard LWW (solo pisa si el entrante es más nuevo). El apply y el avance del cursor
 // van en una sola transacción: o entra el lote entero y el cursor avanza, o no cambia nada.
+//
+// Aviso de edición concurrente (§6.5): si llega una fila para una memoria que localmente tiene una
+// mutación PENDIENTE (sin subir), no se aplica a ciegas —no se pisa el disco—; se guarda en la bandeja
+// de conflictos para que el usuario decida. El cursor avanza igual (la fila queda en la bandeja, no se
+// pierde).
 func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
 	cursor, err := s.sync.GetCursor(ctx, s.target)
+	if err != nil {
+		return PullResult{}, err
+	}
+	pendingKeys, err := s.pendingMemoryKeys(ctx)
 	if err != nil {
 		return PullResult{}, err
 	}
@@ -139,7 +149,19 @@ func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
 	result := PullResult{NewCursor: newCursor}
 	err = s.uow.Do(ctx, func(ctx context.Context) error {
 		for _, ch := range changes {
-			applied, err := s.applyChange(ctx, ch)
+			if pendingKeys[ch.Key] {
+				// Edición concurrente: pendiente local + cambio remoto en la misma memoria. No se pisa;
+				// se guarda para que el usuario resuelva.
+				if err := s.sync.RecordConflict(ctx, domain.SyncConflict{
+					SyncID: ch.Key, Project: ch.Project, IncomingOp: ch.Op,
+					Incoming: ch.Payload, IncomingAt: ch.UpdatedAt,
+				}); err != nil {
+					return err
+				}
+				result.Conflicts++
+				continue
+			}
+			applied, err := s.applyChange(ctx, ch, false)
 			if err != nil {
 				return err
 			}
@@ -155,13 +177,64 @@ func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
 	return result, nil
 }
 
+// pendingMemoryKeys devuelve el conjunto de sync_id de memorias con una mutación local sin subir. Es
+// la señal barata de edición concurrente: si un cambio remoto llega para una de estas keys, ambos
+// lados tocaron la misma memoria.
+func (s *SyncService) pendingMemoryKeys(ctx context.Context) (map[string]bool, error) {
+	pending, err := s.sync.ListPending(ctx, s.target, 0, pushBatchLimit)
+	if err != nil {
+		return nil, err
+	}
+	keys := make(map[string]bool)
+	for _, m := range pending {
+		if m.Entity == domain.SyncEntityMemory {
+			keys[m.EntityKey] = true
+		}
+	}
+	return keys, nil
+}
+
+// ListConflicts devuelve los conflictos de edición concurrente pendientes (todos los proyectos).
+func (s *SyncService) ListConflicts(ctx context.Context) ([]domain.SyncConflict, error) {
+	return s.sync.ListConflicts(ctx, "")
+}
+
+// ResolveConflict cierra un conflicto de edición concurrente. Con takeRemote aplica la fila remota
+// guardada (forzando, aunque su updated_at sea más viejo: es decisión explícita del usuario) y borra
+// el conflicto. Sin takeRemote conserva la versión local y solo descarta la remota de la bandeja.
+//
+// Límite honesto: al conservar la local, si su updated_at es más viejo que el del hub, el próximo Push
+// no la propagará (el hub arbitra por LWW). Localmente sí se conserva.
+func (s *SyncService) ResolveConflict(ctx context.Context, syncID string, takeRemote bool) error {
+	c, err := s.sync.GetConflict(ctx, syncID)
+	if err != nil {
+		return err
+	}
+	if c == nil {
+		return nil // ya resuelto o inexistente: idempotente
+	}
+	return s.uow.Do(ctx, func(ctx context.Context) error {
+		if takeRemote {
+			if _, err := s.applyChange(ctx, ports.Change{
+				Key: c.SyncID, Op: c.IncomingOp, Payload: c.Incoming, UpdatedAt: c.IncomingAt, Project: c.Project,
+			}, true); err != nil {
+				return err
+			}
+		}
+		return s.sync.DeleteConflict(ctx, syncID)
+	})
+}
+
 // applyChange aplica una fila entrante al estado local con guard LWW. Devuelve true si aplicó algo.
 // Solo trata memorias (las demás clases se ignoran sin error). El apply esquiva MemoryService.Save a
 // propósito (import atómico, sin embeber ni juzgar en el camino): el backfill recalcula el vector y el
 // barrido de conflictos corre después. Por eso, para tipos normativo/factual, fuerza
 // ConflictChecked=false al importar, así el barrido del destino re-evalúa la memoria importada contra
 // las suyas (fix §6.4 del plan).
-func (s *SyncService) applyChange(ctx context.Context, ch ports.Change) (bool, error) {
+//
+// force omite el guard LWW: lo usa la resolución de conflictos "tomar la remota", donde el usuario
+// decide aplicar la fila remota aunque su updated_at sea más viejo.
+func (s *SyncService) applyChange(ctx context.Context, ch ports.Change, force bool) (bool, error) {
 	existing, err := s.memories.GetBySyncID(ctx, ch.Key)
 	if err != nil {
 		return false, err
@@ -171,7 +244,7 @@ func (s *SyncService) applyChange(ctx context.Context, ch ports.Change) (bool, e
 		if existing == nil {
 			return false, nil // ya no está: idempotente
 		}
-		if !existing.UpdatedAt.Before(ch.UpdatedAt) {
+		if !force && !existing.UpdatedAt.Before(ch.UpdatedAt) {
 			return false, nil // guard LWW: lo local es igual o más nuevo → no se borra
 		}
 		return true, s.memories.SoftDelete(ctx, existing.ID)
@@ -185,7 +258,7 @@ func (s *SyncService) applyChange(ctx context.Context, ch ports.Change) (bool, e
 	forceRecheck(&incoming)
 
 	if existing != nil {
-		if !incoming.UpdatedAt.After(existing.UpdatedAt) {
+		if !force && !incoming.UpdatedAt.After(existing.UpdatedAt) {
 			return false, nil // guard LWW: lo local es igual o más nuevo → no se pisa
 		}
 		incoming.ID = existing.ID // conserva el id local; el resto se reemplaza con el entrante

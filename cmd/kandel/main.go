@@ -111,7 +111,8 @@ func run(args []string) error {
 	syncClient := httpsync.NewClient(config.Resolve(config.SyncURL))
 	syncService := service.NewSyncService(syncRepo, syncClient, memoryRepo, uow, config.Resolve(config.SyncToken))
 	contextService := service.NewContextService(memoryRepo, relationRepo,
-		service.WithNormativeThreshold(normativeThreshold()))
+		service.WithNormativeThreshold(normativeThreshold()),
+		service.WithSyncConflicts(syncRepo))
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
 	// El seed construye su generador bajo demanda: el agente y el modelo se resuelven en el comando
 	// (flags > entorno > config), no aquí, porque dependen de cómo se invoque.

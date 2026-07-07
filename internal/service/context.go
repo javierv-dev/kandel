@@ -33,7 +33,8 @@ const (
 type ContextService struct {
 	memories  ports.MemoryRepo
 	relations ports.RelationRepo
-	threshold int // umbral del aviso "demasiadas normativas"
+	conflicts ports.SyncConflictReader // opcional: avisa de ediciones concurrentes del sync (§6.5)
+	threshold int                      // umbral del aviso "demasiadas normativas"
 }
 
 // ContextOption configura un ContextService opcionalmente.
@@ -47,6 +48,12 @@ func WithNormativeThreshold(n int) ContextOption {
 			c.threshold = n
 		}
 	}
+}
+
+// WithSyncConflicts cablea el lector de conflictos de edición concurrente, para que la bandeja "Salud
+// de memoria" avise cuando hay ediciones sin resolver. Opcional: sin él, no se muestra ese aviso.
+func WithSyncConflicts(r ports.SyncConflictReader) ContextOption {
+	return func(c *ContextService) { c.conflicts = r }
 }
 
 // NewContextService construye el servicio con sus repos inyectados.
@@ -125,7 +132,16 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		openConflicts = 0
 	}
 
-	health := healthBanners(normatives, openConflicts, c.threshold)
+	// Ediciones concurrentes sin resolver del sync (§6.5). Opcional y tolerante: un fallo (o sin lector
+	// cableado) se degrada a 0, sin tumbar la inyección.
+	concurrent := 0
+	if c.conflicts != nil {
+		if n, err := c.conflicts.CountConflicts(ctx, project); err == nil {
+			concurrent = n
+		}
+	}
+
+	health := healthBanners(normatives, openConflicts, concurrent, c.threshold)
 
 	if len(normatives) == 0 && len(pendings) == 0 && len(factual) == 0 &&
 		len(journalOpen) == 0 && len(journalHistory) == 0 && len(health) == 0 {
@@ -201,13 +217,16 @@ func writeMemoryLine(b *strings.Builder, m domain.Memory) {
 // healthBanners deriva los avisos de la bandeja "Salud de memoria": conflictos reales sin resolver
 // (contado aparte, en openConflicts), normativas sin verificar contra conflictos (derivado de las ya
 // cargadas para la bandeja "Siempre") y aviso de mantenimiento cuando hay demasiadas (§20.D/§20.F).
-func healthBanners(normatives []domain.Memory, openConflicts, threshold int) []string {
+func healthBanners(normatives []domain.Memory, openConflicts, concurrent, threshold int) []string {
 	var out []string
 	unverified := 0
 	for _, m := range normatives {
 		if !m.ConflictChecked {
 			unverified++
 		}
+	}
+	if concurrent > 0 {
+		out = append(out, fmt.Sprintf("- ⚠️ %d memoria(s) con edición concurrente (se editó aquí y en otra máquina a la vez; NO se pisó nada). Revisa y decide con `kandel sync conflicts`", concurrent))
 	}
 	if openConflicts > 0 {
 		out = append(out, fmt.Sprintf("- ⚠️ %d conflicto(s) sin resolver entre normativas (contradicciones detectadas; revísalas y decide cuál prevalece)", openConflicts))

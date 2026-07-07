@@ -27,8 +27,27 @@ type SyncRepo interface {
 	// SetCursor guarda el cursor del destino tras aplicar un Pull.
 	SetCursor(ctx context.Context, target string, cursor int64) error
 
+	// RecordConflict guarda (upsert por sync_id) un conflicto de edición concurrente detectado en el
+	// Pull. Una detección más nueva reemplaza a la anterior de la misma memoria.
+	RecordConflict(ctx context.Context, c domain.SyncConflict) error
+	// ListConflicts devuelve los conflictos pendientes; project vacío devuelve los de todos los proyectos.
+	ListConflicts(ctx context.Context, project string) ([]domain.SyncConflict, error)
+	// GetConflict devuelve el conflicto de una memoria, o nil si no hay.
+	GetConflict(ctx context.Context, syncID string) (*domain.SyncConflict, error)
+	// DeleteConflict elimina el conflicto de una memoria (al resolverlo).
+	DeleteConflict(ctx context.Context, syncID string) error
+	// CountConflicts cuenta los conflictos pendientes de un proyecto (vacío = todos).
+	CountConflicts(ctx context.Context, project string) (int, error)
+
 	// AcquireLease intenta tomar el lease de sincronización de un destino; false si está tomado.
 	AcquireLease(ctx context.Context, target, owner string, ttl time.Duration) (bool, error)
 	// ReleaseLease libera el lease de un destino si lo posee owner.
 	ReleaseLease(ctx context.Context, target, owner string) error
+}
+
+// SyncConflictReader es la cara de solo-lectura de los conflictos de edición concurrente, para que el
+// ContextService pueda avisar en la bandeja "Salud de memoria" sin depender de todo el SyncRepo.
+type SyncConflictReader interface {
+	// CountConflicts cuenta los conflictos pendientes de un proyecto (vacío = todos).
+	CountConflicts(ctx context.Context, project string) (int, error)
 }

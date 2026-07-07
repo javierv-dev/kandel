@@ -77,11 +77,13 @@ type ConflictUseCases interface {
 	RecordVerdict(ctx context.Context, sourceID, targetID int64, verdict domain.Verdict) (domain.MemoryRelation, error)
 }
 
-// SyncUseCases es la cara de la sincronización por change-feed contra el hub: subir lo local (Push)
-// y bajar lo ajeno (Pull).
+// SyncUseCases es la cara de la sincronización por change-feed contra el hub: subir lo local (Push),
+// bajar lo ajeno (Pull) y gestionar los conflictos de edición concurrente (§6.5).
 type SyncUseCases interface {
 	Push(ctx context.Context) (service.PushResult, error)
 	Pull(ctx context.Context) (service.PullResult, error)
+	ListConflicts(ctx context.Context) ([]domain.SyncConflict, error)
+	ResolveConflict(ctx context.Context, syncID string, takeRemote bool) error
 }
 
 // ContextUseCases arma el bloque de contexto del proyecto. La CLI no lo usa directamente; viaja
