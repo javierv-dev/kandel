@@ -63,6 +63,10 @@ var (
 	// SyncToken es el token de auth y namespace del usuario en el hub. Vacío = sync deshabilitado.
 	SyncToken = Key{File: "sync_token", Env: "KANDEL_SYNC_TOKEN", Default: "",
 		Doc: "token de auth/namespace del hub; vacío = sync deshabilitado"}
+	// SyncHubAddr es la dirección donde escucha el hub (solo la máquina que lo hospeda: `serve
+	// --sync-hub`). Distinta del daemon (Port, 8765) para poder correr ambos en la misma máquina.
+	SyncHubAddr = Key{File: "sync_hub_addr", Env: "KANDEL_SYNC_HUB_ADDR", Default: ":8766",
+		Doc: "dirección de escucha del hub de sync (host:puerto); solo para `serve --sync-hub`"}
 	// LogDir es el directorio de logs; vacío = ~/.kandel/logs.
 	LogDir = Key{File: "log_dir", Env: "KANDEL_LOG_DIR", Default: "",
 		Doc: "directorio de logs; vacío = ~/.kandel/logs"}
@@ -96,7 +100,7 @@ var (
 
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
-	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncURL, SyncToken, LogDir,
+	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncURL, SyncToken, SyncHubAddr, LogDir,
 	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 

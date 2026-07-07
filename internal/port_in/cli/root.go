@@ -16,6 +16,7 @@ import (
 
 	"github.com/javierv-dev/kandel/internal/diagnostic"
 	"github.com/javierv-dev/kandel/internal/domain"
+	"github.com/javierv-dev/kandel/internal/hub"
 	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/service"
 )
@@ -133,6 +134,11 @@ type App struct {
 	// Update consulta si hay una versión más nueva publicada (§21 Eje 6). Opcional: si es nil, el
 	// comando version no añade la nota de actualización.
 	Update ports.ReleaseChecker
+
+	// OpenHub abre el almacén del hub de sincronización bajo demanda (solo lo usa `serve
+	// --sync-hub`). Devuelve el store, una función para cerrarlo y un error. Es una fábrica para no
+	// abrir la base del hub en cada invocación de la CLI. nil si el hub no está cableado.
+	OpenHub func(ctx context.Context) (hub.Store, func() error, error)
 }
 
 // Command es un subcomando de la CLI. Name es la palabra que lo invoca; Synopsis es la línea

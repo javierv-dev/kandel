@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/javierv-dev/kandel/internal/config"
+	"github.com/javierv-dev/kandel/internal/hub"
 	httpadapter "github.com/javierv-dev/kandel/internal/port_in/http"
 )
 
@@ -39,12 +40,16 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 	fs.SetOutput(app.Err)
 	// Por defecto vacío: si no se pasa --addr, se compone desde KANDEL_PORT en 127.0.0.1.
 	addr := fs.String("addr", "", "dirección donde escuchar (por defecto 127.0.0.1:$KANDEL_PORT)")
+	syncHub := fs.Bool("sync-hub", false, "arranca el hub de sincronización en vez de la API local")
 	fs.Usage = func() {
-		fmt.Fprintln(app.Err, "uso: kandel serve [--addr 127.0.0.1:8765]")
+		fmt.Fprintln(app.Err, "uso: kandel serve [--addr 127.0.0.1:8765] [--sync-hub]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *syncHub {
+		return serveHub(ctx, app, strings.TrimSpace(*addr))
 	}
 	if strings.TrimSpace(*addr) == "" {
 		*addr = "127.0.0.1:" + resolvePort()
@@ -85,6 +90,30 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 	fmt.Fprintf(app.Out, "kandel HTTP escuchando en http://%s\n", *addr)
 	// ListenAndServe bloquea hasta que el proceso termina o falla. Un apagado ordenado (vía
 	// /shutdown → srv.Shutdown) devuelve ErrServerClosed, que aquí es salida limpia, no error.
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+// serveHub arranca el hub de sincronización (servidor del change-feed) en vez de la API local. Es un
+// proceso APARTE del daemon (aunque comparta binario): no corre lógica de dominio, solo guarda filas
+// y arbitra por LWW. Escucha en la dirección dada, o en sync_hub_addr (default :8766) si va vacía.
+func serveHub(ctx context.Context, app *App, addr string) error {
+	if app.OpenHub == nil {
+		return errors.New("hub no cableado: esta build no puede hospedar el hub de sync")
+	}
+	if addr == "" {
+		addr = strings.TrimSpace(config.Resolve(config.SyncHubAddr))
+	}
+	store, closeStore, err := app.OpenHub(ctx)
+	if err != nil {
+		return fmt.Errorf("abrir el almacén del hub: %w", err)
+	}
+	defer closeStore()
+
+	srv := &nethttp.Server{Addr: addr, Handler: hub.Handler(store)}
+	fmt.Fprintf(app.Out, "kandel hub de sync escuchando en http://%s\n", addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
 		return err
 	}

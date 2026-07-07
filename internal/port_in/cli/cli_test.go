@@ -278,6 +278,8 @@ func TestDoctorWarningDoesNotFail(t *testing.T) {
 }
 
 func TestSyncPushAndPull(t *testing.T) {
+	t.Setenv("KANDEL_SYNC_URL", "http://localhost:8766")
+	t.Setenv("KANDEL_SYNC_TOKEN", "tok")
 	app, _, _, out, _ := newTestApp()
 	sync := &fakeSync{pushResult: service.PushResult{Count: 2}, pullResult: service.PullResult{Applied: 3}}
 	app.Sync = sync
@@ -289,6 +291,40 @@ func TestSyncPushAndPull(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "2 subida") || !strings.Contains(out.String(), "3 bajada") {
 		t.Errorf("debe informar subidas y bajadas: %q", out.String())
+	}
+}
+
+func TestSyncOnlyPush(t *testing.T) {
+	t.Setenv("KANDEL_SYNC_URL", "http://localhost:8766")
+	t.Setenv("KANDEL_SYNC_TOKEN", "tok")
+	app, _, _, _, _ := newTestApp()
+	sync := &fakeSync{pushResult: service.PushResult{Count: 1}}
+	app.Sync = sync
+	if err := Dispatch(context.Background(), []string{"sync", "--push"}, app); err != nil {
+		t.Fatalf("sync --push devolvió error: %v", err)
+	}
+	if !sync.pushed || sync.pulled {
+		t.Error("sync --push debe subir, no bajar")
+	}
+}
+
+func TestSyncUnconfiguredFailsClearly(t *testing.T) {
+	// Aísla del config real del usuario: datadir vacío + env de sync sin valor.
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir())
+	t.Setenv("KANDEL_SYNC_URL", "")
+	t.Setenv("KANDEL_SYNC_TOKEN", "")
+	app, _, _, _, _ := newTestApp()
+	sync := &fakeSync{}
+	app.Sync = sync
+	err := Dispatch(context.Background(), []string{"sync"}, app)
+	if err == nil {
+		t.Fatal("sync sin config debe fallar")
+	}
+	if !strings.Contains(err.Error(), "sync no configurado") {
+		t.Errorf("el error debe ser claro sobre la config faltante: %v", err)
+	}
+	if sync.pushed || sync.pulled {
+		t.Error("no debe intentar sincronizar sin config")
 	}
 }
 

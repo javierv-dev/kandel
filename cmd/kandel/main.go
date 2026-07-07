@@ -22,6 +22,7 @@ import (
 	"github.com/javierv-dev/kandel/internal/adapter/sqlite"
 	"github.com/javierv-dev/kandel/internal/config"
 	"github.com/javierv-dev/kandel/internal/diagnostic"
+	"github.com/javierv-dev/kandel/internal/hub"
 	"github.com/javierv-dev/kandel/internal/port_in/cli"
 	"github.com/javierv-dev/kandel/internal/service"
 	"github.com/javierv-dev/kandel/internal/setup"
@@ -144,6 +145,22 @@ func run(args []string) error {
 		BuildDate: buildDate,
 		Schema:    schemaVersion,
 		Update:    updateChecker,
+		// OpenHub abre la base del hub bajo demanda (solo `serve --sync-hub`), separada de la del
+		// cliente: el hub es un almacén sin lógica de dominio.
+		OpenHub: func(ctx context.Context) (hub.Store, func() error, error) {
+			dir, err := config.DefaultDir()
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, nil, fmt.Errorf("crear el directorio de datos %q: %w", dir, err)
+			}
+			store, err := sqlite.OpenHubStore(ctx, filepath.Join(dir, "hub.db"))
+			if err != nil {
+				return nil, nil, err
+			}
+			return store, store.Close, nil
+		},
 	}
 	return cli.Dispatch(ctx, args, app)
 }
