@@ -135,6 +135,13 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 	var b strings.Builder
 	b.WriteString("## Memoria de sesiones anteriores\n\n")
 
+	// Superficia el proyecto actual para que el agente sepa qué valor pasar como `project` al guardar
+	// memorias de scope project (incluido journal). El proceso MCP compartido no conoce el CWD de la
+	// conversación, así que este es el canal por el que ese dato llega al agente (ver §20.D del plan).
+	if project != "" {
+		fmt.Fprintf(&b, "Proyecto actual: %s\n\n", project)
+	}
+
 	if len(normatives) > 0 {
 		b.WriteString("### Siempre presente (normativas)\n")
 		for _, m := range normatives {

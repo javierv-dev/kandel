@@ -35,6 +35,8 @@ func TestContextFormatBandejas(t *testing.T) {
 		t.Fatalf("Format error: %v", err)
 	}
 	for _, want := range []string{
+		// El proyecto se superficia normalizado para que el agente sepa qué pasar como `project`.
+		"Proyecto actual: kandel",
 		"### Siempre presente (normativas)", "Usar JWT",
 		"### Pendientes por resolver", "Elegir cola",
 		"### Recientes", "Ollama tarda",

@@ -77,8 +77,9 @@ Formato para `mem_save`:
   - `discovery` — un hecho del sistema/entorno, aprendizaje o configuración (CATCH-ALL, por defecto)
   - `journal` — una entrada de BITÁCORA (narrativa del desarrollo por hito). Ver la sección "BITÁCORA" abajo
 - **scope**: `project` (def.) | `global`. Usa `global` para lo que aplica en TODOS tus proyectos (típico de `preference`); `project` para lo específico de este repo. (Ya no existe `personal`.)
+- **project** (OBLIGATORIO en scope `project`): pasa SIEMPRE el `project` explícito cuando guardes una memoria de scope `project` (incluido `journal`). Usa el valor de **"Proyecto actual: …"** que aparece en el bloque de contexto inyectado al iniciar la sesión (o el del bloque "[uso interno kandel]" si está). Si lo omites, el guardado falla con "proyecto ambiguo": el servidor MCP es compartido entre proyectos y NO conoce por sí solo el repo en el que trabajas.
 - **resolution** (opcional): pon `open` cuando el usuario deje algo SIN resolver (aparecerá en la bandeja "Pendientes"). Para cerrarlo, guarda una memoria NUEVA que lo reemplace, en vez de editar la vieja.
-- **project** y **session_id**: reutiliza los valores del bloque "[uso interno kandel]" inyectado en la conversación. El `session_id` liga la memoria a la charla que la originó (trazabilidad); si no aparece, omítelo.
+- **session_id**: reutiliza el valor del bloque "[uso interno kandel]" inyectado en la conversación. Liga la memoria a la charla que la originó (trazabilidad); si no aparece, omítelo.
 - **content**:
   **What**: Una frase — qué se hizo
   **Why**: Qué lo motivó (petición del usuario, bug, rendimiento, etc.)
@@ -105,6 +106,9 @@ Complementa a los otros tipos —no los reemplaza— y tiene su propia mecánica
 
 **Cuándo escribir una entrada**: tras cada avance relevante (decisión, fix, paso de implementación, cambio
 de archivos, bloqueo). Granularidad **por hito**.
+
+> ⚠️ La bitácora es `scope=project`: PASA SIEMPRE el `project` explícito (el "Proyecto actual: …" del
+> contexto inyectado). Sin él, el guardado del journal falla con "proyecto ambiguo".
 
 **Molde** (rellena el esqueleto; libertad en el contenido):
 - **title**: `YYYY-MM-DD — <hito corto y navegable>`
