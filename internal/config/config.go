@@ -60,9 +60,11 @@ var (
 	// SyncURL es la URL del hub de sincronización (change-feed). Vacío = sync deshabilitado.
 	SyncURL = Key{File: "sync_url", Env: "KANDEL_SYNC_URL", Default: "",
 		Doc: "URL del hub de sincronización (p. ej. http://localhost:8766); vacío = sync deshabilitado"}
-	// SyncToken es el token de auth y namespace del usuario en el hub. Vacío = sync deshabilitado.
+	// SyncToken es el token de auth y namespace del usuario en el hub. Es a la vez identidad y secreto:
+	// debe ser aleatorio y de alta entropía (usa `kandel config gen-token`), no escrito a mano. Vacío =
+	// sync deshabilitado.
 	SyncToken = Key{File: "sync_token", Env: "KANDEL_SYNC_TOKEN", Default: "",
-		Doc: "token de auth/namespace del hub; vacío = sync deshabilitado"}
+		Doc: "token de auth/namespace del hub (secreto de alta entropía; usa `kandel config gen-token`); vacío = sync deshabilitado"}
 	// SyncHubAddr es la dirección donde escucha el hub (solo la máquina que lo hospeda: `serve
 	// --sync-hub`). Distinta del daemon (Port, 8765) para poder correr ambos en la misma máquina.
 	SyncHubAddr = Key{File: "sync_hub_addr", Env: "KANDEL_SYNC_HUB_ADDR", Default: ":8766",

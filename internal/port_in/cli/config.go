@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"text/tabwriter"
 
@@ -15,8 +16,10 @@ type configCmd struct{}
 
 func init() { register(configCmd{}) }
 
-func (configCmd) Name() string     { return "config" }
-func (configCmd) Synopsis() string { return "muestra o cambia la configuración (list|get|set|path)" }
+func (configCmd) Name() string { return "config" }
+func (configCmd) Synopsis() string {
+	return "muestra o cambia la configuración (list|get|set|path|gen-token)"
+}
 
 func (configCmd) Run(_ context.Context, args []string, app *App) error {
 	if len(args) == 0 {
@@ -59,9 +62,47 @@ func (configCmd) Run(_ context.Context, args []string, app *App) error {
 		}
 		fmt.Fprintf(app.Out, "%s = %s\n", k.File, args[2])
 		return nil
+	case "gen-token":
+		return configGenToken(args[1:], app)
 	default:
-		return fmt.Errorf("subcomando desconocido: %s (usa list|get|set|path)", args[0])
+		return fmt.Errorf("subcomando desconocido: %s (usa list|get|set|path|gen-token)", args[0])
 	}
+}
+
+// configGenToken genera un token de sync de alta entropía. Sin flags lo imprime (para copiarlo); con
+// --set lo guarda en sync_token del archivo de configuración. El token es a la vez namespace y secreto
+// del hub: la misma cadena debe ir en todas las máquinas del usuario para compartir sus memorias.
+func configGenToken(args []string, app *App) error {
+	fs := flag.NewFlagSet("config gen-token", flag.ContinueOnError)
+	fs.SetOutput(app.Err)
+	set := fs.Bool("set", false, "guarda el token generado en sync_token (~/.kandel/config)")
+	fs.Usage = func() {
+		fmt.Fprintln(app.Err, "uso: kandel config gen-token [--set]")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	token, err := config.GenerateToken()
+	if err != nil {
+		return err
+	}
+	if !*set {
+		fmt.Fprintln(app.Out, token)
+		return nil
+	}
+
+	dir, err := config.DefaultDir()
+	if err != nil {
+		return err
+	}
+	if err := config.Save(dir, map[string]string{config.SyncToken.File: token}); err != nil {
+		return err
+	}
+	fmt.Fprintf(app.Out, "%s = %s\n", config.SyncToken.File, token)
+	fmt.Fprintln(app.Err, "token guardado. Usa el MISMO token en tus otras máquinas para compartir memorias.")
+	return nil
 }
 
 // configList imprime cada clave conocida con su valor efectivo y su origen (entorno/archivo/default),
