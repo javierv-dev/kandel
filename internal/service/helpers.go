@@ -9,6 +9,8 @@ import (
 	"encoding/hex"
 	"strings"
 	"time"
+
+	"github.com/javierv-dev/kandel/internal/project"
 )
 
 // defaultSyncTarget es el destino de sincronización por defecto al encolar mutaciones.
@@ -17,18 +19,11 @@ const defaultSyncTarget = "remote"
 // sourceLocal identifica que la mutación se originó en esta máquina.
 const sourceLocal = "local"
 
-// normalizeProject aplica la normalización canónica del nombre de proyecto: minúsculas, sin
-// espacios sobrantes y guiones/guiones bajos consecutivos colapsados. Una cadena vacía se
-// mantiene vacía (sin proyecto).
-func normalizeProject(project string) string {
-	n := strings.TrimSpace(strings.ToLower(project))
-	for strings.Contains(n, "--") {
-		n = strings.ReplaceAll(n, "--", "-")
-	}
-	for strings.Contains(n, "__") {
-		n = strings.ReplaceAll(n, "__", "_")
-	}
-	return n
+// normalizeProject aplica la normalización canónica del nombre de proyecto. Delega en la regla
+// única de kandel (internal/project): minúsculas, sin espacios sobrantes y guiones/guiones bajos
+// consecutivos colapsados. Una cadena vacía se mantiene vacía (sin proyecto).
+func normalizeProject(name string) string {
+	return project.Normalize(name)
 }
 
 // hashContent calcula la huella del contenido normalizado (minúsculas, espacios colapsados a uno).

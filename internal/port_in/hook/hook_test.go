@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/javierv-dev/kandel/internal/project"
 )
 
 // capturedRequest guarda lo esencial de una petición que recibió el daemon simulado.
@@ -115,7 +117,7 @@ func TestSessionStartCreatesSessionAndInjectsContext(t *testing.T) {
 	if req.body["id"] != "sess-1" {
 		t.Errorf("id de sesión incorrecto: %v", req.body["id"])
 	}
-	wantProject := normalize(filepath.Base(cwd))
+	wantProject := project.Normalize(filepath.Base(cwd))
 	if req.body["project"] != wantProject {
 		t.Errorf("project = %v, se esperaba %q", req.body["project"], wantProject)
 	}

@@ -2,6 +2,7 @@ package project
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -11,7 +12,10 @@ import (
 type Source string
 
 const (
-	// SourceGitRoot: el nombre es el basename de la raíz del repositorio git (hay un .git).
+	// SourceGitRemote: el nombre es el del repositorio del remoto origin (sobrevive a renombrar la
+	// carpeta local). Es la fuente más estable.
+	SourceGitRemote Source = "git_remote"
+	// SourceGitRoot: no hay remoto; el nombre es el basename de la raíz del repositorio git (hay .git).
 	SourceGitRoot Source = "git_root"
 	// SourceDirBasename: no se halló raíz git; el nombre es el basename del directorio.
 	SourceDirBasename Source = "dir_basename"
@@ -26,21 +30,26 @@ type Detection struct {
 	Path    string // directorio que dio el nombre (raíz git o el propio dir)
 }
 
-// Detect resuelve el proyecto de un directorio: si está dentro de un repositorio git, usa el
-// basename de la raíz del repo (subir hasta encontrar .git); si no, el basename del directorio.
+// Detect resuelve el proyecto de un directorio con prioridad, de la fuente más estable a la menos:
+//  1. nombre del repositorio del remoto git origin (sobrevive a renombrar la carpeta);
+//  2. basename de la raíz del repositorio git (subir hasta encontrar .git);
+//  3. basename del propio directorio.
 //
-// Nota: es una detección deliberadamente simple respecto al proyecto viejo (no lee el remoto de
-// git ni configuraciones por proyecto). Cubre el caso común; la cadena completa se portará si se
-// necesita (ver BITACORA).
+// Es la ÚNICA fuente de verdad de detección de proyecto: el hook y el CLI la comparten para que
+// todos deriven el mismo nombre. Solo la caminata por el árbol (paso 2) no necesita el binario git;
+// el paso 1 lo invoca y degrada con gracia si no está o el dir no tiene remoto.
 func Detect(dir string) Detection {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return Detection{Source: SourceNone}
 	}
-	if root, ok := gitRoot(dir); ok {
-		return Detection{Project: normalize(filepath.Base(root)), Source: SourceGitRoot, Path: root}
+	if name := gitRemoteName(dir); name != "" {
+		return Detection{Project: Normalize(name), Source: SourceGitRemote, Path: dir}
 	}
-	return Detection{Project: normalize(filepath.Base(dir)), Source: SourceDirBasename, Path: dir}
+	if root, ok := gitRoot(dir); ok {
+		return Detection{Project: Normalize(filepath.Base(root)), Source: SourceGitRoot, Path: root}
+	}
+	return Detection{Project: Normalize(filepath.Base(dir)), Source: SourceDirBasename, Path: dir}
 }
 
 // DetectCWD detecta el proyecto del directorio de trabajo actual.
@@ -52,8 +61,28 @@ func DetectCWD() Detection {
 	return Detect(cwd)
 }
 
-// gitRoot sube por el árbol de directorios buscando una entrada .git. Devuelve el directorio que
-// la contiene y true, o false si llega a la raíz del sistema sin encontrarla.
+// gitRemoteName devuelve el nombre del repositorio del remoto origin (sin .git, normalizado), o ""
+// si no hay binario git, no hay remoto, o el directorio no es un repositorio.
+func gitRemoteName(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "remote", "get-url", "origin").Output()
+	if err != nil {
+		return ""
+	}
+	url := strings.TrimSpace(string(out))
+	if url == "" {
+		return ""
+	}
+	url = strings.TrimSuffix(url, ".git")
+	// El nombre es lo que va tras el último '/' o ':' (cubre URLs https y ssh).
+	if i := strings.LastIndexAny(url, "/:"); i >= 0 {
+		url = url[i+1:]
+	}
+	return url
+}
+
+// gitRoot sube por el árbol de directorios buscando una entrada .git. Devuelve el directorio que la
+// contiene y true, o false si llega a la raíz del sistema sin encontrarla. Es una caminata por el
+// sistema de archivos (no invoca git): funciona aunque el binario git no esté instalado.
 func gitRoot(dir string) (string, bool) {
 	current := dir
 	for {
@@ -68,9 +97,10 @@ func gitRoot(dir string) (string, bool) {
 	}
 }
 
-// normalize aplica la forma canónica del nombre de proyecto: minúsculas, recortado y con
-// guiones/guiones bajos consecutivos colapsados. Misma regla que el servicio.
-func normalize(name string) string {
+// Normalize aplica la forma canónica del nombre de proyecto: minúsculas, recortado y con
+// guiones/guiones bajos consecutivos colapsados. Es la regla única de normalización de kandel: el
+// hook y el servicio la reutilizan (no la re-implementan).
+func Normalize(name string) string {
 	n := strings.TrimSpace(strings.ToLower(name))
 	for strings.Contains(n, "--") {
 		n = strings.ReplaceAll(n, "--", "-")
