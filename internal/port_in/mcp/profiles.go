@@ -26,6 +26,7 @@ var ProfileAgent = map[string]bool{
 	"mem_doctor":          true,
 	"mem_compare":         true,
 	"mem_judge":           true,
+	"mem_sync":            true,
 	// mem_delete hace borrado LÓGICO (reversible); no existe borrado físico en ninguna superficie.
 	// mem_restore deshace el borrado lógico.
 	"mem_delete":  true,

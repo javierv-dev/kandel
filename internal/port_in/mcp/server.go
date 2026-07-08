@@ -50,6 +50,16 @@ type ConflictPort interface {
 	RecordVerdict(ctx context.Context, sourceID, targetID int64, verdict domain.Verdict) (domain.MemoryRelation, error)
 }
 
+// SyncPort es la cara de la sincronización contra el hub que el MCP consume: mem_sync hace push+pull
+// SÍNCRONO (el agente lo pide y espera el resultado, como `kandel sync`), y lista los conflictos de
+// edición concurrente para informarlos. No usa las variantes Auto* (esas son para los disparos de
+// fondo que no deben bloquear).
+type SyncPort interface {
+	Push(ctx context.Context) (service.PushResult, error)
+	Pull(ctx context.Context) (service.PullResult, error)
+	ListConflicts(ctx context.Context) ([]domain.SyncConflict, error)
+}
+
 // Services agrupa los casos de uso que necesitan los handlers MCP. Es el equivalente al App de
 // la CLI: el wiring concreto vive en cmd/kandel/main.go.
 type Services struct {
@@ -59,6 +69,7 @@ type Services struct {
 	Prompt    PromptPort
 	Doctor    DoctorPort
 	Conflict  ConflictPort
+	Sync      SyncPort
 
 	// DefaultProject es un override de proyecto a nivel de proceso (p. ej. KANDEL_PROJECT o
 	// `kandel mcp --project NAME`), usado cuando una llamada no trae proyecto explícito.
@@ -74,6 +85,7 @@ HERRAMIENTAS PRINCIPALES:
   mem_search — busca por significado trabajo, decisiones o contexto de sesiones anteriores (búsqueda semántica)
   mem_context — recupera memorias recientes (al inicio de sesión o tras una compactación)
   mem_get — obtiene el contenido completo de una memoria por su id
+  mem_sync — sincroniza la memoria con el hub (push+pull) cuando el usuario lo pide o cambia de máquina
 
 REGLA DE GUARDADO PROACTIVO: llama a mem_save justo después de CUALQUIER decisión, arreglo de bug,
 descubrimiento o convención — no solo cuando te lo pidan.`
@@ -102,4 +114,5 @@ func registerTools(srv *server.MCPServer, svc Services, allowlist map[string]boo
 	registerContextTools(srv, svc, allowlist)
 	registerDoctorTools(srv, svc, allowlist)
 	registerConflictTools(srv, svc, allowlist)
+	registerSyncTools(srv, svc, allowlist)
 }

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/javierv-dev/kandel/internal/diagnostic"
@@ -315,6 +316,83 @@ func TestHandleCurrentProjectOverride(t *testing.T) {
 	}
 }
 
+// syncConfigured fija env de sync válido y aísla el directorio de datos (para no leer el
+// ~/.kandel/config real ni escribir en él).
+func syncConfigured(t *testing.T) {
+	t.Helper()
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir())
+	t.Setenv("KANDEL_SYNC_URL", "http://localhost:8766")
+	t.Setenv("KANDEL_SYNC_TOKEN", "tok")
+}
+
+func TestHandleSyncPushPull(t *testing.T) {
+	syncConfigured(t)
+	sy := &fakeSync{pushResult: service.PushResult{Count: 2}, pullResult: service.PullResult{Applied: 3}}
+	res, err := handleSync(Services{Sync: sy})(context.Background(), callWith(nil))
+	if err != nil {
+		t.Fatalf("handleSync error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("handleSync devolvió error de tool: %s", textOf(t, res))
+	}
+	if !sy.pushed || !sy.pulled {
+		t.Errorf("mem_sync debe hacer push Y pull: pushed=%v pulled=%v", sy.pushed, sy.pulled)
+	}
+	var parsed struct {
+		Pushed    int `json:"pushed"`
+		Pulled    int `json:"pulled"`
+		Conflicts int `json:"conflicts"`
+	}
+	if err := json.Unmarshal([]byte(textOf(t, res)), &parsed); err != nil {
+		t.Fatalf("respuesta no es JSON: %v", err)
+	}
+	if parsed.Pushed != 2 || parsed.Pulled != 3 || parsed.Conflicts != 0 {
+		t.Errorf("resumen mal serializado: %+v", parsed)
+	}
+}
+
+func TestHandleSyncNotConfigured(t *testing.T) {
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir())
+	t.Setenv("KANDEL_SYNC_URL", "")
+	t.Setenv("KANDEL_SYNC_TOKEN", "")
+	sy := &fakeSync{}
+	res, _ := handleSync(Services{Sync: sy})(context.Background(), callWith(nil))
+	if !res.IsError {
+		t.Fatal("mem_sync sin sync configurado debe dar error de tool")
+	}
+	if sy.pushed || sy.pulled {
+		t.Error("sin configurar no debe tocar el sync service")
+	}
+}
+
+func TestHandleSyncReportsConflicts(t *testing.T) {
+	syncConfigured(t)
+	sy := &fakeSync{
+		pullResult: service.PullResult{Applied: 1, Conflicts: 1},
+		conflicts: []domain.SyncConflict{{
+			SyncID: "mem-x", Project: "kandel", IncomingOp: domain.SyncOpUpsert,
+			Incoming: mustJSONMem(domain.Memory{Title: "remota"}),
+		}},
+	}
+	res, _ := handleSync(Services{Sync: sy})(context.Background(), callWith(nil))
+	got := textOf(t, res)
+	if !strings.Contains(got, "conflict_note") || !strings.Contains(got, "mem-x") || !strings.Contains(got, "remota") {
+		t.Errorf("mem_sync con conflicto debe adjuntar la lista y el aviso: %s", got)
+	}
+}
+
+func TestSyncToolNotRegisteredWithoutPort(t *testing.T) {
+	srv := NewServer(Services{Memory: &fakeMemory{}}, ResolveTools("mem_sync"))
+	if srv.ListTools()["mem_sync"] != nil {
+		t.Error("mem_sync no debe registrarse sin Sync en Services")
+	}
+}
+
+func mustJSONMem(m domain.Memory) []byte {
+	b, _ := json.Marshal(m)
+	return b
+}
+
 // ─── utilidades de test ────────────────────────────────────────────────────────
 
 // callWith construye una CallToolRequest con los argumentos dados.
@@ -424,6 +502,27 @@ func (f *fakeConflict) RecordVerdict(_ context.Context, _, _ int64, v domain.Ver
 	return f.resultRel, nil
 }
 
+type fakeSync struct {
+	pushResult service.PushResult
+	pullResult service.PullResult
+	conflicts  []domain.SyncConflict
+	pushed     bool
+	pulled     bool
+	pushErr    error
+}
+
+func (f *fakeSync) Push(context.Context) (service.PushResult, error) {
+	f.pushed = true
+	return f.pushResult, f.pushErr
+}
+func (f *fakeSync) Pull(context.Context) (service.PullResult, error) {
+	f.pulled = true
+	return f.pullResult, nil
+}
+func (f *fakeSync) ListConflicts(context.Context) ([]domain.SyncConflict, error) {
+	return f.conflicts, nil
+}
+
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
 	_ SessionPort   = (*fakeSession)(nil)
@@ -431,4 +530,5 @@ var (
 	_ PromptPort    = (*fakePrompt)(nil)
 	_ DoctorPort    = fakeDoctor{}
 	_ ConflictPort  = (*fakeConflict)(nil)
+	_ SyncPort      = (*fakeSync)(nil)
 )
