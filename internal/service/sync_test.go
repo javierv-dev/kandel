@@ -29,11 +29,15 @@ func newQueueSync(pending ...domain.SyncMutation) *queueSync {
 }
 
 func (q *queueSync) EnqueueMutation(context.Context, domain.SyncMutation) error { return nil }
-func (q *queueSync) ListPending(_ context.Context, _ string, afterSeq int64, _ int) ([]domain.SyncMutation, error) {
+func (q *queueSync) ListPending(_ context.Context, _ string, afterSeq int64, limit int) ([]domain.SyncMutation, error) {
 	var out []domain.SyncMutation
 	for _, m := range q.pending {
-		if !q.acked[m.Seq] && m.Seq > afterSeq {
-			out = append(out, m)
+		if q.acked[m.Seq] || m.Seq <= afterSeq {
+			continue
+		}
+		out = append(out, m)
+		if limit > 0 && len(out) >= limit {
+			break
 		}
 	}
 	return out, nil

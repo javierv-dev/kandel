@@ -56,21 +56,42 @@ type PushResult struct {
 }
 
 // Push drena las mutaciones pendientes, arma una fila por sync_id con el ESTADO ACTUAL de cada memoria
-// y la manda al hub. Tras un envío correcto confirma (Ack) toda la cola. Es seguro reejecutar: el hub
-// aplica LWW por updated_at, así que reenviar una fila igual o más vieja no hace daño.
+// y la manda al hub. Tras un envío correcto confirma (Ack) el lote. Es seguro reejecutar: el hub aplica
+// LWW por updated_at, así que reenviar una fila igual o más vieja no hace daño.
+//
+// La cola se drena en lotes de pushBatchLimit hasta vaciarla, en un bucle: con más pendientes que el
+// tope de lote, un solo Push las sube TODAS (antes hacía falta reejecutar varias veces). Cada vuelta
+// confirma su lote, así que la cola encoge y el bucle termina.
 //
 // Solo se replican memorias (como en el modelo anterior). Las mutaciones de otras entidades
 // (sesiones, prompts) se drenan igual para no dejar la cola creciendo, pero no viajan: su sync se
 // abordaría en otro namespace más adelante.
 func (s *SyncService) Push(ctx context.Context) (PushResult, error) {
-	pending, err := s.sync.ListPending(ctx, s.queueTarget, 0, pushBatchLimit)
-	if err != nil {
-		return PushResult{}, err
+	total := 0
+	for {
+		pending, err := s.sync.ListPending(ctx, s.queueTarget, 0, pushBatchLimit)
+		if err != nil {
+			return PushResult{}, err
+		}
+		if len(pending) == 0 {
+			break
+		}
+		sent, err := s.pushBatch(ctx, pending)
+		if err != nil {
+			return PushResult{}, err
+		}
+		total += sent
+		// Lote parcial: no quedan más pendientes que drenar, evita una consulta de más.
+		if len(pending) < pushBatchLimit {
+			break
+		}
 	}
-	if len(pending) == 0 {
-		return PushResult{}, nil
-	}
+	return PushResult{Count: total}, nil
+}
 
+// pushBatch colapsa un lote de mutaciones a una fila por sync_id (el estado ACTUAL de cada memoria),
+// lo manda al hub y confirma (Ack) los seqs del lote. Devuelve cuántas filas se enviaron.
+func (s *SyncService) pushBatch(ctx context.Context, pending []domain.SyncMutation) (int, error) {
 	// Colapsa la cola a una entrada por sync_id (la última gana), en orden de primera aparición.
 	var order []string
 	seen := map[string]bool{}
@@ -94,7 +115,7 @@ func (s *SyncService) Push(ctx context.Context) (PushResult, error) {
 	for _, key := range order {
 		cur, err := s.memories.GetBySyncID(ctx, key)
 		if err != nil {
-			return PushResult{}, err
+			return 0, err
 		}
 		if cur == nil {
 			// La memoria ya no está viva (borrada o nunca existió): manda un tombstone. El updated_at
@@ -110,7 +131,7 @@ func (s *SyncService) Push(ctx context.Context) (PushResult, error) {
 		}
 		payload, err := json.Marshal(cur)
 		if err != nil {
-			return PushResult{}, err
+			return 0, err
 		}
 		changes = append(changes, ports.Change{
 			Key:       key,
@@ -122,12 +143,12 @@ func (s *SyncService) Push(ctx context.Context) (PushResult, error) {
 	}
 
 	if err := s.client.Push(ctx, syncNamespaceMemory, s.hubToken, changes); err != nil {
-		return PushResult{}, err
+		return 0, err
 	}
 	if err := s.sync.Ack(ctx, s.queueTarget, seqs); err != nil {
-		return PushResult{}, err
+		return 0, err
 	}
-	return PushResult{Count: len(changes)}, nil
+	return len(changes), nil
 }
 
 // PullResult resume un Pull.
@@ -163,16 +184,26 @@ func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
 	err = s.uow.Do(ctx, func(ctx context.Context) error {
 		for _, ch := range changes {
 			if pendingKeys[ch.Key] {
-				// Edición concurrente: pendiente local + cambio remoto en la misma memoria. No se pisa;
-				// se guarda para que el usuario resuelva.
-				if err := s.sync.RecordConflict(ctx, domain.SyncConflict{
-					SyncID: ch.Key, Project: ch.Project, IncomingOp: ch.Op,
-					Incoming: ch.Payload, IncomingAt: ch.UpdatedAt,
-				}); err != nil {
+				// Pendiente local + fila remota en la misma memoria. Solo es edición concurrente REAL si
+				// la remota ganaría el LWW (es más nueva que lo local); si no, es el eco de nuestro propio
+				// push (misma fila que acabamos de subir) o una fila más vieja: no es conflicto. Sin este
+				// guard, un push+pull seguidos generaban un "conflicto" espurio sobre lo recién subido.
+				overwrite, err := s.wouldOverwrite(ctx, ch)
+				if err != nil {
 					return err
 				}
-				result.Conflicts++
-				continue
+				if overwrite {
+					// No se pisa el disco; se guarda para que el usuario resuelva.
+					if err := s.sync.RecordConflict(ctx, domain.SyncConflict{
+						SyncID: ch.Key, Project: ch.Project, IncomingOp: ch.Op,
+						Incoming: ch.Payload, IncomingAt: ch.UpdatedAt,
+					}); err != nil {
+						return err
+					}
+					result.Conflicts++
+					continue
+				}
+				// Eco o fila vieja: cae a applyChange, que la salta por LWW (no-op).
 			}
 			applied, err := s.applyChange(ctx, ch, false)
 			if err != nil {
@@ -213,6 +244,29 @@ func (s *SyncService) AutoPull(ctx context.Context) (res PullResult, skipped boo
 	defer s.autoMu.Unlock()
 	res, err = s.Pull(ctx)
 	return res, false, err
+}
+
+// wouldOverwrite indica si la fila entrante ganaría el guard LWW contra el estado local (es decir, si
+// applyChange la aplicaría). Espeja esa comparación sin tocar el disco: la usa Pull para decidir si una
+// fila remota, cuando hay una mutación local pendiente para la misma memoria, es una edición concurrente
+// real (remota más nueva) o solo el eco de nuestro propio push (misma fila o más vieja).
+func (s *SyncService) wouldOverwrite(ctx context.Context, ch ports.Change) (bool, error) {
+	existing, err := s.memories.GetBySyncID(ctx, ch.Key)
+	if err != nil {
+		return false, err
+	}
+	if existing == nil {
+		// No hay local: un upsert entrante crearía; un delete entrante es no-op.
+		return ch.Op != domain.SyncOpDelete, nil
+	}
+	if ch.Op == domain.SyncOpDelete {
+		return existing.UpdatedAt.Before(ch.UpdatedAt), nil
+	}
+	var incoming domain.Memory
+	if err := json.Unmarshal(ch.Payload, &incoming); err != nil {
+		return false, err
+	}
+	return incoming.UpdatedAt.After(existing.UpdatedAt), nil
 }
 
 // pendingMemoryKeys devuelve el conjunto de sync_id de memorias con una mutación local sin subir. Es
