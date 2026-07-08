@@ -26,7 +26,15 @@ type SyncService struct {
 	client   ports.SyncClient
 	memories ports.MemoryRepo
 	uow      ports.UnitOfWork
-	target   string
+
+	// queueTarget es la clave de partición LOCAL de la cola de mutaciones (y del cursor/lease). Es un
+	// valor fijo del cliente (defaultSyncTarget), el MISMO con el que los productores encolan
+	// (memory/prompt/session Service). NO es el token del hub: confundir ambos hacía que ListPending no
+	// encontrara nada y Push fuera un no-op silencioso cuando el token no era "remote".
+	queueTarget string
+	// hubToken es el token/namespace del usuario en el hub (viaja como Bearer y en la ruta). Solo lo usa
+	// el transporte (client.Push/Pull); puede diferir del queueTarget sin romper el drenaje de la cola.
+	hubToken string
 
 	// autoMu serializa los disparos AUTOMÁTICOS (timer del daemon + hooks). Si ya hay uno corriendo,
 	// el siguiente se omite en vez de encolarse (§13.3 del plan). No afecta a los caminos manuales
@@ -34,13 +42,12 @@ type SyncService struct {
 	autoMu sync.Mutex
 }
 
-// NewSyncService construye el servicio. target es la clave del destino (a la vez token/namespace del
-// usuario en el hub); vacío usa el destino por defecto.
-func NewSyncService(sync ports.SyncRepo, client ports.SyncClient, memories ports.MemoryRepo, uow ports.UnitOfWork, target string) *SyncService {
-	if target == "" {
-		target = defaultSyncTarget
-	}
-	return &SyncService{sync: sync, client: client, memories: memories, uow: uow, target: target}
+// NewSyncService construye el servicio. hubToken es el token/namespace del usuario en el hub (Bearer);
+// vacío deja el transporte sin destino (el sync se rechaza antes, en la capa de entrada, si no está
+// configurado). La partición local de la cola es fija (defaultSyncTarget) y no depende del token: así
+// el token puede ser cualquier secreto sin desalinear la cola con la que llenan los productores.
+func NewSyncService(sync ports.SyncRepo, client ports.SyncClient, memories ports.MemoryRepo, uow ports.UnitOfWork, hubToken string) *SyncService {
+	return &SyncService{sync: sync, client: client, memories: memories, uow: uow, queueTarget: defaultSyncTarget, hubToken: hubToken}
 }
 
 // PushResult resume un Push.
@@ -56,7 +63,7 @@ type PushResult struct {
 // (sesiones, prompts) se drenan igual para no dejar la cola creciendo, pero no viajan: su sync se
 // abordaría en otro namespace más adelante.
 func (s *SyncService) Push(ctx context.Context) (PushResult, error) {
-	pending, err := s.sync.ListPending(ctx, s.target, 0, pushBatchLimit)
+	pending, err := s.sync.ListPending(ctx, s.queueTarget, 0, pushBatchLimit)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -114,10 +121,10 @@ func (s *SyncService) Push(ctx context.Context) (PushResult, error) {
 		})
 	}
 
-	if err := s.client.Push(ctx, syncNamespaceMemory, s.target, changes); err != nil {
+	if err := s.client.Push(ctx, syncNamespaceMemory, s.hubToken, changes); err != nil {
 		return PushResult{}, err
 	}
-	if err := s.sync.Ack(ctx, s.target, seqs); err != nil {
+	if err := s.sync.Ack(ctx, s.queueTarget, seqs); err != nil {
 		return PushResult{}, err
 	}
 	return PushResult{Count: len(changes)}, nil
@@ -139,7 +146,7 @@ type PullResult struct {
 // de conflictos para que el usuario decida. El cursor avanza igual (la fila queda en la bandeja, no se
 // pierde).
 func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
-	cursor, err := s.sync.GetCursor(ctx, s.target)
+	cursor, err := s.sync.GetCursor(ctx, s.queueTarget)
 	if err != nil {
 		return PullResult{}, err
 	}
@@ -147,7 +154,7 @@ func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
 	if err != nil {
 		return PullResult{}, err
 	}
-	changes, newCursor, err := s.client.Pull(ctx, syncNamespaceMemory, s.target, cursor)
+	changes, newCursor, err := s.client.Pull(ctx, syncNamespaceMemory, s.hubToken, cursor)
 	if err != nil {
 		return PullResult{}, err
 	}
@@ -175,7 +182,7 @@ func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
 				result.Applied++
 			}
 		}
-		return s.sync.SetCursor(ctx, s.target, newCursor)
+		return s.sync.SetCursor(ctx, s.queueTarget, newCursor)
 	})
 	if err != nil {
 		return PullResult{}, err
@@ -212,7 +219,7 @@ func (s *SyncService) AutoPull(ctx context.Context) (res PullResult, skipped boo
 // la señal barata de edición concurrente: si un cambio remoto llega para una de estas keys, ambos
 // lados tocaron la misma memoria.
 func (s *SyncService) pendingMemoryKeys(ctx context.Context) (map[string]bool, error) {
-	pending, err := s.sync.ListPending(ctx, s.target, 0, pushBatchLimit)
+	pending, err := s.sync.ListPending(ctx, s.queueTarget, 0, pushBatchLimit)
 	if err != nil {
 		return nil, err
 	}

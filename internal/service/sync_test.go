@@ -93,12 +93,14 @@ func (q *queueSync) ReleaseLease(context.Context, string, string) error { return
 // programa para el Pull.
 type fakeClient struct {
 	pushed      [][]ports.Change // un elemento por llamada a Push
+	pushedToken string           // token/namespace recibido en el último Push
 	pullChanges []ports.Change
 	pullCursor  int64
 	gotCursor   int64 // cursor recibido en el último Pull
 }
 
-func (c *fakeClient) Push(_ context.Context, _, _ string, changes []ports.Change) error {
+func (c *fakeClient) Push(_ context.Context, _, token string, changes []ports.Change) error {
+	c.pushedToken = token
 	c.pushed = append(c.pushed, changes)
 	return nil
 }
