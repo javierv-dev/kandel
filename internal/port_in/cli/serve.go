@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	nethttp "net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -127,7 +128,7 @@ func serveHub(ctx context.Context, app *App, addr string) error {
 	}
 	defer closeStore()
 
-	srv := &nethttp.Server{Addr: addr, Handler: hub.Handler(store)}
+	srv := &nethttp.Server{Addr: addr, Handler: hub.Handler(store, hubRateLimit())}
 	fmt.Fprintf(app.Out, "kandel hub de sync escuchando en http://%s\n", addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
 		return err
@@ -172,6 +173,19 @@ func runBackfillSweep(ctx context.Context, app *App, interval time.Duration) {
 			}
 		}
 	}
+}
+
+// hubRateLimit devuelve la opción de rate limit del hub según config (sync_hub_rate, peticiones/min por
+// IP). Un valor vacío usa el default (120); "0" o negativo desactiva el límite (Handler ignora un
+// límite no positivo). La ráfaga se iguala al límite por minuto para tolerar un sync legítimo a golpe.
+func hubRateLimit() hub.Option {
+	perMin := 120
+	if raw := strings.TrimSpace(config.Resolve(config.SyncHubRate)); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			perMin = n
+		}
+	}
+	return hub.WithRateLimit(perMin, perMin)
 }
 
 // resolveSyncInterval devuelve el intervalo del push periódico de sync: KANDEL_SYNC_INTERVAL (formato

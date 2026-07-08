@@ -69,6 +69,10 @@ var (
 	// --sync-hub`). Distinta del daemon (Port, 8765) para poder correr ambos en la misma máquina.
 	SyncHubAddr = Key{File: "sync_hub_addr", Env: "KANDEL_SYNC_HUB_ADDR", Default: ":8766",
 		Doc: "dirección de escucha del hub de sync (host:puerto); solo para `serve --sync-hub`"}
+	// SyncHubRate es el límite de peticiones por minuto y por IP del hub (rate limit, defensa en
+	// profundidad contra fuerza bruta sobre el token). "0" lo desactiva. Solo para `serve --sync-hub`.
+	SyncHubRate = Key{File: "sync_hub_rate", Env: "KANDEL_SYNC_HUB_RATE", Default: "120",
+		Doc: "límite de peticiones por minuto por IP del hub (rate limit); 0 desactiva; solo `serve --sync-hub`"}
 	// SyncAuto habilita los disparadores automáticos de sync (push al cerrar la sesión, pull al
 	// iniciarla y push periódico del daemon). Opt-in a propósito: red en cada sesión no es para todos.
 	// Vacío/false = solo los caminos manuales (CLI/MCP). Requiere además SyncURL + SyncToken.
@@ -111,7 +115,7 @@ var (
 
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
-	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncURL, SyncToken, SyncHubAddr, SyncAuto, SyncInterval, LogDir,
+	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
 	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 

@@ -42,12 +42,46 @@ type Store interface {
 	Since(ctx context.Context, ns, token string, cursor int64) (changes []Change, newCursor int64, err error)
 }
 
-// Handler construye el enrutador del hub. Rutas namespaced con token en la ruta y como Bearer.
-func Handler(store Store) http.Handler {
+// handlerOptions recoge los ajustes opcionales del Handler. El paquete hub NO lee config a propósito
+// (es un store genérico sin lógica de dominio); los ajustes los inyecta el servidor (serveHub).
+type handlerOptions struct {
+	ratePerMinute int
+	rateBurst     int
+}
+
+// Option configura el Handler.
+type Option func(*handlerOptions)
+
+// WithRateLimit activa el rate limit por IP: hasta perMinute peticiones por minuto con ráfagas de hasta
+// burst. perMinute <= 0 lo desactiva (sin límite). burst <= 0 usa perMinute como ráfaga.
+func WithRateLimit(perMinute, burst int) Option {
+	return func(o *handlerOptions) {
+		o.ratePerMinute = perMinute
+		o.rateBurst = burst
+	}
+}
+
+// Handler construye el enrutador del hub. Rutas namespaced con token en la ruta y como Bearer. Con
+// WithRateLimit, envuelve el enrutador en un limitador por IP (defensa en profundidad contra fuerza
+// bruta sobre el token).
+func Handler(store Store, opts ...Option) http.Handler {
+	var o handlerOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /{ns}/{token}/changes", handleApply(store))
 	mux.HandleFunc("GET /{ns}/{token}/changes", handleSince(store))
-	return mux
+
+	var h http.Handler = mux
+	if o.ratePerMinute > 0 {
+		burst := o.rateBurst
+		if burst <= 0 {
+			burst = o.ratePerMinute
+		}
+		h = newRateLimiter(o.ratePerMinute, burst, nil).middleware(h)
+	}
+	return h
 }
 
 // wireChange es la forma de red de una fila. DEBE coincidir con la del cliente
