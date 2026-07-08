@@ -347,6 +347,10 @@ func (s *SyncService) applyChange(ctx context.Context, ch ports.Change, force bo
 		return false, err
 	}
 	incoming.SyncID = ch.Key
+	// La sesión es contexto LOCAL de la máquina de origen: su id no existe en el destino y viola la FK
+	// memories.session_id → sessions.id al importar. No tiene significado cross-máquina, así que se
+	// descarta (solo se replica el namespace de memorias, no las sesiones).
+	incoming.SessionID = ""
 	forceRecheck(&incoming)
 
 	if existing != nil {
