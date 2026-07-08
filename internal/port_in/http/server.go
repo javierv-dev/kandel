@@ -57,6 +57,14 @@ type EmbeddingPort interface {
 	Warmup(ctx context.Context) error
 }
 
+// SyncPort cubre los disparos ASÍNCRONOS de sincronización que los hooks lanzan contra el daemon:
+// push al cerrar la sesión y pull al iniciarla. Ambos corren en segundo plano (los endpoints solo los
+// lanzan y responden 202), serializados y omitibles si ya hay un auto-sync en curso (bool skipped).
+type SyncPort interface {
+	AutoPush(ctx context.Context) (service.PushResult, bool, error)
+	AutoPull(ctx context.Context) (service.PullResult, bool, error)
+}
+
 // Services agrupa los casos de uso que necesita la API. El wiring concreto vive en
 // cmd/kandel/main.go; aquí solo se ven las interfaces.
 type Services struct {
@@ -67,6 +75,7 @@ type Services struct {
 	Context   ContextPort
 	Project   ProjectPort
 	Embedding EmbeddingPort
+	Sync      SyncPort
 
 	// OnShutdown, si no es nil, habilita el endpoint POST /shutdown que apaga el daemon de forma
 	// ordenada (lo usa `kandel stop`). El daemon corre la imagen del propio binario y lo mantiene
@@ -106,6 +115,11 @@ func NewHandler(svc Services) http.Handler {
 	// Mantenimiento de vectores disparado por hooks (asíncrono; respuesta 202).
 	mux.HandleFunc("POST /embeddings/backfill", handleBackfill(svc))
 	mux.HandleFunc("POST /embeddings/warmup", handleWarmup(svc))
+
+	// Sincronización disparada por hooks (asíncrono; respuesta 202). El Stop hook pega en /sync/push;
+	// el SessionStart en /sync/pull. El daemon los corre de fondo sin bloquear la terminal.
+	mux.HandleFunc("POST /sync/push", handleSyncPush(svc))
+	mux.HandleFunc("POST /sync/pull", handleSyncPull(svc))
 
 	// Apagado ordenado (lo pide `kandel stop`). Solo se registra si el daemon cableó el disparador,
 	// así el endpoint no existe en los tests ni en usos sin daemon.

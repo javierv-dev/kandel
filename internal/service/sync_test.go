@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -385,6 +386,65 @@ func TestResolveConflictKeepLocal(t *testing.T) {
 	}
 	if len(q.conflicts) != 0 {
 		t.Error("el conflicto debe quedar resuelto igualmente")
+	}
+}
+
+// blockingClient es un ports.SyncClient cuyo Push se detiene hasta que el test lo libera. Sirve para
+// mantener el guard de exclusión tomado y comprobar que un segundo auto-sync se omite.
+type blockingClient struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (c *blockingClient) Push(context.Context, string, string, []ports.Change) error {
+	c.entered <- struct{}{}
+	<-c.release
+	return nil
+}
+func (c *blockingClient) Pull(context.Context, string, string, int64) ([]ports.Change, int64, error) {
+	return nil, 0, nil
+}
+
+func TestAutoPushSkipsWhenAnotherSyncRuns(t *testing.T) {
+	ctx := context.Background()
+	obs := newFakeObs()
+	at := time.Unix(1700000100, 0).UTC()
+	obs.Add(ctx, domain.Memory{SyncID: "mem-a", Type: domain.TypeDecision, Scope: domain.ScopeProject, Title: "A", Content: "c", UpdatedAt: at})
+	q := newQueueSync(memMutation(1, "mem-a"))
+	client := &blockingClient{entered: make(chan struct{}), release: make(chan struct{})}
+	svc := newSyncService(q, client, obs)
+
+	// Primer auto-push: toma el guard y queda bloqueado dentro del client.
+	firstErr := make(chan error, 1)
+	go func() {
+		_, skipped, err := svc.AutoPush(ctx)
+		if skipped {
+			err = errors.New("el primer auto-push no debía omitirse")
+		}
+		firstErr <- err
+	}()
+	<-client.entered // el primero ya tiene el guard
+
+	// Segundo disparo mientras el primero sigue: debe omitirse (skipped), sin tocar el client.
+	if _, skipped, err := svc.AutoPush(ctx); err != nil {
+		t.Fatalf("segundo AutoPush: %v", err)
+	} else if !skipped {
+		t.Fatal("el segundo auto-sync debe omitirse mientras hay uno en curso")
+	}
+	// AutoPull comparte el mismo guard: también se omite.
+	if _, skipped, err := svc.AutoPull(ctx); err != nil {
+		t.Fatalf("AutoPull concurrente: %v", err)
+	} else if !skipped {
+		t.Fatal("AutoPull debe omitirse mientras el push tiene el guard")
+	}
+
+	close(client.release) // libera el primero
+	if err := <-firstErr; err != nil {
+		t.Fatalf("primer auto-push: %v", err)
+	}
+	// Tras liberar, un nuevo auto-push ya no se omite (la cola quedó drenada por el primero).
+	if _, skipped, err := svc.AutoPush(ctx); err != nil || skipped {
+		t.Fatalf("tras liberar el guard, AutoPush no debe omitirse: skipped=%v err=%v", skipped, err)
 	}
 }
 

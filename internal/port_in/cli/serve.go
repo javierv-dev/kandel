@@ -20,6 +20,11 @@ import (
 // con Ollama caído) y las reembebe. config lo sobreescribe (backfill_interval); "0" lo desactiva.
 const defaultBackfillInterval = 2 * time.Minute
 
+// defaultSyncInterval es cada cuánto el daemon hace el push periódico (red de seguridad si el Stop
+// hook no dispara: terminal muerta en seco, §13.2). Solo corre con sync_auto activo. config lo
+// sobreescribe (sync_interval); "0" lo desactiva.
+const defaultSyncInterval = 5 * time.Minute
+
 // resolvePort devuelve el puerto efectivo del daemon, resuelto por config (env KANDEL_PORT >
 // archivo > default 8765). Único origen de verdad del puerto entre hooks y servidor.
 func resolvePort() string {
@@ -67,6 +72,7 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 		Context:   app.Context,
 		Project:   app.Project,
 		Embedding: app.Embedding,
+		Sync:      app.Sync,
 		// OnShutdown apaga el daemon con drenaje acotado. Lo usa `kandel stop` para liberar el
 		// binario en ejecución (en Windows el daemon bloquea el .exe e impide actualizarlo).
 		OnShutdown: func() {
@@ -84,6 +90,15 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 	if app.Embedding != nil {
 		if interval := resolveBackfillInterval(); interval > 0 {
 			go runBackfillSweep(ctx, app, interval)
+		}
+	}
+
+	// Push periódico de sync: red de seguridad si el Stop hook no dispara (terminal muerta en seco).
+	// Solo corre si los disparadores automáticos están activos (sync_auto + hub configurado) y el
+	// intervalo es > 0. Los caminos manuales (kandel sync) no dependen de esto.
+	if app.Sync != nil && config.AutoSyncEnabled() {
+		if interval := resolveSyncInterval(); interval > 0 {
+			go runSyncSweep(ctx, app, interval)
 		}
 	}
 
@@ -154,6 +169,45 @@ func runBackfillSweep(ctx context.Context, app *App, interval time.Duration) {
 				// ya había uno en curso; nada que registrar.
 			case res.Embedded > 0:
 				log.Printf("barrido de backfill: %d memoria(s) embebida(s)", res.Embedded)
+			}
+		}
+	}
+}
+
+// resolveSyncInterval devuelve el intervalo del push periódico de sync: KANDEL_SYNC_INTERVAL (formato
+// de time.ParseDuration) si está definido, si no el default (5m). "0" (o <= 0) desactiva el timer.
+func resolveSyncInterval() time.Duration {
+	raw := strings.TrimSpace(config.Resolve(config.SyncInterval))
+	if raw == "" {
+		return defaultSyncInterval
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return defaultSyncInterval
+	}
+	return d
+}
+
+// runSyncSweep corre el push periódico hasta que el contexto se cancela. Cada tick dispara un AutoPush
+// (que se omite si ya hay un auto-sync en curso). Es la red de seguridad de §13.2: si el Stop hook no
+// disparó (terminal muerta en seco), lo pendiente igual se sube en el siguiente tick. Los errores se
+// registran y no detienen el barrido: el hub puede estar inalcanzable ahora y volver luego.
+func runSyncSweep(ctx context.Context, app *App, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			res, skipped, err := app.Sync.AutoPush(ctx)
+			switch {
+			case err != nil:
+				log.Printf("push periódico de sync: error: %v", err)
+			case skipped:
+				// ya había un sync en curso; nada que registrar.
+			case res.Count > 0:
+				log.Printf("push periódico de sync: %d fila(s) subida(s)", res.Count)
 			}
 		}
 	}

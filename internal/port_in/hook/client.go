@@ -121,6 +121,18 @@ func (c *client) triggerBackfill(ctx context.Context) (string, error) {
 	return c.postJSON(ctx, "/embeddings/backfill", map[string]string{})
 }
 
+// triggerSyncPush pide al daemon que suba lo local al hub (asíncrono; responde 202). Lo dispara el
+// Stop hook para no colgar la terminal esperando la red; el daemon hace el push de fondo.
+func (c *client) triggerSyncPush(ctx context.Context) (string, error) {
+	return c.postJSON(ctx, "/sync/push", map[string]string{})
+}
+
+// triggerSyncPull pide al daemon que baje lo ajeno del hub (asíncrono; responde 202). Lo dispara el
+// SessionStart hook para traer lo de otras máquinas al empezar, sin bloquear el arranque de la sesión.
+func (c *client) triggerSyncPull(ctx context.Context) (string, error) {
+	return c.postJSON(ctx, "/sync/pull", map[string]string{})
+}
+
 // passiveCapture envía la salida cruda de un agente para extraer aprendizajes (captura pasiva).
 func (c *client) passiveCapture(ctx context.Context, sessionID, content, project, source string) (string, error) {
 	return c.postJSON(ctx, "/memories/passive", map[string]string{

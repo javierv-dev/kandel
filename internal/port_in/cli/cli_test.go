@@ -144,6 +144,14 @@ func (f *fakeSync) Pull(context.Context) (service.PullResult, error) {
 	f.pulled = true
 	return f.pullResult, nil
 }
+func (f *fakeSync) AutoPush(context.Context) (service.PushResult, bool, error) {
+	f.pushed = true
+	return f.pushResult, false, nil
+}
+func (f *fakeSync) AutoPull(context.Context) (service.PullResult, bool, error) {
+	f.pulled = true
+	return f.pullResult, false, nil
+}
 func (f *fakeSync) ListConflicts(context.Context) ([]domain.SyncConflict, error) {
 	return f.conflicts, nil
 }

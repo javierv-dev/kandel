@@ -82,6 +82,11 @@ type ConflictUseCases interface {
 type SyncUseCases interface {
 	Push(ctx context.Context) (service.PushResult, error)
 	Pull(ctx context.Context) (service.PullResult, error)
+	// AutoPush/AutoPull son las variantes de los disparos automáticos (timer del daemon + hooks): se
+	// serializan entre sí y se omiten (skipped=true) si ya hay un auto-sync en curso. Viajan en App
+	// porque el daemon HTTP las cablea (endpoints /sync/push y /sync/pull + barrido periódico).
+	AutoPush(ctx context.Context) (service.PushResult, bool, error)
+	AutoPull(ctx context.Context) (service.PullResult, bool, error)
 	ListConflicts(ctx context.Context) ([]domain.SyncConflict, error)
 	ResolveConflict(ctx context.Context, syncID string, takeRemote bool) error
 }

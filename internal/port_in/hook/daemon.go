@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 )
 
+// (sync ya no se lanza como subproceso desde el hook: el pull/push automáticos se delegan al daemon
+// vía HTTP —POST /sync/pull y /sync/push— para no colgar la terminal ni multiplicar procesos.)
+
 // selfPath devuelve la ruta del propio binario kandel para relanzarlo (serve, sync). Si no se
 // puede resolver, cae a "kandel" confiando en el PATH.
 func selfPath() string {
@@ -30,13 +33,4 @@ func spawnServe() error {
 	}
 	detach(cmd)
 	return cmd.Start()
-}
-
-// spawnSyncImport lanza `kandel sync --import` en cwd, desacoplado y sin esperar (importa los
-// chunks sincronizados por git en segundo plano, sin bloquear el arranque de la sesión).
-func spawnSyncImport(cwd string) {
-	cmd := exec.Command(selfPath(), "sync", "--import")
-	cmd.Dir = cwd
-	detach(cmd)
-	_ = cmd.Start()
 }

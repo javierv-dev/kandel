@@ -266,6 +266,33 @@ func TestWarmupEndpointAccepts(t *testing.T) {
 	emb.waitWarmup(t)
 }
 
+func TestSyncPushEndpointAccepts(t *testing.T) {
+	s := newFakeSync()
+	rec := do(t, Services{Sync: s}, http.MethodPost, "/sync/push", "")
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("sync push debe responder 202, dio %d", rec.Code)
+	}
+	s.waitPush(t)
+}
+
+func TestSyncPullEndpointAccepts(t *testing.T) {
+	s := newFakeSync()
+	rec := do(t, Services{Sync: s}, http.MethodPost, "/sync/pull", "")
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("sync pull debe responder 202, dio %d", rec.Code)
+	}
+	s.waitPull(t)
+}
+
+func TestSyncEndpointsUnavailableWithoutSync(t *testing.T) {
+	for _, path := range []string{"/sync/push", "/sync/pull"} {
+		rec := do(t, Services{}, http.MethodPost, path, "")
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s sin sync debe responder 503, dio %d", path, rec.Code)
+		}
+	}
+}
+
 // ─── dobles ────────────────────────────────────────────────────────────────────
 
 type fakeMemory struct {
@@ -389,6 +416,42 @@ func (f *fakeEmbedding) waitWarmup(t *testing.T) {
 	case <-f.warmupDone:
 	case <-time.After(time.Second):
 		t.Fatal("Warmup no se invocó")
+	}
+}
+
+// fakeSync cumple SyncPort. Como los endpoints corren en una goroutine, expone canales (creados de
+// antemano) con los que el test espera a que el trabajo asíncrono termine (sin carreras con -race).
+type fakeSync struct {
+	pushDone chan struct{}
+	pullDone chan struct{}
+}
+
+func newFakeSync() *fakeSync {
+	return &fakeSync{pushDone: make(chan struct{}, 1), pullDone: make(chan struct{}, 1)}
+}
+
+func (f *fakeSync) AutoPush(context.Context) (service.PushResult, bool, error) {
+	f.pushDone <- struct{}{}
+	return service.PushResult{}, false, nil
+}
+func (f *fakeSync) AutoPull(context.Context) (service.PullResult, bool, error) {
+	f.pullDone <- struct{}{}
+	return service.PullResult{}, false, nil
+}
+func (f *fakeSync) waitPush(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.pushDone:
+	case <-time.After(time.Second):
+		t.Fatal("AutoPush no se invocó")
+	}
+}
+func (f *fakeSync) waitPull(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.pullDone:
+	case <-time.After(time.Second):
+		t.Fatal("AutoPull no se invocó")
 	}
 }
 

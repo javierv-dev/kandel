@@ -3,13 +3,13 @@ package hook
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+
+	"github.com/javierv-dev/kandel/internal/config"
 )
 
 // sessionStart maneja el hook SessionStart: asegura el daemon, migra el nombre del proyecto si
-// cambió, crea la sesión, importa chunks sincronizados y por último imprime el protocolo + el
-// contexto del proyecto para que el agente lo inyecte.
+// cambió, crea la sesión, dispara el pull del hub (si el auto-sync está activo) y por último imprime
+// el protocolo + el contexto del proyecto para que el agente lo inyecte.
 func (r *runner) sessionStart(p payload) error {
 	project := detectProject(p.CWD)
 	old := oldProjectName(p.CWD)
@@ -31,8 +31,8 @@ func (r *runner) sessionStart(p payload) error {
 }
 
 // prepareStartup corre los efectos de arranque de sesión —asegura el daemon, migra el nombre del
-// proyecto si cambió, crea/reactiva la sesión, importa los chunks sincronizados y precalienta el
-// embebedor— y devuelve el contexto del proyecto. daemonUp es false si el daemon no respondió (en ese
+// proyecto si cambió, crea/reactiva la sesión, dispara el pull del hub y precalienta el embebedor— y
+// devuelve el contexto del proyecto. daemonUp es false si el daemon no respondió (en ese
 // caso ctxText es "" y no se hizo ningún efecto). Lo comparten el arranque de Claude Code
 // (sessionStart) y el de Antigravity (agPreInvocation), que solo difieren en cómo formatean la salida.
 func (r *runner) prepareStartup(project, old string, p payload) (ctxText string, daemonUp bool) {
@@ -53,11 +53,13 @@ func (r *runner) prepareStartup(project, old string, p payload) (ctxText string,
 		r.klog("no se crea sesión: session_id o project vacíos")
 	}
 
-	// Importa los chunks sincronizados por git (en segundo plano, sin bloquear).
-	if p.CWD != "" {
-		if _, err := os.Stat(filepath.Join(p.CWD, ".kandel", "manifest.json")); err == nil {
-			spawnSyncImport(p.CWD)
-		}
+	// Baja lo ajeno del hub (asíncrono en el daemon; responde 202) si los disparadores automáticos
+	// están activos. No bloquea el arranque: un arranque en frío puede traer mucho estado, así que se
+	// delega al daemon. Lo recién bajado entra al vuelo (puede no verse en el contexto de ESTA sesión,
+	// pero sí en la siguiente y lo cubre el timer).
+	if config.AutoSyncEnabled() {
+		code, _ := r.client.triggerSyncPull(r.ctx)
+		r.klog("POST /sync/pull -> HTTP " + code)
 	}
 
 	// Precalienta el modelo de embeddings (asíncrono en el daemon): mata el arranque en frío de
@@ -179,6 +181,14 @@ func (r *runner) sessionStop(p payload) error {
 	}
 	code, _ := r.client.endSession(r.ctx, p.SessionID)
 	r.klog(fmt.Sprintf("POST /sessions/%s/end -> HTTP %s", p.SessionID, code))
+
+	// Sube lo local al hub (asíncrono en el daemon; responde 202) si los disparadores automáticos
+	// están activos. NO corre `kandel sync` síncrono: podría tardar por red y colgar la terminal al
+	// cerrar (§13.1). El daemon hace el push de fondo; lo no enviado se reintenta (la cola es la verdad).
+	if config.AutoSyncEnabled() {
+		syncCode, _ := r.client.triggerSyncPush(r.ctx)
+		r.klog("POST /sync/push -> HTTP " + syncCode)
+	}
 	return nil
 }
 

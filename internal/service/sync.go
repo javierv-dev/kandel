@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
@@ -26,6 +27,11 @@ type SyncService struct {
 	memories ports.MemoryRepo
 	uow      ports.UnitOfWork
 	target   string
+
+	// autoMu serializa los disparos AUTOMÁTICOS (timer del daemon + hooks). Si ya hay uno corriendo,
+	// el siguiente se omite en vez de encolarse (§13.3 del plan). No afecta a los caminos manuales
+	// (CLI/MCP), que llaman a Push/Pull directo: el usuario que pide un sync explícito lo espera.
+	autoMu sync.Mutex
 }
 
 // NewSyncService construye el servicio. target es la clave del destino (a la vez token/namespace del
@@ -175,6 +181,31 @@ func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
 		return PullResult{}, err
 	}
 	return result, nil
+}
+
+// AutoPush corre Push bajo el guard de exclusión de los disparos automáticos: si ya hay un auto-sync
+// (push o pull) en curso, lo omite y devuelve skipped=true en vez de encolarse. Lo usan el timer del
+// daemon y el disparo del Stop hook, donde solapar syncs no aporta (la cola es la verdad; el siguiente
+// tick reintenta). El resultado sin pendientes es un no-op barato.
+func (s *SyncService) AutoPush(ctx context.Context) (res PushResult, skipped bool, err error) {
+	if !s.autoMu.TryLock() {
+		return PushResult{}, true, nil
+	}
+	defer s.autoMu.Unlock()
+	res, err = s.Push(ctx)
+	return res, false, err
+}
+
+// AutoPull corre Pull bajo el mismo guard que AutoPush (comparten autoMu, así push y pull automáticos
+// no se solapan). Lo dispara el hook SessionStart para traer lo ajeno al empezar. skipped=true si ya
+// había un auto-sync corriendo.
+func (s *SyncService) AutoPull(ctx context.Context) (res PullResult, skipped bool, err error) {
+	if !s.autoMu.TryLock() {
+		return PullResult{}, true, nil
+	}
+	defer s.autoMu.Unlock()
+	res, err = s.Pull(ctx)
+	return res, false, err
 }
 
 // pendingMemoryKeys devuelve el conjunto de sync_id de memorias con una mutación local sin subir. Es

@@ -67,6 +67,15 @@ var (
 	// --sync-hub`). Distinta del daemon (Port, 8765) para poder correr ambos en la misma máquina.
 	SyncHubAddr = Key{File: "sync_hub_addr", Env: "KANDEL_SYNC_HUB_ADDR", Default: ":8766",
 		Doc: "dirección de escucha del hub de sync (host:puerto); solo para `serve --sync-hub`"}
+	// SyncAuto habilita los disparadores automáticos de sync (push al cerrar la sesión, pull al
+	// iniciarla y push periódico del daemon). Opt-in a propósito: red en cada sesión no es para todos.
+	// Vacío/false = solo los caminos manuales (CLI/MCP). Requiere además SyncURL + SyncToken.
+	SyncAuto = Key{File: "sync_auto", Env: "KANDEL_SYNC_AUTO", Default: "",
+		Doc: "disparadores automáticos de sync (push al cerrar, pull al iniciar, timer); 'true' los activa; vacío = solo manual"}
+	// SyncInterval es cada cuánto el daemon hace el push periódico (red de seguridad si el Stop hook no
+	// dispara). Solo activo con SyncAuto. Vacío = default (5m); "0" desactiva el timer.
+	SyncInterval = Key{File: "sync_interval", Env: "KANDEL_SYNC_INTERVAL", Default: "",
+		Doc: "intervalo del push periódico del daemon (p. ej. 5m); vacío = default (5m); 0 desactiva"}
 	// LogDir es el directorio de logs; vacío = ~/.kandel/logs.
 	LogDir = Key{File: "log_dir", Env: "KANDEL_LOG_DIR", Default: "",
 		Doc: "directorio de logs; vacío = ~/.kandel/logs"}
@@ -100,7 +109,7 @@ var (
 
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
-	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncURL, SyncToken, SyncHubAddr, LogDir,
+	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncURL, SyncToken, SyncHubAddr, SyncAuto, SyncInterval, LogDir,
 	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 
@@ -169,6 +178,29 @@ func ResolveWithSource(k Key) (string, Source) {
 		}
 	}
 	return k.Default, SourceDefault
+}
+
+// truthy interpreta un valor de config como booleano permisivo: "1", "true", "yes" u "on" (en
+// cualquier caja) son verdaderos; todo lo demás (incluido vacío) es falso.
+func truthy(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// SyncConfigured indica si el sync tiene destino: URL del hub + token definidos. Sin ambos, no hay a
+// dónde sincronizar (ni manual ni automático).
+func SyncConfigured() bool {
+	return Resolve(SyncURL) != "" && Resolve(SyncToken) != ""
+}
+
+// AutoSyncEnabled indica si los disparadores automáticos de sync están activos: sync_auto en verdadero
+// Y el sync configurado (URL + token). Lo consultan los hooks (push al cerrar, pull al iniciar) y el
+// timer del daemon antes de disparar nada.
+func AutoSyncEnabled() bool {
+	return truthy(Resolve(SyncAuto)) && SyncConfigured()
 }
 
 // KeyByFile busca una clave conocida por su nombre de archivo (p. ej. "agent_cli"). Lo usa

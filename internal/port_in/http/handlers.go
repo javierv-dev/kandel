@@ -445,6 +445,56 @@ func handleBackfill(svc Services) http.HandlerFunc {
 	}
 }
 
+// handleSyncPush dispara un push ASÍNCRONO (sube lo local al hub) y responde 202 de inmediato. Lo
+// invoca el Stop hook para no colgar la terminal: un push puede tardar por red, así que se delega al
+// daemon (mismo patrón que el backfill). El guard de exclusión de AutoPush omite el disparo si ya hay
+// un auto-sync en curso; la cola local es la verdad, así que lo no enviado se reintenta al siguiente.
+func handleSyncPush(svc Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if svc.Sync == nil {
+			writeError(w, http.StatusServiceUnavailable, "sync no disponible")
+			return
+		}
+		go func() {
+			res, skipped, err := svc.Sync.AutoPush(context.Background())
+			switch {
+			case err != nil:
+				log.Printf("sync push (disparado): error: %v", err)
+			case skipped:
+				log.Printf("sync push (disparado): omitido, ya había un sync en curso")
+			case res.Count > 0:
+				log.Printf("sync push (disparado): %d fila(s) subida(s)", res.Count)
+			}
+		}()
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "push lanzado"})
+	}
+}
+
+// handleSyncPull dispara un pull ASÍNCRONO (baja lo ajeno del hub) y responde 202 de inmediato. Lo
+// invoca el SessionStart hook. Es asíncrono a propósito: un arranque en frío puede traer mucho estado
+// y no debe bloquear el inicio de la sesión. Consecuencia honesta: lo recién bajado puede no entrar en
+// el contexto de ESTA sesión (llega al vuelo), pero sí en la siguiente y lo cubre el timer.
+func handleSyncPull(svc Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if svc.Sync == nil {
+			writeError(w, http.StatusServiceUnavailable, "sync no disponible")
+			return
+		}
+		go func() {
+			res, skipped, err := svc.Sync.AutoPull(context.Background())
+			switch {
+			case err != nil:
+				log.Printf("sync pull (disparado): error: %v", err)
+			case skipped:
+				log.Printf("sync pull (disparado): omitido, ya había un sync en curso")
+			case res.Applied > 0 || res.Conflicts > 0:
+				log.Printf("sync pull (disparado): %d aplicada(s), %d conflicto(s)", res.Applied, res.Conflicts)
+			}
+		}()
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "pull lanzado"})
+	}
+}
+
 // handleWarmup dispara un warm-up ASÍNCRONO del modelo de embeddings (una petición "ping") y
 // responde 202 de inmediato. Lo invoca el hook SessionStart para que el modelo quede cargado en
 // memoria y el primer Save real no pague el arranque en frío (~7s) de Ollama.
