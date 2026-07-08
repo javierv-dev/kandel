@@ -34,7 +34,7 @@ func handleSessionStart(svc Services) server.ToolHandlerFunc {
 		}
 		s, err := svc.Session.Start(ctx, service.StartInput{
 			ID:        id,
-			Project:   svc.resolveProject(argString(req, "project")),
+			Project:   argString(req, "project"),
 			Directory: argString(req, "directory"),
 		})
 		if err != nil {

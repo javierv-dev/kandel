@@ -13,6 +13,26 @@ func argString(req mcp.CallToolRequest, name string) string {
 	return strings.TrimSpace(v)
 }
 
+// argStringList lee un argumento de tipo array de texto; nil si falta o no es un array. Recorta cada
+// elemento y descarta los vacíos.
+func argStringList(req mcp.CallToolRequest, name string) []string {
+	raw, ok := req.GetArguments()[name].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // argInt lee un argumento numérico (los números JSON llegan como float64); def si falta.
 func argInt(req mcp.CallToolRequest, name string, def int) int {
 	switch v := req.GetArguments()[name].(type) {
@@ -43,14 +63,6 @@ func argBool(req mcp.CallToolRequest, name string, def bool) bool {
 		return v
 	}
 	return def
-}
-
-// resolveProject aplica el override de proceso cuando la llamada no trae proyecto explícito.
-func (s Services) resolveProject(explicit string) string {
-	if p := strings.TrimSpace(explicit); p != "" {
-		return p
-	}
-	return strings.TrimSpace(s.DefaultProject)
 }
 
 // jsonResult serializa un valor a JSON para devolverlo como texto de resultado. Si falla la

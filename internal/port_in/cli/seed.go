@@ -30,7 +30,7 @@ func (seedCmd) Run(ctx context.Context, args []string, app *App) error {
 	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
 	dir := fs.String("dir", "", "directorio del proyecto a analizar (por defecto el actual)")
-	projectFlag := fs.String("project", "", "proyecto de las memorias (por defecto KANDEL_PROJECT o detección git)")
+	projectFlag := fs.String("project", "", "proyecto de las memorias (por defecto: detección git del directorio)")
 	agent := fs.String("agent", "", "CLI de agente para generar (por defecto KANDEL_AGENT_CLI o config)")
 	model := fs.String("model", "", "modelo del agente (por defecto KANDEL_SEED_MODEL o config)")
 	limit := fs.Int("limit", 0, "tope de memorias a proponer (0 = sin tope, el LLM decide cuántas decisiones reales hay)")
@@ -93,7 +93,7 @@ func (seedCmd) Run(ctx context.Context, args []string, app *App) error {
 	}
 
 	// 4. Guardar (con pre-chequeo del embebedor dentro del servicio).
-	proj := resolveProject(*projectFlag)
+	proj := strings.TrimSpace(*projectFlag)
 	if proj == "" {
 		proj = project.Detect(workDir).Project
 	}

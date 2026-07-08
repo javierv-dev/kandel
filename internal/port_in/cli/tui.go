@@ -23,7 +23,7 @@ func (tuiCmd) Synopsis() string { return "interfaz de terminal para navegar memo
 func (tuiCmd) Run(_ context.Context, args []string, app *App) error {
 	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
-	project := fs.String("project", "", "filtrar por proyecto (por defecto KANDEL_PROJECT)")
+	project := fs.String("project", "", "filtrar por proyecto (por defecto: detección git del directorio)")
 	limit := fs.Int("limit", 50, "número de memorias a cargar")
 	fs.Usage = func() {
 		fmt.Fprintln(app.Err, "uso: kandel tui [--project P] [--limit N]")

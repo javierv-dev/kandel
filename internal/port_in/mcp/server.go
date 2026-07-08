@@ -70,10 +70,6 @@ type Services struct {
 	Doctor    DoctorPort
 	Conflict  ConflictPort
 	Sync      SyncPort
-
-	// DefaultProject es un override de proyecto a nivel de proceso (p. ej. KANDEL_PROJECT o
-	// `kandel mcp --project NAME`), usado cuando una llamada no trae proyecto explícito.
-	DefaultProject string
 }
 
 // serverInstructions le dice al cliente MCP cuándo usar las herramientas de kandel. La búsqueda

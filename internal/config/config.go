@@ -6,9 +6,10 @@
 //
 // Dos ajustes NO viven en el archivo, a propósito:
 //   - el directorio de datos (KANDEL_DATA_DIR) localiza el propio archivo → sería huevo-gallina;
-//   - el proyecto (KANDEL_PROJECT) es contexto por-invocación, no un ajuste persistente.
+//   - el proyecto es contexto por-invocación (flag o detección git del directorio), no un ajuste
+//     persistente.
 //
-// Ambos quedan solo por entorno/flag.
+// El primero queda por entorno/flag; el segundo, por flag/detección.
 package config
 
 import (
@@ -355,8 +356,8 @@ func Render(active map[string]string) string {
 	var b strings.Builder
 	b.WriteString("# Configuración de kandel. Descomenta una línea para fijar un valor.\n")
 	b.WriteString("# Precedencia: variable de entorno KANDEL_<CLAVE> > este archivo > default interno.\n")
-	b.WriteString("# El directorio de datos (KANDEL_DATA_DIR) y el proyecto (KANDEL_PROJECT) NO se\n")
-	b.WriteString("# configuran aquí: solo por entorno o flag.\n")
+	b.WriteString("# El directorio de datos (KANDEL_DATA_DIR) y el proyecto NO se configuran aquí:\n")
+	b.WriteString("# el primero por entorno o flag; el segundo por flag o detección git del directorio.\n")
 
 	known := map[string]bool{}
 	for _, k := range Keys {

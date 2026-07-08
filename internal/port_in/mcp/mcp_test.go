@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -71,9 +72,9 @@ func TestNewServerRegistersOnlyAllowedTools(t *testing.T) {
 
 func TestHandleSaveTranslatesArgs(t *testing.T) {
 	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 5, Title: "T"}, Outcome: service.SaveCreated}}
-	svc := Services{Memory: mem, DefaultProject: "kandel"}
+	svc := Services{Memory: mem}
 	res, err := handleSave(svc)(context.Background(), callWith(map[string]any{
-		"title": "T", "content": "C", "type": "decision", "scope": "global",
+		"title": "T", "content": "C", "type": "decision", "scope": "global", "project": "kandel",
 	}))
 	if err != nil {
 		t.Fatalf("handleSave error: %v", err)
@@ -88,7 +89,7 @@ func TestHandleSaveTranslatesArgs(t *testing.T) {
 		t.Errorf("type/scope mal traducidos: %+v", mem.lastSave)
 	}
 	if mem.lastSave.Project != "kandel" {
-		t.Errorf("debe usar el proyecto del proceso: %q", mem.lastSave.Project)
+		t.Errorf("debe pasar el proyecto explícito: %q", mem.lastSave.Project)
 	}
 }
 
@@ -97,9 +98,9 @@ func TestHandleSaveTranslatesArgs(t *testing.T) {
 // project y una preference nunca quedaba global).
 func TestHandleSaveOmitsScopeLetsServiceDefault(t *testing.T) {
 	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 1}, Outcome: service.SaveCreated}}
-	svc := Services{Memory: mem, DefaultProject: "kandel"}
+	svc := Services{Memory: mem}
 	res, err := handleSave(svc)(context.Background(), callWith(map[string]any{
-		"title": "T", "content": "C", "type": "preference",
+		"title": "T", "content": "C", "type": "preference", "project": "kandel",
 	}))
 	if err != nil || res.IsError {
 		t.Fatalf("handleSave falló: %v / %v", err, res)
@@ -172,8 +173,8 @@ func TestHandleRestore(t *testing.T) {
 
 func TestHandleSavePrompt(t *testing.T) {
 	pr := &fakePrompt{}
-	svc := Services{Prompt: pr, DefaultProject: "kandel"}
-	_, err := handleSavePrompt(svc)(context.Background(), callWith(map[string]any{"content": "arregla X"}))
+	svc := Services{Prompt: pr}
+	_, err := handleSavePrompt(svc)(context.Background(), callWith(map[string]any{"content": "arregla X", "project": "kandel"}))
 	if err != nil {
 		t.Fatalf("handleSavePrompt error: %v", err)
 	}
@@ -297,9 +298,8 @@ func TestDoctorToolNotRegisteredWithoutPort(t *testing.T) {
 	}
 }
 
-func TestHandleCurrentProjectOverride(t *testing.T) {
-	svc := Services{DefaultProject: "forzado"}
-	res, err := handleCurrentProject(svc)(context.Background(), callWith(nil))
+func TestHandleCurrentProjectDetects(t *testing.T) {
+	res, err := handleCurrentProject(Services{})(context.Background(), callWith(nil))
 	if err != nil {
 		t.Fatalf("current_project error: %v", err)
 	}
@@ -311,8 +311,110 @@ func TestHandleCurrentProjectOverride(t *testing.T) {
 	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
 		t.Fatalf("respuesta no es JSON: %q", got)
 	}
-	if parsed.Project != "forzado" || parsed.Source != "process_override" {
-		t.Errorf("el override de proceso debe ganar: %+v", parsed)
+	// Corre dentro del repo kandel: debe detectar un proyecto (por remoto o raíz git), nunca vacío
+	// ni el desaparecido "process_override".
+	if parsed.Project == "" {
+		t.Errorf("debe detectar un proyecto no vacío: %+v", parsed)
+	}
+	switch parsed.Source {
+	case "git_remote", "git_root", "dir_basename":
+	default:
+		t.Errorf("source de detección inesperado: %q", parsed.Source)
+	}
+}
+
+// ─── mem_pending: proyecto estricto y salida agrupada ──────────────────────────
+
+type pendingGroups struct {
+	Groups []struct {
+		Project  string `json:"project"`
+		Memories []struct {
+			ID    int64  `json:"id"`
+			Title string `json:"title"`
+		} `json:"memories"`
+	} `json:"groups"`
+}
+
+func parsePending(t *testing.T, res *mcp.CallToolResult) pendingGroups {
+	t.Helper()
+	var g pendingGroups
+	if err := json.Unmarshal([]byte(textOf(t, res)), &g); err != nil {
+		t.Fatalf("respuesta no es JSON de grupos: %v", err)
+	}
+	return g
+}
+
+func TestHandlePendingRequiresProject(t *testing.T) {
+	lc := &fakeLifecycle{}
+	res, _ := handlePending(Services{Lifecycle: lc})(context.Background(), callWith(nil))
+	if !res.IsError {
+		t.Fatal("mem_pending sin proyecto debe devolver error de tool")
+	}
+	if len(lc.calls) != 0 {
+		t.Errorf("no debe consultar el repo sin proyecto, consultó: %v", lc.calls)
+	}
+}
+
+func TestHandlePendingSingleProject(t *testing.T) {
+	lc := &fakeLifecycle{byProject: map[string][]domain.Memory{
+		"kandel": {{ID: 1, Title: "a"}},
+	}}
+	res, err := handlePending(Services{Lifecycle: lc})(context.Background(), callWith(map[string]any{"project": "kandel"}))
+	if err != nil || res.IsError {
+		t.Fatalf("handlePending falló: %v / %v", err, res)
+	}
+	g := parsePending(t, res)
+	if len(g.Groups) != 1 || g.Groups[0].Project != "kandel" || len(g.Groups[0].Memories) != 1 {
+		t.Fatalf("se esperaba un grupo 'kandel' con 1 memoria: %+v", g)
+	}
+	if want := []string{"kandel"}; !reflect.DeepEqual(lc.calls, want) {
+		t.Errorf("calls = %v, se esperaba %v", lc.calls, want)
+	}
+}
+
+func TestHandlePendingMultipleProjectsGrouped(t *testing.T) {
+	lc := &fakeLifecycle{byProject: map[string][]domain.Memory{
+		"a": {{ID: 1, Title: "x"}},
+		"b": {{ID: 2, Title: "y"}, {ID: 3, Title: "z"}},
+	}}
+	res, err := handlePending(Services{Lifecycle: lc})(context.Background(), callWith(map[string]any{
+		"projects": []any{"a", "b"},
+	}))
+	if err != nil || res.IsError {
+		t.Fatalf("handlePending falló: %v / %v", err, res)
+	}
+	g := parsePending(t, res)
+	if len(g.Groups) != 2 {
+		t.Fatalf("se esperaban 2 grupos separados: %+v", g)
+	}
+	if g.Groups[0].Project != "a" || len(g.Groups[0].Memories) != 1 {
+		t.Errorf("grupo 0 mal: %+v", g.Groups[0])
+	}
+	if g.Groups[1].Project != "b" || len(g.Groups[1].Memories) != 2 {
+		t.Errorf("grupo 1 mal: %+v", g.Groups[1])
+	}
+	if want := []string{"a", "b"}; !reflect.DeepEqual(lc.calls, want) {
+		t.Errorf("calls = %v, se esperaba una consulta por proyecto %v", lc.calls, want)
+	}
+}
+
+func TestHandlePendingAllProjectsGroupsByProject(t *testing.T) {
+	lc := &fakeLifecycle{byProject: map[string][]domain.Memory{
+		"": {{ID: 1, Title: "x", Project: "a"}, {ID: 2, Title: "y", Project: "b"}, {ID: 3, Title: "z", Project: "a"}},
+	}}
+	res, err := handlePending(Services{Lifecycle: lc})(context.Background(), callWith(map[string]any{"project": "*"}))
+	if err != nil || res.IsError {
+		t.Fatalf("handlePending falló: %v / %v", err, res)
+	}
+	if want := []string{""}; !reflect.DeepEqual(lc.calls, want) {
+		t.Errorf(`"*" debe consultar una vez sin filtro, calls = %v`, lc.calls)
+	}
+	g := parsePending(t, res)
+	if len(g.Groups) != 2 || g.Groups[0].Project != "a" || g.Groups[1].Project != "b" {
+		t.Fatalf("se esperaban grupos a,b por proyecto de cada memoria: %+v", g)
+	}
+	if len(g.Groups[0].Memories) != 2 || len(g.Groups[1].Memories) != 1 {
+		t.Errorf("reparto por proyecto incorrecto: %+v", g)
 	}
 }
 
@@ -462,10 +564,17 @@ func (f *fakeSession) MostRecentActive(_ context.Context, _ string) (string, boo
 	return "", false, nil
 }
 
-type fakeLifecycle struct{}
+type fakeLifecycle struct {
+	byProject map[string][]domain.Memory // respuesta por proyecto ("" = todos)
+	calls     []string                   // proyectos consultados, en orden
+}
 
-func (f *fakeLifecycle) PendingResolution(_ context.Context, _ string, _ int) ([]domain.Memory, error) {
-	return nil, nil
+func (f *fakeLifecycle) PendingResolution(_ context.Context, project string, _ int) ([]domain.Memory, error) {
+	f.calls = append(f.calls, project)
+	if f.byProject == nil {
+		return nil, nil
+	}
+	return f.byProject[project], nil
 }
 
 type fakePrompt struct {

@@ -146,7 +146,7 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 		}
 		res, err := svc.Memory.Save(ctx, service.SaveInput{
 			SessionID:  argString(req, "session_id"),
-			Project:    svc.resolveProject(argString(req, "project")),
+			Project:    argString(req, "project"),
 			Type:       typ,
 			Scope:      scope,
 			Title:      title,
@@ -190,7 +190,7 @@ func handleSearch(svc Services) server.ToolHandlerFunc {
 		results, err := svc.Memory.Search(ctx, ports.SearchQuery{
 			Query:             query,
 			Type:              domain.MemoryType(argString(req, "type")),
-			Project:           svc.resolveProject(argString(req, "project")),
+			Project:           argString(req, "project"),
 			Scope:             scope,
 			Limit:             argInt(req, "limit", 10),
 			IncludeSuperseded: argBool(req, "include_superseded", false),
@@ -223,7 +223,7 @@ func handleContext(svc Services) server.ToolHandlerFunc {
 			scope = s
 		}
 		memories, err := svc.Memory.Recent(ctx, ports.RecentQuery{
-			Project: svc.resolveProject(argString(req, "project")),
+			Project: argString(req, "project"),
 			Scope:   scope,
 			Limit:   argInt(req, "limit", 20),
 		})

@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/learnings"
@@ -63,7 +62,7 @@ func handleSavePrompt(svc Services) server.ToolHandlerFunc {
 		}
 		res, err := svc.Prompt.Save(ctx, service.SavePromptInput{
 			SessionID: argString(req, "session_id"),
-			Project:   svc.resolveProject(argString(req, "project")),
+			Project:   argString(req, "project"),
 			Content:   content,
 		})
 		if err != nil {
@@ -86,7 +85,7 @@ func handleCapturePassive(svc Services) server.ToolHandlerFunc {
 		if len(items) == 0 {
 			return mcp.NewToolResultError("no se encontró una sección de aprendizajes ('## Key Learnings:' o 'Aprendizajes:') con viñetas"), nil
 		}
-		project := svc.resolveProject(argString(req, "project"))
+		project := argString(req, "project")
 		sessionID := argString(req, "session_id")
 		saved := 0
 		for _, text := range items {
@@ -108,20 +107,15 @@ func handleCapturePassive(svc Services) server.ToolHandlerFunc {
 	}
 }
 
-// handleCurrentProject detecta el proyecto del directorio de trabajo. Un override de proceso
-// (KANDEL_PROJECT o --project) gana sobre la detección automática.
-func handleCurrentProject(svc Services) server.ToolHandlerFunc {
+// handleCurrentProject detecta el proyecto del directorio de trabajo (raíz git o basename). Existe
+// para agentes sin el hook de kandel; con el hook, el proyecto ya viene inyectado en la conversación.
+func handleCurrentProject(_ Services) server.ToolHandlerFunc {
 	return func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		det := project.DetectCWD()
-		result := map[string]any{
+		return jsonResult(map[string]any{
 			"project":        det.Project,
 			"project_source": string(det.Source),
 			"project_path":   det.Path,
-		}
-		if p := strings.TrimSpace(svc.DefaultProject); p != "" {
-			result["project"] = p
-			result["project_source"] = "process_override"
-		}
-		return jsonResult(result)
+		})
 	}
 }

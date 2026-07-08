@@ -18,6 +18,7 @@ import (
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/hub"
 	"github.com/javierv-dev/kandel/internal/ports"
+	"github.com/javierv-dev/kandel/internal/project"
 	"github.com/javierv-dev/kandel/internal/service"
 )
 
@@ -270,11 +271,11 @@ func parseFlags(fs *flag.FlagSet, args []string) ([]string, error) {
 }
 
 // resolveProject aplica la cadena de resolución de proyecto para la CLI: el valor explícito del
-// flag gana; si está vacío, se usa la variable de entorno KANDEL_PROJECT; si tampoco, queda
-// vacío (lectura laxa / escritura estricta lo rechazará).
+// flag gana; si está vacío, se detecta del directorio de trabajo (raíz git o basename). No hay
+// variable de entorno: aquí el CWD es el del proyecto real, así que la detección es fiable.
 func resolveProject(explicit string) string {
 	if p := strings.TrimSpace(explicit); p != "" {
 		return p
 	}
-	return strings.TrimSpace(os.Getenv("KANDEL_PROJECT"))
+	return project.DetectCWD().Project
 }

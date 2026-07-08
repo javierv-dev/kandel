@@ -39,7 +39,7 @@ func sessionStart(ctx context.Context, args []string, app *App) error {
 	fs := flag.NewFlagSet("session start", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
 	id := fs.String("id", "", "id de la sesión (obligatorio)")
-	project := fs.String("project", "", "proyecto (por defecto KANDEL_PROJECT)")
+	project := fs.String("project", "", "proyecto (por defecto: detección git del directorio)")
 	dir := fs.String("dir", "", "directorio de trabajo")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -80,7 +80,7 @@ func sessionEnd(ctx context.Context, args []string, app *App) error {
 func sessionCurrent(ctx context.Context, args []string, app *App) error {
 	fs := flag.NewFlagSet("session current", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
-	project := fs.String("project", "", "proyecto (por defecto KANDEL_PROJECT)")
+	project := fs.String("project", "", "proyecto (por defecto: detección git del directorio)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
