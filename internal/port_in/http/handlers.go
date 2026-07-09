@@ -267,22 +267,6 @@ func handleEndSession(svc Services) http.HandlerFunc {
 	}
 }
 
-// handleGetSession devuelve una sesión por id.
-func handleGetSession(svc Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s, err := svc.Session.Get(r.Context(), r.PathValue("id"))
-		if err != nil {
-			writeError(w, statusForError(err), err.Error())
-			return
-		}
-		if s == nil {
-			writeError(w, http.StatusNotFound, "sesión no encontrada")
-			return
-		}
-		writeJSON(w, http.StatusOK, s)
-	}
-}
-
 // savePromptRequest es el cuerpo de POST /prompts.
 type savePromptRequest struct {
 	SessionID string `json:"session_id"`

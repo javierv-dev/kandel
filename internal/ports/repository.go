@@ -98,11 +98,6 @@ type SessionRepo interface {
 	End(ctx context.Context, id string) error
 	// Get recupera una sesión por id; nil si no existe.
 	Get(ctx context.Context, id string) (*domain.Session, error)
-	// Recent lista las sesiones más recientes de un proyecto.
-	Recent(ctx context.Context, project string, limit int) ([]domain.Session, error)
-	// MostRecentActive devuelve el id de la sesión abierta más reciente del proyecto.
-	// El segundo valor es false si no hay ninguna abierta.
-	MostRecentActive(ctx context.Context, project string) (string, bool, error)
 	// UpdateProject renombra el proyecto de todas las sesiones que lo tengan; devuelve cuántas
 	// filas cambió.
 	UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error)

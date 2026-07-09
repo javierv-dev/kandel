@@ -59,17 +59,3 @@ func TestSessionEndMissing(t *testing.T) {
 		t.Errorf("End de sesión inexistente debe dar ErrNotFound, fue %v", err)
 	}
 }
-
-func TestSessionMostRecentActive(t *testing.T) {
-	svc, _, _ := newSessionFixture()
-	ctx := context.Background()
-	_, _ = svc.Start(ctx, StartInput{ID: "s1", Project: "proj", Directory: "/d"})
-
-	id, ok, err := svc.MostRecentActive(ctx, "Proj")
-	if err != nil {
-		t.Fatalf("MostRecentActive: %v", err)
-	}
-	if !ok || id != "s1" {
-		t.Errorf("debe resolver la sesión activa 's1', fue %q (ok=%v)", id, ok)
-	}
-}

@@ -54,7 +54,7 @@ func TestShouldRegisterNilAllowsAll(t *testing.T) {
 // ─── Servidor: la allowlist filtra el registro ─────────────────────────────────
 
 func TestNewServerRegistersOnlyAllowedTools(t *testing.T) {
-	svc := Services{Memory: &fakeMemory{}, Session: &fakeSession{}, Lifecycle: &fakeLifecycle{}}
+	svc := Services{Memory: &fakeMemory{}, Lifecycle: &fakeLifecycle{}}
 	srv := NewServer(svc, ResolveTools("admin"))
 	// El servidor expone una caja de herramientas (map nombre→tool); admin trae mem_delete y
 	// mem_restore (curación: borrar lógico y deshacerlo).
@@ -590,16 +590,6 @@ func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error)
 	return domain.Memory{ID: id}, nil
 }
 
-type fakeSession struct{}
-
-func (f *fakeSession) Start(_ context.Context, in service.StartInput) (domain.Session, error) {
-	return domain.Session{ID: in.ID, Project: in.Project}, nil
-}
-func (f *fakeSession) Get(_ context.Context, _ string) (*domain.Session, error) { return nil, nil }
-func (f *fakeSession) MostRecentActive(_ context.Context, _ string) (string, bool, error) {
-	return "", false, nil
-}
-
 type fakeLifecycle struct {
 	byProject map[string][]domain.Memory // respuesta por proyecto ("" = todos)
 	calls     []string                   // proyectos consultados, en orden
@@ -670,7 +660,6 @@ func (f *fakeSync) ListConflicts(context.Context) ([]domain.SyncConflict, error)
 
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
-	_ SessionPort   = (*fakeSession)(nil)
 	_ LifecyclePort = (*fakeLifecycle)(nil)
 	_ PromptPort    = (*fakePrompt)(nil)
 	_ DoctorPort    = fakeDoctor{}

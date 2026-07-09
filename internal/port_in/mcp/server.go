@@ -22,13 +22,6 @@ type MemoryPort interface {
 	Restore(ctx context.Context, id int64) (domain.Memory, error)
 }
 
-// SessionPort es la cara de los casos de uso de sesión que el MCP consume.
-type SessionPort interface {
-	Start(ctx context.Context, in service.StartInput) (domain.Session, error)
-	Get(ctx context.Context, id string) (*domain.Session, error)
-	MostRecentActive(ctx context.Context, project string) (string, bool, error)
-}
-
 // LifecyclePort es la cara de los casos de uso de ciclo de vida que el MCP consume.
 type LifecyclePort interface {
 	PendingResolution(ctx context.Context, project string, limit int) ([]domain.Memory, error)
@@ -64,7 +57,6 @@ type SyncPort interface {
 // la CLI: el wiring concreto vive en cmd/kandel/main.go.
 type Services struct {
 	Memory    MemoryPort
-	Session   SessionPort
 	Lifecycle LifecyclePort
 	Prompt    PromptPort
 	Doctor    DoctorPort
@@ -102,10 +94,9 @@ func NewServer(svc Services, allowlist map[string]bool) *server.MCPServer {
 }
 
 // registerTools añade al servidor cada herramienta cuyo nombre pase la allowlist. Cada grupo
-// vive en su archivo (tools_memory.go, tools_session.go, tools_lifecycle.go).
+// vive en su archivo (tools_memory.go, tools_lifecycle.go, tools_context.go).
 func registerTools(srv *server.MCPServer, svc Services, allowlist map[string]bool) {
 	registerMemoryTools(srv, svc, allowlist)
-	registerSessionTools(srv, svc, allowlist)
 	registerLifecycleTools(srv, svc, allowlist)
 	registerContextTools(srv, svc, allowlist)
 	registerDoctorTools(srv, svc, allowlist)

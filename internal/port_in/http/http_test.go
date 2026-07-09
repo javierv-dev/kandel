@@ -336,12 +336,6 @@ func (f *fakeSession) Start(_ context.Context, in service.StartInput) (domain.Se
 	return domain.Session{ID: in.ID, Project: in.Project}, nil
 }
 func (f *fakeSession) End(_ context.Context, _ string) error { return f.endErr }
-func (f *fakeSession) Get(_ context.Context, id string) (*domain.Session, error) {
-	if id == "missing" {
-		return nil, nil
-	}
-	return &domain.Session{ID: id}, nil
-}
 
 type fakeLifecycle struct{}
 

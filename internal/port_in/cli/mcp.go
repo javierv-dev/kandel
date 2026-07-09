@@ -33,7 +33,6 @@ func (mcpCmd) Run(_ context.Context, args []string, app *App) error {
 
 	svc := mcpadapter.Services{
 		Memory:    app.Memory,
-		Session:   app.Session,
 		Lifecycle: app.Lifecycle,
 		Prompt:    app.Prompt,
 		Doctor:    app.Doctor,
