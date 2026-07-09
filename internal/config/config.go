@@ -55,6 +55,13 @@ var (
 	// EmbedDimensions es la dimensión del vector; vacío deja el default del embebedor (1024 para bge-m3).
 	EmbedDimensions = Key{File: "embed_dimensions", Env: "KANDEL_EMBED_DIMENSIONS", Default: "",
 		Doc: "dimensión del vector; vacío = default del embebedor (1024 para bge-m3)"}
+	// EmbedKeepAlive controla cuánto mantiene Ollama el modelo de embeddings cargado en memoria tras
+	// cada petición (campo keep_alive de /api/embed). "-1" lo deja cargado indefinidamente para eliminar
+	// el arranque en frío (bge-m3 ocupa ~0.66 GB). Acepta también una duración ("1h", "30m") o "0" para
+	// descargarlo al instante. Se envía por petición, así que solo afecta al modelo de kandel, no al
+	// resto del servidor Ollama del usuario. Vacío = no enviar el campo (deja el default de Ollama, ~5m).
+	EmbedKeepAlive = Key{File: "embed_keep_alive", Env: "KANDEL_EMBED_KEEP_ALIVE", Default: "-1",
+		Doc: "cuánto mantiene Ollama el embebedor cargado (keep_alive); -1 = siempre, '1h'/'30m' = duración, 0 = descargar ya, vacío = default de Ollama"}
 	// Port es el puerto del daemon HTTP (mismo origen de verdad para hooks y servidor).
 	Port = Key{File: "port", Env: "KANDEL_PORT", Default: "8765",
 		Doc: "puerto del daemon HTTP"}
@@ -116,7 +123,7 @@ var (
 
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
-	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
+	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
 	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 

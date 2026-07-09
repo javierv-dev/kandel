@@ -90,6 +90,7 @@ func run(args []string) error {
 		config.Resolve(config.OllamaHost),
 		config.Resolve(config.EmbedModel),
 		embedDimensions(),
+		embedding.WithKeepAlive(config.Resolve(config.EmbedKeepAlive)),
 	)
 
 	// Casos de uso (service/).
