@@ -219,38 +219,6 @@ func TestHandleSavePrompt(t *testing.T) {
 	}
 }
 
-func TestHandleCapturePassiveExtractsAndSaves(t *testing.T) {
-	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 1}}}
-	svc := Services{Memory: mem}
-	content := "Resumen del trabajo.\n\n## Key Learnings:\n- FTS5 no es LIKE\n- Sanitizar siempre\n\nFin."
-	res, err := handleCapturePassive(svc)(context.Background(), callWith(map[string]any{"content": content}))
-	if err != nil {
-		t.Fatalf("capture error: %v", err)
-	}
-	got := textOf(t, res)
-	var parsed struct {
-		Extracted int `json:"extracted"`
-		Saved     int `json:"saved"`
-	}
-	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
-		t.Fatalf("respuesta no es JSON: %q", got)
-	}
-	if parsed.Extracted != 2 || parsed.Saved != 2 {
-		t.Errorf("extracted/saved = %d/%d, se esperaba 2/2", parsed.Extracted, parsed.Saved)
-	}
-	if mem.saveCount != 2 {
-		t.Errorf("Memory.Save llamado %d veces, se esperaban 2", mem.saveCount)
-	}
-}
-
-func TestHandleCapturePassiveNoSection(t *testing.T) {
-	svc := Services{Memory: &fakeMemory{}}
-	res, _ := handleCapturePassive(svc)(context.Background(), callWith(map[string]any{"content": "sin viñetas ni encabezado"}))
-	if !res.IsError {
-		t.Error("sin sección de aprendizajes debe devolver error de tool")
-	}
-}
-
 func TestHandleDoctor(t *testing.T) {
 	svc := Services{Doctor: fakeDoctor{report: diagnostic.Report{
 		Worst:    diagnostic.SeverityWarning,

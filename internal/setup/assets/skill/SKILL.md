@@ -27,7 +27,7 @@ Tools principales:
 otra vez y reinicia Claude Code. Repara la config del MCP, los hooks y la skill.
 
 Tools adicionales (diferidas — cárgalas con ToolSearch solo cuando las necesites):
-- `mem_pending`, `mem_capture_passive`, `mem_current_project`
+- `mem_pending`, `mem_current_project`
 - `mem_doctor`, `mem_compare`, `mem_judge`
 - `mem_delete`, `mem_restore`
 

@@ -20,7 +20,6 @@ var ProfileAgent = map[string]bool{
 	"mem_update":          true,
 	"mem_pending":         true,
 	"mem_save_prompt":     true,
-	"mem_capture_passive": true,
 	"mem_current_project": true,
 	"mem_doctor":          true,
 	"mem_compare":         true,

@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/javierv-dev/kandel/internal/domain"
-	"github.com/javierv-dev/kandel/internal/learnings"
 	"github.com/javierv-dev/kandel/internal/ports"
 	"github.com/javierv-dev/kandel/internal/service"
 )
@@ -313,57 +312,6 @@ func handleContext(svc Services) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"context": text})
-	}
-}
-
-// passiveCaptureRequest es el cuerpo de POST /memories/passive: la salida cruda de un agente
-// (p. ej. de un subagente al terminar) de la que se extraen aprendizajes.
-type passiveCaptureRequest struct {
-	SessionID string `json:"session_id"`
-	Content   string `json:"content"`
-	Project   string `json:"project"`
-	Source    string `json:"source"`
-}
-
-// handlePassiveCapture extrae los aprendizajes en viñetas del contenido y guarda cada uno como
-// una memoria de tipo discovery. El dedupe lo hace Memory.Save (por hash); aquí se cuentan los
-// resultados. Es fire-and-forget desde el hook: nunca debe fallar la sesión del agente.
-func handlePassiveCapture(svc Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var body passiveCaptureRequest
-		if !decodeBody(w, r, &body) {
-			return
-		}
-		items := learnings.Extract(body.Content)
-		extracted := len(items)
-		saved, duplicates := 0, 0
-		for _, text := range items {
-			res, err := svc.Memory.Save(r.Context(), service.SaveInput{
-				SessionID: body.SessionID,
-				Project:   body.Project,
-				Type:      domain.TypeDiscovery,
-				Scope:     domain.ScopeProject,
-				Title:     learnings.Truncate(text, 80),
-				Content:   text,
-			})
-			if err != nil {
-				// Un fallo (p. ej. embebedor caído) corta: se informa lo guardado hasta aquí.
-				writeError(w, statusForError(err), err.Error())
-				return
-			}
-			switch res.Outcome {
-			case service.SaveCreated:
-				saved++
-			default:
-				// merged o duplicate: ya existía algo equivalente.
-				duplicates++
-			}
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"extracted":  extracted,
-			"saved":      saved,
-			"duplicates": duplicates,
-		})
 	}
 }
 

@@ -107,7 +107,6 @@ func NewHandler(svc Services) http.Handler {
 
 	// Endpoints que consumen los hooks de integración con agentes (ver §18 del plan).
 	mux.HandleFunc("GET /context", handleContext(svc))
-	mux.HandleFunc("POST /memories/passive", handlePassiveCapture(svc))
 	mux.HandleFunc("POST /projects/migrate", handleMigrateProject(svc))
 
 	// Mantenimiento de vectores disparado por hooks (asíncrono; respuesta 202).

@@ -2,18 +2,15 @@ package mcp
 
 import (
 	"context"
-	"strconv"
 
-	"github.com/javierv-dev/kandel/internal/domain"
-	"github.com/javierv-dev/kandel/internal/learnings"
 	"github.com/javierv-dev/kandel/internal/project"
 	"github.com/javierv-dev/kandel/internal/service"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// registerContextTools registra herramientas de contexto: guardado de prompts, captura pasiva de
-// aprendizajes y detección del proyecto actual.
+// registerContextTools registra herramientas de contexto: guardado de prompts y detección del
+// proyecto actual.
 func registerContextTools(srv *server.MCPServer, svc Services, allowlist map[string]bool) {
 	if shouldRegister("mem_save_prompt", allowlist) {
 		srv.AddTool(
@@ -25,19 +22,6 @@ func registerContextTools(srv *server.MCPServer, svc Services, allowlist map[str
 				mcp.WithString("project", mcp.Description(`Proyecto; usa el "Proyecto actual" inyectado. Si se omite queda sin proyecto (no cae a ninguno).`)),
 			),
 			handleSavePrompt(svc),
-		)
-	}
-
-	if shouldRegister("mem_capture_passive", allowlist) {
-		srv.AddTool(
-			mcp.NewTool("mem_capture_passive",
-				mcp.WithDescription("Extrae aprendizajes de un texto que incluya una sección '## Key Learnings:' (o 'Aprendizajes:') y guarda cada punto como una memoria de tipo discovery. Devuelve cuántos se extrajeron y guardaron."),
-				mcp.WithTitleAnnotation("Captura pasiva"),
-				mcp.WithString("content", mcp.Required(), mcp.Description("Texto con una sección de aprendizajes en viñetas")),
-				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
-				mcp.WithString("project", mcp.Description(`Proyecto; usa el "Proyecto actual" inyectado. Si se omite queda sin proyecto (no cae a ninguno).`)),
-			),
-			handleCapturePassive(svc),
 		)
 	}
 
@@ -69,41 +53,6 @@ func handleSavePrompt(svc Services) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("error al guardar el prompt: " + err.Error()), nil
 		}
 		return jsonResult(map[string]any{"id": res.Prompt.ID, "inserted": res.Inserted})
-	}
-}
-
-// handleCapturePassive extrae los aprendizajes en viñetas de la sección "Key Learnings" del
-// contenido y guarda cada uno como una memoria. La extracción vive aquí (en el adaptador) porque
-// es traducción de entrada; el guardado usa el caso de uso Memory.Save.
-func handleCapturePassive(svc Services) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		content := argString(req, "content")
-		if content == "" {
-			return mcp.NewToolResultError("content es obligatorio para mem_capture_passive"), nil
-		}
-		items := learnings.Extract(content)
-		if len(items) == 0 {
-			return mcp.NewToolResultError("no se encontró una sección de aprendizajes ('## Key Learnings:' o 'Aprendizajes:') con viñetas"), nil
-		}
-		project := argString(req, "project")
-		sessionID := argString(req, "session_id")
-		saved := 0
-		for _, text := range items {
-			_, err := svc.Memory.Save(ctx, service.SaveInput{
-				SessionID: sessionID,
-				Project:   project,
-				Type:      domain.TypeDiscovery,
-				Scope:     domain.ScopeProject,
-				Title:     learnings.Truncate(text, 80),
-				Content:   text,
-			})
-			if err != nil {
-				// Un fallo en uno (p. ej. embebedor caído) corta: se informa lo guardado hasta aquí.
-				return mcp.NewToolResultError("captura interrumpida tras guardar " + strconv.Itoa(saved) + ": " + err.Error()), nil
-			}
-			saved++
-		}
-		return jsonResult(map[string]any{"extracted": len(items), "saved": saved})
 	}
 }
 

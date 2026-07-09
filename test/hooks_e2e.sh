@@ -9,7 +9,6 @@
 # aislado (KANDEL_DATA_DIR / KANDEL_LOG_DIR / KANDEL_PORT propios), sin tocar ~/.kandel del usuario.
 #
 # No requiere Ollama: session-start, user-prompt-submit y session-stop no usan el embebedor.
-# (La captura pasiva de subagent-stop sí necesita Ollama y queda fuera de este harness.)
 #
 # Uso:  bash test/hooks_e2e.sh
 set -u

@@ -133,13 +133,6 @@ func (c *client) triggerSyncPull(ctx context.Context) (string, error) {
 	return c.postJSON(ctx, "/sync/pull", map[string]string{})
 }
 
-// passiveCapture envía la salida cruda de un agente para extraer aprendizajes (captura pasiva).
-func (c *client) passiveCapture(ctx context.Context, sessionID, content, project, source string) (string, error) {
-	return c.postJSON(ctx, "/memories/passive", map[string]string{
-		"session_id": sessionID, "content": content, "project": project, "source": source,
-	})
-}
-
 // fetchContext recupera el bloque de contexto del proyecto (sesiones, prompts y memorias
 // recientes). Devuelve "" si el daemon no responde o no hay contexto: el hook simplemente no
 // inyecta nada en ese caso.
