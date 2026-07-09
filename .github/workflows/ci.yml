@@ -28,15 +28,14 @@ jobs:
       - name: Pruebas
         run: go test ./...
 
-  # Job de release (§21 Eje 1): solo corre al empujar un tag vX.Y.Z. Cross-compila el binario
+  # Job de build de release (§21 Eje 1): solo corre al empujar un tag vX.Y.Z. Cross-compila el binario
   # estático (CGO_ENABLED=0) para cada plataforma soportada, inyecta los metadatos de versión por
-  # ldflags y sube cada binario a la GitHub Release del tag.
+  # ldflags y sube cada binario como artifact. NO toca la GitHub Release: la publicación queda en un
+  # único job (publish) para evitar que los jobs de la matriz compitan al crear la Release (carrera).
   release:
     needs: build-test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # necesario para crear la Release y subir los binarios
     strategy:
       matrix:
         include:
@@ -70,7 +69,29 @@ jobs:
             -o "$BIN" ./cmd/kandel
           echo "BIN=$BIN" >> "$GITHUB_ENV"
 
+      - name: Subir binario como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kandel-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.BIN }}
+          if-no-files-found: error
+
+  # Job de publish: corre UNA sola vez tras compilar toda la matriz. Baja los artifacts de las 4
+  # plataformas y crea/actualiza la GitHub Release con todos los binarios de una. Un único escritor de
+  # la Release elimina la carrera de raíz (bug: los jobs de la matriz competían al crear la Release).
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # necesario para crear la Release y subir los binarios
+    steps:
+      - name: Bajar todos los binarios
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Publicar en la Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.BIN }}
+          files: dist/*
