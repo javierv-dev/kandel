@@ -16,7 +16,7 @@ func registerSessionTools(srv *server.MCPServer, svc Services, allowlist map[str
 				mcp.WithDescription("Registra el inicio de una sesión de trabajo."),
 				mcp.WithTitleAnnotation("Iniciar sesión"),
 				mcp.WithString("id", mcp.Required(), mcp.Description("Id de la sesión")),
-				mcp.WithString("project", mcp.Description("Proyecto; si se omite, el del proceso")),
+				mcp.WithString("project", mcp.Description(`Proyecto de la sesión; usa el "Proyecto actual" inyectado.`)),
 				mcp.WithString("directory", mcp.Description("Directorio de trabajo")),
 			),
 			handleSessionStart(svc),

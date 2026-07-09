@@ -24,7 +24,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("content", mcp.Required(), mcp.Description("Contenido, idealmente con formato **What**/**Why**/**Where**/**Learned**")),
 				mcp.WithString("type", mcp.Description("Tipo: decision, preference, architecture, bugfix, discovery, journal (entrada de bitácora)")),
 				mcp.WithString("scope", mcp.Description("Alcance: project (def.) o global")),
-				mcp.WithString("project", mcp.Description("Proyecto explícito; si se omite, se usa el del proceso")),
+				mcp.WithString("project", mcp.Description(`Proyecto de la memoria. Obligatorio para scope=project (si falta, error); en scope=global se ignora (la global se desancla del proyecto). Usa el "Proyecto actual" inyectado.`)),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
 				mcp.WithString("tool", mcp.Description("Herramienta que originó la memoria (procedencia), p. ej. kandel-seed")),
 				mcp.WithString("resolution", mcp.Description("Estado de pendiente: open (pendiente) o resolved; vacío = normal")),
@@ -42,7 +42,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithString("query", mcp.Required(), mcp.Description("Consulta en lenguaje natural")),
 				mcp.WithString("type", mcp.Description("Filtrar por tipo")),
-				mcp.WithString("project", mcp.Description("Filtrar por proyecto; si se omite, el del proceso")),
+				mcp.WithString("project", mcp.Required(), mcp.Description(`Proyecto a buscar (obligatorio); "*" = todos. Las globales (scope=global) siempre acompañan al proyecto. Usa el "Proyecto actual" inyectado.`)),
 				mcp.WithString("scope", mcp.Description("Filtrar por alcance: project o global")),
 				mcp.WithNumber("limit", mcp.Description("Máximo de resultados (def. 10)")),
 				mcp.WithBoolean("include_superseded", mcp.Description("Incluir memorias reemplazadas; por defecto se ocultan")),
@@ -57,7 +57,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithDescription("Recupera las memorias más recientes (lectura directa, sin búsqueda). Llámala al inicio de sesión o tras una compactación para recuperar el contexto previo."),
 				mcp.WithTitleAnnotation("Contexto reciente"),
 				mcp.WithReadOnlyHintAnnotation(true),
-				mcp.WithString("project", mcp.Description("Filtrar por proyecto; si se omite, el del proceso")),
+				mcp.WithString("project", mcp.Required(), mcp.Description(`Proyecto a recuperar (obligatorio); "*" = todos. Las globales (scope=global) siempre acompañan al proyecto. Usa el "Proyecto actual" inyectado.`)),
 				mcp.WithString("scope", mcp.Description("Filtrar por alcance")),
 				mcp.WithNumber("limit", mcp.Description("Máximo de memorias (def. 20)")),
 			),
@@ -115,6 +115,22 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 			handleRestore(svc),
 		)
 	}
+}
+
+// resolveReadProject aplica la política de lectura estricta de mem_search/mem_context: exige el
+// proyecto explícito. NO hay "proyecto del proceso" al que caer: el servidor MCP es compartido y no
+// conoce el CWD de cada conversación (el agente recibe el proyecto en el contexto inyectado y debe
+// pasarlo). Devuelve (proyecto, true) para uno concreto, ("", true) para el comodín "*" (todos los
+// proyectos, sin filtro) y ("", false) si se omitió — el handler lo traduce a un error de ambigüedad.
+func resolveReadProject(req mcp.CallToolRequest) (string, bool) {
+	p := argString(req, "project")
+	if p == "" {
+		return "", false
+	}
+	if p == allProjects {
+		return "", true
+	}
+	return p, true
 }
 
 // handleSave traduce la llamada mem_save al caso de uso Memory.Save.
@@ -187,10 +203,14 @@ func handleSearch(svc Services) server.ToolHandlerFunc {
 			}
 			scope = s
 		}
+		project, ok := resolveReadProject(req)
+		if !ok {
+			return mcp.NewToolResultError(`proyecto ambiguo: pasa 'project' o project="*" para buscar en todos`), nil
+		}
 		results, err := svc.Memory.Search(ctx, ports.SearchQuery{
 			Query:             query,
 			Type:              domain.MemoryType(argString(req, "type")),
-			Project:           argString(req, "project"),
+			Project:           project,
 			Scope:             scope,
 			Limit:             argInt(req, "limit", 10),
 			IncludeSuperseded: argBool(req, "include_superseded", false),
@@ -222,8 +242,12 @@ func handleContext(svc Services) server.ToolHandlerFunc {
 			}
 			scope = s
 		}
+		project, ok := resolveReadProject(req)
+		if !ok {
+			return mcp.NewToolResultError(`proyecto ambiguo: pasa 'project' o project="*" para todos`), nil
+		}
 		memories, err := svc.Memory.Recent(ctx, ports.RecentQuery{
-			Project: argString(req, "project"),
+			Project: project,
 			Scope:   scope,
 			Limit:   argInt(req, "limit", 20),
 		})

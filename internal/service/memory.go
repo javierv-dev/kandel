@@ -161,6 +161,12 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 		scope = domain.DefaultScopeForType(in.Type)
 	}
 	project := normalizeProject(in.Project)
+	// Una memoria global cruza todos los proyectos por definición: se desancla del proyecto que
+	// llegara (project = "") para que no quede pegada a uno solo y las lecturas la recuperen vía
+	// `scope = 'global'` desde cualquier proyecto (ver projectScopeClause en el repo).
+	if scope == domain.ScopeGlobal {
+		project = ""
+	}
 	// Escritura estricta: una memoria de proyecto necesita proyecto resoluble.
 	if scope == domain.ScopeProject && project == "" {
 		return SaveResult{}, domain.ErrAmbiguousProject

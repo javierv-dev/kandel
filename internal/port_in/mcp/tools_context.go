@@ -22,7 +22,7 @@ func registerContextTools(srv *server.MCPServer, svc Services, allowlist map[str
 				mcp.WithTitleAnnotation("Guardar prompt"),
 				mcp.WithString("content", mcp.Required(), mcp.Description("Texto del prompt")),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
-				mcp.WithString("project", mcp.Description("Proyecto; si se omite, el del proceso")),
+				mcp.WithString("project", mcp.Description(`Proyecto; usa el "Proyecto actual" inyectado. Si se omite queda sin proyecto (no cae a ninguno).`)),
 			),
 			handleSavePrompt(svc),
 		)
@@ -35,7 +35,7 @@ func registerContextTools(srv *server.MCPServer, svc Services, allowlist map[str
 				mcp.WithTitleAnnotation("Captura pasiva"),
 				mcp.WithString("content", mcp.Required(), mcp.Description("Texto con una sección de aprendizajes en viñetas")),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
-				mcp.WithString("project", mcp.Description("Proyecto; si se omite, el del proceso")),
+				mcp.WithString("project", mcp.Description(`Proyecto; usa el "Proyecto actual" inyectado. Si se omite queda sin proyecto (no cae a ninguno).`)),
 			),
 			handleCapturePassive(svc),
 		)

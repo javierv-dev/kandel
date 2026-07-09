@@ -641,6 +641,49 @@ func TestPendingResolution(t *testing.T) {
 	}
 }
 
+// Las memorias globales (scope = global) cruzan todos los proyectos: un filtro por proyecto debe
+// devolverlas SIEMPRE junto a las del proyecto, nunca ocultarlas. Regresión de projectScopeClause.
+func TestRecentIncludesGlobalAcrossProjects(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	proj := sampleMemory() // project="proj", scope=project
+	proj.Content = "de proyecto"
+	if _, err := repo.Add(ctx, proj); err != nil {
+		t.Fatalf("Add proj: %v", err)
+	}
+	global := sampleMemory()
+	global.SyncID = "mem-g"
+	global.Project = "" // global desanclada
+	global.Scope = domain.ScopeGlobal
+	global.Type = domain.TypePreference
+	global.Content = "preferencia global"
+	global.NormalizedHash = "hash-g"
+	if _, err := repo.Add(ctx, global); err != nil {
+		t.Fatalf("Add global: %v", err)
+	}
+
+	// Filtrando por "proj": aparecen la de proyecto Y la global.
+	got, err := repo.Recent(ctx, ports.RecentQuery{Project: "proj", Limit: 10})
+	if err != nil {
+		t.Fatalf("Recent proj: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("proj debe ver su memoria + la global (2), obtuve %d", len(got))
+	}
+
+	// Filtrando por OTRO proyecto: la de "proj" no aparece, la global sí.
+	other, err := repo.Recent(ctx, ports.RecentQuery{Project: "otro", Limit: 10})
+	if err != nil {
+		t.Fatalf("Recent otro: %v", err)
+	}
+	if len(other) != 1 || other[0].Scope != domain.ScopeGlobal {
+		t.Errorf("otro proyecto solo debe ver la global, obtuve %+v", other)
+	}
+}
+
 func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 	db := newTestDB(t)
 	seedSession(t, db, "s1")

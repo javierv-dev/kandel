@@ -151,6 +151,21 @@ func TestSaveGlobalScopeAllowsEmptyProject(t *testing.T) {
 	}
 }
 
+// Una memoria global se desancla del proyecto que llegue: cruza todos, no queda pegada a uno.
+func TestSaveGlobalScopeDetachesProject(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	in := baseSaveInput()
+	in.Project = "kandel"
+	in.Scope = domain.ScopeGlobal
+	res, err := svc.Save(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Save global: %v", err)
+	}
+	if res.Memory.Project != "" {
+		t.Errorf("una global debe guardarse sin proyecto (desanclada), fue %q", res.Memory.Project)
+	}
+}
+
 func TestUpdateAppliesPartialChanges(t *testing.T) {
 	svc, _, sync := newMemoryFixture()
 	ctx := context.Background()

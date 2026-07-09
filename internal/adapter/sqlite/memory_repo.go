@@ -129,6 +129,17 @@ const supersededClause = ` AND NOT EXISTS (
 		  AND r.relation IN ('supersedes', 'duplicate')
 		  AND r.judgment_status = 'judged')`
 
+// projectScopeClause acota una consulta a un proyecto INCLUYENDO siempre las memorias globales
+// (scope = 'global'), que por definición cruzan todos los proyectos: una preferencia del usuario
+// debe acompañar a cualquier proyecto, no quedar oculta por el filtro de proyecto. Un proyecto
+// vacío no filtra (todas). Espeja la misma regla que relation_repo (project = ? OR scope = 'global').
+func projectScopeClause(project string) (string, []any) {
+	if project == "" {
+		return "", nil
+	}
+	return ` AND (project = ? OR scope = 'global')`, []any{project}
+}
+
 // Recent lista memorias por recencia (camino de navegación del usuario y base de las bandejas de la
 // inyección). Por defecto solo las vivas; con q.OnlyDeleted devuelve solo las borradas lógicamente
 // (papelera). Aplica los filtros de q; un Limit negativo omite la cláusula LIMIT (sin tope).
@@ -139,9 +150,9 @@ func (r *MemoryRepo) Recent(ctx context.Context, q ports.RecentQuery) ([]domain.
 	}
 	query := `SELECT ` + memoryColumns + ` FROM memories` + deletedClause
 	args := []any{}
-	if q.Project != "" {
-		query += ` AND project = ?`
-		args = append(args, q.Project)
+	if clause, a := projectScopeClause(q.Project); clause != "" {
+		query += clause
+		args = append(args, a...)
 	}
 	if q.Scope != "" {
 		query += ` AND scope = ?`
@@ -196,9 +207,9 @@ func (r *MemoryRepo) Search(ctx context.Context, q ports.SearchQuery, neighbors 
 		query += ` AND type = ?`
 		args = append(args, string(q.Type))
 	}
-	if q.Project != "" {
-		query += ` AND project = ?`
-		args = append(args, q.Project)
+	if clause, a := projectScopeClause(q.Project); clause != "" {
+		query += clause
+		args = append(args, a...)
 	}
 	if q.Scope != "" {
 		query += ` AND scope = ?`
@@ -257,9 +268,9 @@ func (r *MemoryRepo) PendingResolution(ctx context.Context, project string, limi
 		  AND resolution = 'open'
 		  AND type != 'journal'` + supersededClause
 	args := []any{}
-	if project != "" {
-		query += ` AND project = ?`
-		args = append(args, project)
+	if clause, a := projectScopeClause(project); clause != "" {
+		query += clause
+		args = append(args, a...)
 	}
 	query += ` ORDER BY datetime(created_at) ASC LIMIT ?`
 	args = append(args, normalizeLimit(limit))

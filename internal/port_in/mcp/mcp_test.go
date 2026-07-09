@@ -122,7 +122,7 @@ func TestHandleSearchPassesQueryAndLimit(t *testing.T) {
 	mem := &fakeMemory{}
 	svc := Services{Memory: mem}
 	_, err := handleSearch(svc)(context.Background(), callWith(map[string]any{
-		"query": "login roto", "limit": float64(3), "type": "bugfix",
+		"query": "login roto", "limit": float64(3), "type": "bugfix", "project": "kandel",
 	}))
 	if err != nil {
 		t.Fatalf("handleSearch error: %v", err)
@@ -132,6 +132,42 @@ func TestHandleSearchPassesQueryAndLimit(t *testing.T) {
 	}
 	if mem.lastSearch.Type != domain.TypeBugfix {
 		t.Errorf("type mal traducido: %q", mem.lastSearch.Type)
+	}
+	if mem.lastSearch.Project != "kandel" {
+		t.Errorf("project mal traducido: %q", mem.lastSearch.Project)
+	}
+}
+
+// La lectura es estricta: omitir el proyecto es ambiguo (no hay "proyecto del proceso").
+func TestHandleSearchRequiresProject(t *testing.T) {
+	mem := &fakeMemory{}
+	res, _ := handleSearch(Services{Memory: mem})(context.Background(), callWith(map[string]any{"query": "x"}))
+	if !res.IsError {
+		t.Error("mem_search sin project debe devolver error de ambigüedad")
+	}
+	if mem.lastSearch.Query != "" {
+		t.Error("no debe llegar a la búsqueda si el proyecto es ambiguo")
+	}
+}
+
+// El comodín "*" desactiva el filtro de proyecto (busca en todos): el servicio recibe project vacío.
+func TestHandleSearchWildcardMeansAllProjects(t *testing.T) {
+	mem := &fakeMemory{}
+	_, err := handleSearch(Services{Memory: mem})(context.Background(), callWith(map[string]any{"query": "x", "project": "*"}))
+	if err != nil {
+		t.Fatalf("handleSearch error: %v", err)
+	}
+	if mem.lastSearch.Project != "" {
+		t.Errorf(`project="*" debe traducirse a filtro vacío (todos), fue %q`, mem.lastSearch.Project)
+	}
+}
+
+// mem_context aplica la misma política estricta que mem_search.
+func TestHandleContextRequiresProject(t *testing.T) {
+	mem := &fakeMemory{}
+	res, _ := handleContext(Services{Memory: mem})(context.Background(), callWith(map[string]any{}))
+	if !res.IsError {
+		t.Error("mem_context sin project debe devolver error de ambigüedad")
 	}
 }
 
