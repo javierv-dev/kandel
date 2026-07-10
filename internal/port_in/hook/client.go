@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/javierv-dev/kandel/internal/config"
@@ -160,4 +162,43 @@ func (c *client) fetchContext(ctx context.Context, project string) string {
 		return ""
 	}
 	return out.Context
+}
+
+// fetchRelevant recupera el bloque de memoria relevante para un prompt concreto (Capa 2: inyección
+// dirigida por el prompt). Embebe y busca en el daemon; devuelve el texto formateado y los ids
+// inyectados (para el dedup por sesión). exclude son ids ya inyectados antes en la sesión. Devuelve
+// "" y nil si el daemon no responde, no hay coincidencia o falla el decode: el hook simplemente no
+// inyecta nada en ese caso (degradación silenciosa, nunca bloquea el prompt).
+func (c *client) fetchRelevant(ctx context.Context, project, prompt string, exclude []int64) (string, []int64) {
+	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	endpoint := c.base + "/relevant?project=" + url.QueryEscape(project) + "&q=" + url.QueryEscape(prompt)
+	if len(exclude) > 0 {
+		parts := make([]string, len(exclude))
+		for i, id := range exclude {
+			parts[i] = strconv.FormatInt(id, 10)
+		}
+		endpoint += "&exclude=" + url.QueryEscape(strings.Join(parts, ","))
+	}
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", nil
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", nil
+	}
+	var out struct {
+		Context string  `json:"context"`
+		IDs     []int64 `json:"ids"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", nil
+	}
+	return out.Context, out.IDs
 }

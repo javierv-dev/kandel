@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 )
@@ -54,6 +55,43 @@ func queryInt(r *http.Request, name string, def int) int {
 		return def
 	}
 	return n
+}
+
+// queryFloat lee un parámetro de consulta de punto flotante; def si falta o no es número.
+func queryFloat(r *http.Request, name string, def float64) float64 {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return def
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return def
+	}
+	return f
+}
+
+// parseIDSet lee una lista de ids separados por coma ("12,7,40") en un conjunto. Ignora entradas
+// vacías o no numéricas. Devuelve nil si no hay ninguna (leer de un mapa nil es seguro).
+func parseIDSet(raw string) map[int64]bool {
+	if raw == "" {
+		return nil
+	}
+	var set map[int64]bool
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			continue
+		}
+		if set == nil {
+			set = make(map[int64]bool)
+		}
+		set[id] = true
+	}
+	return set
 }
 
 // statusForError traduce errores de dominio conocidos a códigos HTTP. Los no reconocidos van a

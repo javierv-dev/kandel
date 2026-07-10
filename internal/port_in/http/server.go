@@ -98,6 +98,7 @@ func NewHandler(svc Services) http.Handler {
 	mux.HandleFunc("DELETE /memories/{id}", handleDeleteMemory(svc))
 
 	mux.HandleFunc("GET /search", handleSearch(svc))
+	mux.HandleFunc("GET /relevant", handleRelevant(svc))
 	mux.HandleFunc("GET /pending", handlePending(svc))
 
 	mux.HandleFunc("POST /sessions", handleStartSession(svc))

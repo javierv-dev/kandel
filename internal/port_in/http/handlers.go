@@ -211,6 +211,43 @@ func handleSearch(svc Services) http.HandlerFunc {
 	}
 }
 
+// Defaults de la inyección por relevancia (Capa 2). Valores conservadores de arranque; se calibran
+// empíricamente (Fase 4 del plan). El umbral es similitud de coseno [0..1]: solo entra lo que lo
+// supera, de modo que un prompt sin memorias afines no inyecta nada.
+const (
+	relevantDefaultLimit     = 5
+	relevantDefaultThreshold = 0.5
+)
+
+// handleRelevant arma el bloque de "memoria relevante" para un prompt concreto (lo consume el hook
+// UserPromptSubmit). Embebe q, busca semántico sobre el proyecto y devuelve el CUERPO COMPLETO de
+// lo que supera el umbral, excluyendo los ids ya inyectados en la sesión. Sin coincidencia sobre el
+// umbral → context vacío (el hook no inyecta nada). Espeja handleSearch pero formatea para inyección.
+func handleRelevant(svc Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("q")
+		if query == "" {
+			writeError(w, http.StatusBadRequest, "el parámetro q (consulta) es obligatorio")
+			return
+		}
+		results, err := svc.Memory.Search(r.Context(), ports.SearchQuery{
+			Query:   query,
+			Project: r.URL.Query().Get("project"),
+			Limit:   queryInt(r, "limit", relevantDefaultLimit),
+		})
+		if err != nil {
+			writeError(w, statusForError(err), err.Error())
+			return
+		}
+		threshold := queryFloat(r, "threshold", relevantDefaultThreshold)
+		exclude := parseIDSet(r.URL.Query().Get("exclude"))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"context": service.FormatRelevant(results, threshold, exclude),
+			"ids":     service.RelevantIDs(results, threshold, exclude),
+		})
+	}
+}
+
 // handlePending lista las memorias pendientes por resolver (resolution = open).
 func handlePending(svc Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -107,6 +107,54 @@ func TestSearchMissingQuery(t *testing.T) {
 	}
 }
 
+func TestRelevant(t *testing.T) {
+	mem := &fakeMemory{searchResults: []domain.SearchResult{
+		{Memory: domain.Memory{ID: 3, Type: domain.TypeDecision, Title: "Alta", Content: "cuerpo alto"}, Score: 0.80},
+		{Memory: domain.Memory{ID: 5, Type: domain.TypeDiscovery, Title: "Baja", Content: "cuerpo bajo"}, Score: 0.20},
+	}}
+	rec := do(t, Services{Memory: mem}, http.MethodGet, "/relevant?q=algo&project=kandel", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, se esperaba 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if mem.lastSearch.Query != "algo" || mem.lastSearch.Project != "kandel" {
+		t.Errorf("query mal traducida: %+v", mem.lastSearch)
+	}
+	body := rec.Body.String()
+	// Con umbral por defecto (0.5) solo entra la de score 0.80, con su cuerpo completo.
+	if !strings.Contains(body, "cuerpo alto") {
+		t.Errorf("debía incluir el cuerpo de la memoria relevante; body=%s", body)
+	}
+	if strings.Contains(body, "cuerpo bajo") {
+		t.Errorf("no debía incluir la memoria bajo el umbral; body=%s", body)
+	}
+}
+
+func TestRelevantExcludeAndThreshold(t *testing.T) {
+	mem := &fakeMemory{searchResults: []domain.SearchResult{
+		{Memory: domain.Memory{ID: 3, Type: domain.TypeDecision, Title: "A", Content: "AAA"}, Score: 0.90},
+		{Memory: domain.Memory{ID: 5, Type: domain.TypeDecision, Title: "B", Content: "BBB"}, Score: 0.70},
+	}}
+	// Umbral 0.6 deja pasar ambas, pero exclude=3 descarta la primera (ya inyectada en la sesión).
+	rec := do(t, Services{Memory: mem}, http.MethodGet, "/relevant?q=x&threshold=0.6&exclude=3", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, se esperaba 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "AAA") {
+		t.Errorf("la memoria excluida no debía aparecer; body=%s", body)
+	}
+	if !strings.Contains(body, "BBB") {
+		t.Errorf("la memoria no excluida debía aparecer; body=%s", body)
+	}
+}
+
+func TestRelevantMissingQuery(t *testing.T) {
+	rec := do(t, Services{Memory: &fakeMemory{}}, http.MethodGet, "/relevant", "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("sin q debe dar 400, dio %d", rec.Code)
+	}
+}
+
 func TestUpdateMemoryPartial(t *testing.T) {
 	mem := &fakeMemory{updateResult: domain.Memory{ID: 2, Title: "nuevo"}}
 	rec := do(t, Services{Memory: mem}, http.MethodPatch, "/memories/2", `{"title":"nuevo"}`)
@@ -270,13 +318,14 @@ func TestSyncEndpointsUnavailableWithoutSync(t *testing.T) {
 // ─── dobles ────────────────────────────────────────────────────────────────────
 
 type fakeMemory struct {
-	lastSave     service.SaveInput
-	lastSearch   ports.SearchQuery
-	saveResult   service.SaveResult
-	getResult    *domain.Memory
-	updateInput  service.UpdateInput
-	updateResult domain.Memory
-	deletedID    int64
+	lastSave      service.SaveInput
+	lastSearch    ports.SearchQuery
+	saveResult    service.SaveResult
+	searchResults []domain.SearchResult
+	getResult     *domain.Memory
+	updateInput   service.UpdateInput
+	updateResult  domain.Memory
+	deletedID     int64
 }
 
 func (f *fakeMemory) Save(_ context.Context, in service.SaveInput) (service.SaveResult, error) {
@@ -289,7 +338,7 @@ func (f *fakeMemory) Recent(_ context.Context, _ ports.RecentQuery) ([]domain.Me
 }
 func (f *fakeMemory) Search(_ context.Context, q ports.SearchQuery) ([]domain.SearchResult, error) {
 	f.lastSearch = q
-	return nil, nil
+	return f.searchResults, nil
 }
 func (f *fakeMemory) Update(_ context.Context, _ int64, in service.UpdateInput) (domain.Memory, error) {
 	f.updateInput = in

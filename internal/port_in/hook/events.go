@@ -3,6 +3,7 @@ package hook
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/javierv-dev/kandel/internal/config"
 )
@@ -159,18 +160,37 @@ func (r *runner) userPromptSubmit(p payload) error {
 	bfCode, _ := r.client.triggerBackfill(r.ctx)
 	r.klog("POST /embeddings/backfill -> HTTP " + bfCode)
 
+	// Capa 2 — inyección por relevancia: embebe el prompt en el daemon, busca semántico e inyecta el
+	// cuerpo completo de lo que supera el umbral, excluyendo lo ya inyectado antes en la sesión
+	// (dedup). Sin coincidencia o daemon caído → relText vacío (no inyecta nada, no mete ruido).
+	project := detectProject(p.CWD)
+	relText, injected := "", []int64(nil)
+	if p.Prompt != "" {
+		relText, injected = r.client.fetchRelevant(r.ctx, project, p.Prompt, loadInjectedIDs(p.SessionID))
+		recordInjectedIDs(p.SessionID, injected)
+	}
+
+	// El recordatorio de carga de tools solo va en el primer mensaje; el bloque de relevancia, en
+	// cualquiera que tenga coincidencias. Se concatenan cuando ambos aplican.
+	var parts []string
 	if firstMessage(p.SessionID) {
-		out := map[string]any{
-			"hookSpecificOutput": map[string]any{
-				"hookEventName":     "UserPromptSubmit",
-				"additionalContext": firstMessageContext,
-			},
-		}
-		raw, _ := json.Marshal(out)
-		fmt.Fprintln(r.out, string(raw))
+		parts = append(parts, firstMessageContext)
+	}
+	if relText != "" {
+		parts = append(parts, relText)
+	}
+	if len(parts) == 0 {
+		fmt.Fprintln(r.out, "{}")
 		return nil
 	}
-	fmt.Fprintln(r.out, "{}")
+	out := map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":     "UserPromptSubmit",
+			"additionalContext": strings.Join(parts, "\n\n"),
+		},
+	}
+	raw, _ := json.Marshal(out)
+	fmt.Fprintln(r.out, string(raw))
 	return nil
 }
 
