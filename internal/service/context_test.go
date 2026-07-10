@@ -19,14 +19,14 @@ func TestContextFormatEmpty(t *testing.T) {
 	}
 }
 
-func TestContextFormatBandejas(t *testing.T) {
+func TestContextFormatMinimo(t *testing.T) {
 	ctx := context.Background()
 	memories := newFakeObs()
-	// Normativa (Siempre) sin verificar → alimenta el banner de salud.
+	// Normativa sin verificar → alimenta el banner de salud, pero su CUERPO ya NO se vuelca.
 	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDecision, Title: "Usar JWT", Content: "decisión de auth"})
-	// Pendiente por resolver.
+	// Pendiente por resolver (no journal): ya NO se muestra al arranque; llega por relevancia.
 	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDecision, Title: "Elegir cola", Content: "aún sin decidir", Resolution: domain.ResolutionOpen})
-	// Factual reciente.
+	// Factual reciente: ya NO se vuelca al arranque.
 	memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeDiscovery, Title: "Ollama tarda", Content: "cold start 7s"})
 
 	svc := NewContextService(memories, &fakeRelations{})
@@ -34,21 +34,21 @@ func TestContextFormatBandejas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Format error: %v", err)
 	}
-	for _, want := range []string{
-		// El proyecto se superficia normalizado para que el agente sepa qué pasar como `project`.
-		"Proyecto actual: kandel",
-		"### Siempre presente (normativas)", "Usar JWT",
-		"### Pendientes por resolver", "Elegir cola",
-		"### Recientes", "Ollama tarda",
-		"### Salud de memoria", "sin verificar",
-	} {
+	// Se conservan: el proyecto normalizado y la salud (higiene, sin coste de tokens de contenido).
+	for _, want := range []string{"Proyecto actual: kandel", "### Salud de memoria", "sin verificar"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("el contexto no contiene %q:\n%s", want, out)
 		}
 	}
-	// Los prompts ya NO se inyectan.
-	if strings.Contains(out, "Prompts recientes") {
-		t.Errorf("los prompts no deben inyectarse:\n%s", out)
+	// Ya NO se vuelcan: normativas, pendientes, recientes ni sus cuerpos.
+	for _, unwanted := range []string{
+		"### Siempre presente (normativas)", "decisión de auth",
+		"### Pendientes por resolver", "Elegir cola",
+		"### Recientes", "Ollama tarda", "cold start 7s",
+	} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("el arranque mínimo no debe contener %q:\n%s", unwanted, out)
+		}
 	}
 }
 
@@ -65,17 +65,21 @@ func TestContextJournalBandeja(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Format error: %v", err)
 	}
-	for _, want := range []string{
-		"### Bitácora — estado actual", "tema en vuelo",
-		"### Bitácora — historial reciente", "tema cerrado",
-	} {
+	// La bitácora abierta se superficia como TÍTULO (el cursor "dónde nos quedamos").
+	for _, want := range []string{"### Bitácora — estado actual", "tema en vuelo"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("el contexto no contiene %q:\n%s", want, out)
 		}
 	}
-	// Una journal abierta NO es un pendiente: no debe aparecer en "Pendientes por resolver".
-	if strings.Contains(out, "### Pendientes por resolver") {
-		t.Errorf("la bitácora abierta no debe colarse en Pendientes:\n%s", out)
+	// El historial cerrado ya NO se inyecta al arranque (llega por relevancia / mem_thread).
+	for _, unwanted := range []string{"### Bitácora — historial reciente", "tema cerrado"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("el historial no debe inyectarse al arranque:\n%s", out)
+		}
+	}
+	// Solo el título: el cuerpo de la journal abierta no se vuelca.
+	if strings.Contains(out, "trabajando el journal") {
+		t.Errorf("el cuerpo de la bitácora no debe volcarse (solo título):\n%s", out)
 	}
 }
 

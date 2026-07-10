@@ -9,27 +9,23 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// Límites de cuántos elementos entran en cada bandeja del contexto inyectado. Las normativas van
-// SIN tope (son must-see); el resto se acota para no inundar la ventana del agente al arrancar.
+// Límites de cuántos elementos entran en el arranque. Tras el rediseño "contexto por relevancia"
+// (Fase 2) el arranque es MÍNIMO: solo la continuidad de la bitácora abierta y los avisos de salud.
+// El contenido pesado (normativas, factuales, pendientes) ya NO se vuelca aquí: se inyecta bajo
+// demanda por relevancia al prompt del usuario (hook UserPromptSubmit) o se recupera con mem_search.
 const (
-	// contextFactual es la ventana chica de continuidad factual: unas pocas recientes como ancla;
-	// el resto se recupera bajo demanda con mem_search durante la tarea (factual perezoso, §20.D).
-	contextFactual = 8
-	// contextPending es un tope generoso de pendientes (en la práctica hay pocos).
-	contextPending = 100
 	// contextJournalOpen acota los hilos de bitácora "abiertos" (estado actual). En la práctica hay
 	// muy pocos temas vivos a la vez; el tope solo evita un caso patológico.
 	contextJournalOpen = 5
-	// contextJournalHistory es la ventana del historial de bitácora ya cerrado (P2 = 3).
-	contextJournalHistory = 3
 	// defaultNormativeThreshold dispara el aviso de mantenimiento "demasiadas normativas".
 	defaultNormativeThreshold = 50
 )
 
 // ContextService arma el bloque de contexto que se inyecta al agente al arrancar una sesión (o tras
-// una compactación). Se organiza en bandejas (§20.D): normativas siempre presentes, pendientes por
-// resolver, factuales recientes y salud de memoria. Es lectura directa (no depende del
-// embebedor). Los prompts crudos ya NO se inyectan (solo quedan buscables).
+// una compactación). Tras el rediseño "contexto por relevancia" es deliberadamente MÍNIMO: solo
+// superficia el proyecto, la continuidad de la bitácora abierta (títulos, "dónde nos quedamos") y la
+// salud de memoria. Es lectura directa (no depende del embebedor). El resto de la memoria llega por
+// relevancia al prompt (hook UserPromptSubmit) o por mem_search; los prompts crudos NO se inyectan.
 type ContextService struct {
 	memories  ports.MemoryRepo
 	relations ports.RelationRepo
@@ -65,12 +61,15 @@ func NewContextService(memories ports.MemoryRepo, relations ports.RelationRepo, 
 	return c
 }
 
-// Format devuelve el contexto del proyecto en Markdown, en bandejas, listo para inyectar. Si no hay
-// nada que mostrar devuelve cadena vacía (el hook entonces no inyecta nada).
+// Format devuelve el contexto del proyecto en Markdown, listo para inyectar. Si no hay nada que
+// mostrar devuelve cadena vacía (el hook entonces no inyecta nada).
 func (c *ContextService) Format(ctx context.Context, project string, scope domain.Scope) (string, error) {
 	project = normalizeProject(project)
 
-	// Bandeja "Siempre": normativas (decision/preference), sin tope, sin reemplazadas ni resueltas.
+	// Normativas (decision/preference): ya NO se vuelcan al arranque —una decisión concreta aparece
+	// por relevancia cuando el prompt la toca (rediseño contexto-por-relevancia, Fase 2)—. Se siguen
+	// cargando SOLO para derivar los avisos de "Salud de memoria" (conflictos / sin verificar /
+	// demasiadas): son señales de higiene, no volcado de contenido, así que no cuestan tokens.
 	normatives, err := c.memories.Recent(ctx, ports.RecentQuery{
 		Project:           project,
 		Scope:             scope,
@@ -83,26 +82,9 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		return "", err
 	}
 
-	// Bandeja "Pendientes": resolution = open (excluye reemplazadas dentro del repo).
-	pendings, err := c.memories.PendingResolution(ctx, project, contextPending)
-	if err != nil {
-		return "", err
-	}
-
-	// Bandeja "Recientes" (factual perezoso): ventana chica de factuales por recencia.
-	factual, err := c.memories.Recent(ctx, ports.RecentQuery{
-		Project:           project,
-		Scope:             scope,
-		Types:             []domain.MemoryType{domain.TypeDiscovery, domain.TypeArchitecture, domain.TypeBugfix},
-		ExcludeSuperseded: true,
-		Limit:             contextFactual,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	// Bandeja "Bitácora" — estado actual: entradas journal abiertas (resolution = open). Es el cursor
-	// "dónde nos quedamos"; mutable, se edita in-place hasta que el tema se cierra (resolution = resolved).
+	// Bitácora — estado actual: entradas journal abiertas (resolution = open). Es el cursor "dónde nos
+	// quedamos", la ÚNICA continuidad que no es apuesta al arrancar. Solo TÍTULOS: el cuerpo se trae
+	// bajo demanda (mem_get / mem_thread) o por relevancia al prompt.
 	journalOpen, err := c.memories.Recent(ctx, ports.RecentQuery{
 		Project:    project,
 		Types:      []domain.MemoryType{domain.TypeJournal},
@@ -113,20 +95,8 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		return "", err
 	}
 
-	// Bandeja "Bitácora" — historial reciente: últimas entradas journal ya cerradas (resolution = resolved).
-	journalHistory, err := c.memories.Recent(ctx, ports.RecentQuery{
-		Project:    project,
-		Types:      []domain.MemoryType{domain.TypeJournal},
-		Resolution: domain.ResolutionResolved,
-		Limit:      contextJournalHistory,
-	})
-	if err != nil {
-		return "", err
-	}
-
 	// Conflictos reales sin resolver (contradicciones mismo-scope que decide un humano). Se cuentan
-	// aparte porque viven en memory_relations, no en las normativas ya cargadas. Un fallo aquí no debe
-	// tumbar la inyección entera: se degrada a 0 (sin banner de conflictos).
+	// aparte porque viven en memory_relations. Un fallo aquí no debe tumbar la inyección: se degrada a 0.
 	openConflicts, err := c.relations.CountOpenConflicts(ctx, project)
 	if err != nil {
 		openConflicts = 0
@@ -143,8 +113,7 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 
 	health := healthBanners(normatives, openConflicts, concurrent, c.threshold)
 
-	if len(normatives) == 0 && len(pendings) == 0 && len(factual) == 0 &&
-		len(journalOpen) == 0 && len(journalHistory) == 0 && len(health) == 0 {
+	if len(journalOpen) == 0 && len(health) == 0 {
 		return "", nil
 	}
 
@@ -153,47 +122,15 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 
 	// Superficia el proyecto actual para que el agente sepa qué valor pasar como `project` al guardar
 	// memorias de scope project (incluido journal). El proceso MCP compartido no conoce el CWD de la
-	// conversación, así que este es el canal por el que ese dato llega al agente (ver §20.D del plan).
+	// conversación, así que este es el canal por el que ese dato llega al agente.
 	if project != "" {
 		fmt.Fprintf(&b, "Proyecto actual: %s\n\n", project)
-	}
-
-	if len(normatives) > 0 {
-		b.WriteString("### Siempre presente (normativas)\n")
-		for _, m := range normatives {
-			writeMemoryLine(&b, m)
-		}
-		b.WriteString("\n")
-	}
-
-	if len(pendings) > 0 {
-		b.WriteString("### Pendientes por resolver\n")
-		for _, m := range pendings {
-			writeMemoryLine(&b, m)
-		}
-		b.WriteString("\n")
 	}
 
 	if len(journalOpen) > 0 {
 		b.WriteString("### Bitácora — estado actual\n")
 		for _, m := range journalOpen {
-			writeMemoryLine(&b, m)
-		}
-		b.WriteString("\n")
-	}
-
-	if len(journalHistory) > 0 {
-		b.WriteString("### Bitácora — historial reciente\n")
-		for _, m := range journalHistory {
-			writeMemoryLine(&b, m)
-		}
-		b.WriteString("\n")
-	}
-
-	if len(factual) > 0 {
-		b.WriteString("### Recientes\n")
-		for _, m := range factual {
-			writeMemoryLine(&b, m)
+			writeJournalTitle(&b, m)
 		}
 		b.WriteString("\n")
 	}
@@ -209,14 +146,16 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 	return b.String(), nil
 }
 
-// writeMemoryLine escribe una memoria como una viñeta uniforme (tipo, título y contenido recortado).
-func writeMemoryLine(b *strings.Builder, m domain.Memory) {
-	fmt.Fprintf(b, "- [%s] **%s**: %s\n", m.Type, m.Title, truncate(m.Content, 300))
+// writeJournalTitle escribe una entrada de bitácora como una línea de solo título, con su id para
+// pedir el cuerpo con mem_get o recorrer el hilo con mem_thread. Sin cuerpo: el arranque es un índice
+// de continuidad, no un volcado (el cuerpo llega por relevancia o bajo demanda).
+func writeJournalTitle(b *strings.Builder, m domain.Memory) {
+	fmt.Fprintf(b, "- id %d · %s\n", m.ID, m.Title)
 }
 
 // healthBanners deriva los avisos de la bandeja "Salud de memoria": conflictos reales sin resolver
-// (contado aparte, en openConflicts), normativas sin verificar contra conflictos (derivado de las ya
-// cargadas para la bandeja "Siempre") y aviso de mantenimiento cuando hay demasiadas (§20.D/§20.F).
+// (contado aparte, en openConflicts), normativas sin verificar contra conflictos (derivado de las
+// cargadas para la higiene) y aviso de mantenimiento cuando hay demasiadas (§20.D/§20.F).
 func healthBanners(normatives []domain.Memory, openConflicts, concurrent, threshold int) []string {
 	var out []string
 	unverified := 0
@@ -238,13 +177,4 @@ func healthBanners(normatives []domain.Memory, openConflicts, concurrent, thresh
 		out = append(out, fmt.Sprintf("- ⚠️ demasiadas normativas activas (%d ≥ %d): considera consolidar o archivar", len(normatives), threshold))
 	}
 	return out
-}
-
-// truncate recorta un texto a n runas, añadiendo una elipsis si lo recortó.
-func truncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n]) + "…"
 }

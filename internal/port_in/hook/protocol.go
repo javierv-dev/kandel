@@ -31,15 +31,17 @@ Al guardar, enruta el type por lo que ES: decisión→decision, gusto/convenció
 BITÁCORA (type=journal): registra el avance del desarrollo por hito (fecha + qué + por qué). Es un log APPEND-ONLY exento del filtro de trivialidad (aunque sea cronológico/efímero, SÍ se guarda). Es scope=project: pasa SIEMPRE el project explícito (el "Proyecto actual" de arriba), o el guardado falla con "proyecto ambiguo". Mientras el tema está en vuelo, la entrada va con resolution=open (es el "estado actual", editable con mem_update); cuando el tema se cierra, pásala a resolution=resolved. Si una decisión de la bitácora restringe el trabajo futuro, guárdala ADEMÁS como type=decision (regla vigente).
 
 ### BUSCA EN LA MEMORIA cuando (solo cuando de verdad ayude — no en peticiones triviales):
-Las sesiones y memorias recientes YA se inyectan más abajo al iniciar la sesión, así que NO necesitas
-llamar a mem_context solo para verlas. Usa mem_search para un recall MÁS PROFUNDO o ESPECÍFICO:
-- El usuario pide recordar algo ("recuerda", "qué hicimos", o el equivalente en su idioma)
-- Vas a trabajar en algo que quizá ya se hizo antes y el contexto inyectado no basta
+Al arrancar solo se inyecta la CONTINUIDAD mínima (bitácora "estado actual" en títulos + salud de
+memoria). Las memorias RELEVANTES a tu tarea se inyectan AUTOMÁTICAMENTE con cada mensaje del usuario
+(por similitud con lo que pide), así que NO necesitas mem_context para eso. Usa las tools para ir más allá:
+- mem_get <id> para el CUERPO de una entrada de la bitácora "estado actual" (arriba solo va el título).
+- mem_search para un recall MÁS PROFUNDO o ESPECÍFICO: el usuario pide recordar algo ("recuerda",
+  "qué hicimos", o el equivalente en su idioma), o vas a tocar algo que quizá ya se hizo y lo inyectado no basta.
 
-### EL CONTEXTO DE ABAJO VIENE EN BANDEJAS — actúa sobre ellas:
-Respeta las "normativas" (reglas vigentes). Revisa "Pendientes por resolver" y ofrece retomarlas.
-"Recientes" es una ventana chica: usa mem_search para más contexto factual del tema. Si hay avisos en
-"Salud de memoria" (normativas sin verificar / demasiadas), coméntaselos al usuario.
+### ACTÚA SOBRE EL CONTEXTO DE ABAJO:
+"Bitácora — estado actual" es dónde nos quedamos: ofrécele al usuario retomarlo; pide el cuerpo con
+mem_get <id> si lo necesitas. Si hay avisos en "Salud de memoria" (normativas sin verificar /
+demasiadas / conflictos), coméntaselos al usuario.
 
 La sesión se cierra sola (hook determinista); no necesitas llamar a ninguna tool al terminar. Guarda
 lo que valga la pena con ` + "`mem_save`" + ` en el momento en que ocurre, no al final.`
