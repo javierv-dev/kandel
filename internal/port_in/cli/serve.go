@@ -32,6 +32,34 @@ func resolvePort() string {
 	return config.Resolve(config.Port)
 }
 
+// relevanceThreshold resuelve el umbral de la inyección por relevancia desde config; 0 si no está
+// fijado o es inválido (el handler usa entonces su default).
+func relevanceThreshold() float64 {
+	raw := strings.TrimSpace(config.Resolve(config.RelevanceThreshold))
+	if raw == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0
+	}
+	return f
+}
+
+// relevanceLimit resuelve el top-K de la inyección por relevancia desde config; 0 si no está fijado
+// o es inválido (el handler usa entonces su default).
+func relevanceLimit() int {
+	raw := strings.TrimSpace(config.Resolve(config.RelevanceLimit))
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // serveCmd arranca la API HTTP local. Expone los casos de uso como endpoints REST para
 // integraciones (paneles, scripts) que prefieran HTTP al MCP.
 type serveCmd struct{}
@@ -74,6 +102,9 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 		Project:   app.Project,
 		Embedding: app.Embedding,
 		Sync:      app.Sync,
+		// Línea base de la inyección por relevancia (config del daemon); 0 = default del handler.
+		RelevanceThreshold: relevanceThreshold(),
+		RelevanceLimit:     relevanceLimit(),
 		// OnShutdown apaga el daemon con drenaje acotado. Lo usa `kandel stop` para liberar el
 		// binario en ejecución (en Windows el daemon bloquea el .exe e impide actualizarlo).
 		OnShutdown: func() {

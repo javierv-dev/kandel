@@ -108,6 +108,14 @@ var (
 	// NormativeThreshold es el umbral del aviso "demasiadas normativas"; vacío = default del servicio.
 	NormativeThreshold = Key{File: "normative_threshold", Env: "KANDEL_NORMATIVE_THRESHOLD", Default: "",
 		Doc: "umbral del aviso 'demasiadas normativas'; vacío = default del servicio (50)"}
+	// RelevanceThreshold es el umbral de similitud de la inyección de memoria por relevancia (hook
+	// UserPromptSubmit); vacío = default del servicio. Sube para inyectar menos (solo lo muy afín),
+	// baja para inyectar más (arriesga ruido).
+	RelevanceThreshold = Key{File: "relevance_threshold", Env: "KANDEL_RELEVANCE_THRESHOLD", Default: "",
+		Doc: "umbral de similitud de la inyección por relevancia (0..1); vacío = default del servicio (0.45)"}
+	// RelevanceLimit es el top-K de memorias que la inyección por relevancia trae por prompt; vacío = default.
+	RelevanceLimit = Key{File: "relevance_limit", Env: "KANDEL_RELEVANCE_LIMIT", Default: "",
+		Doc: "top-K de memorias de la inyección por relevancia; vacío = default del servicio (5)"}
 	// BackfillInterval es cada cuánto el daemon barre y reembebe memorias sin vector; vacío = default;
 	// "0" desactiva el barrido.
 	BackfillInterval = Key{File: "backfill_interval", Env: "KANDEL_BACKFILL_INTERVAL", Default: "",
@@ -124,7 +132,7 @@ var (
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
 	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
-	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
+	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, RelevanceThreshold, RelevanceLimit, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 
 // configFileName es el nombre del archivo dentro del directorio de datos.

@@ -211,12 +211,14 @@ func handleSearch(svc Services) http.HandlerFunc {
 	}
 }
 
-// Defaults de la inyección por relevancia (Capa 2). Valores conservadores de arranque; se calibran
-// empíricamente (Fase 4 del plan). El umbral es similitud de coseno [0..1]: solo entra lo que lo
-// supera, de modo que un prompt sin memorias afines no inyecta nada.
+// Defaults de la inyección por relevancia (Capa 2). El umbral es similitud de coseno [0..1]: solo
+// entra lo que lo supera, de modo que un prompt sin memorias afines no inyecta nada. El 0.45 sale de
+// una calibración empírica (Fase 4) contra la memoria real con bge-m3: los aciertos relevantes caen
+// en ~0.49-0.64 y un prompt no relacionado tope ~0.35, así que 0.45 se sitúa en el hueco entre ambos
+// (captura lo relevante, rechaza el ruido). Configurable por config/query (ver server.Services).
 const (
 	relevantDefaultLimit     = 5
-	relevantDefaultThreshold = 0.5
+	relevantDefaultThreshold = 0.45
 )
 
 // handleRelevant arma el bloque de "memoria relevante" para un prompt concreto (lo consume el hook
@@ -230,16 +232,25 @@ func handleRelevant(svc Services) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "el parámetro q (consulta) es obligatorio")
 			return
 		}
+		// Línea base configurable (config del daemon); el parámetro de consulta tiene prioridad.
+		baseLimit := relevantDefaultLimit
+		if svc.RelevanceLimit > 0 {
+			baseLimit = svc.RelevanceLimit
+		}
+		baseThreshold := relevantDefaultThreshold
+		if svc.RelevanceThreshold > 0 {
+			baseThreshold = svc.RelevanceThreshold
+		}
 		results, err := svc.Memory.Search(r.Context(), ports.SearchQuery{
 			Query:   query,
 			Project: r.URL.Query().Get("project"),
-			Limit:   queryInt(r, "limit", relevantDefaultLimit),
+			Limit:   queryInt(r, "limit", baseLimit),
 		})
 		if err != nil {
 			writeError(w, statusForError(err), err.Error())
 			return
 		}
-		threshold := queryFloat(r, "threshold", relevantDefaultThreshold)
+		threshold := queryFloat(r, "threshold", baseThreshold)
 		exclude := parseIDSet(r.URL.Query().Get("exclude"))
 		writeJSON(w, http.StatusOK, map[string]any{
 			"context": service.FormatRelevant(results, threshold, exclude),

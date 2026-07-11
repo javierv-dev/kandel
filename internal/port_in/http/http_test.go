@@ -148,6 +148,25 @@ func TestRelevantExcludeAndThreshold(t *testing.T) {
 	}
 }
 
+func TestRelevantConfiguredThresholdBaseline(t *testing.T) {
+	mem := &fakeMemory{searchResults: []domain.SearchResult{
+		{Memory: domain.Memory{ID: 3, Type: domain.TypeDecision, Title: "A", Content: "AAA"}, Score: 0.60},
+	}}
+	// Con umbral base 0.7 (config del daemon) y sin override en la query, 0.60 NO pasa.
+	rec := do(t, Services{Memory: mem, RelevanceThreshold: 0.7}, http.MethodGet, "/relevant?q=x", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, se esperaba 200", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "AAA") {
+		t.Errorf("con umbral base 0.7 la memoria de score 0.60 no debía entrar; body=%s", rec.Body.String())
+	}
+	// El parámetro de consulta tiene prioridad sobre la línea base: threshold=0.5 sí la deja pasar.
+	rec2 := do(t, Services{Memory: mem, RelevanceThreshold: 0.7}, http.MethodGet, "/relevant?q=x&threshold=0.5", "")
+	if !strings.Contains(rec2.Body.String(), "AAA") {
+		t.Errorf("el threshold de la query (0.5) debe primar sobre la base (0.7); body=%s", rec2.Body.String())
+	}
+}
+
 func TestRelevantMissingQuery(t *testing.T) {
 	rec := do(t, Services{Memory: &fakeMemory{}}, http.MethodGet, "/relevant", "")
 	if rec.Code != http.StatusBadRequest {

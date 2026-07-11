@@ -76,6 +76,12 @@ type Services struct {
 	Embedding EmbeddingPort
 	Sync      SyncPort
 
+	// RelevanceThreshold y RelevanceLimit fijan la línea base de la inyección de memoria por
+	// relevancia (endpoint /relevant). Un valor no positivo usa el default del handler. El parámetro
+	// de consulta (threshold/limit) sigue teniendo prioridad sobre esta línea base.
+	RelevanceThreshold float64
+	RelevanceLimit     int
+
 	// OnShutdown, si no es nil, habilita el endpoint POST /shutdown que apaga el daemon de forma
 	// ordenada (lo usa `kandel stop`). El daemon corre la imagen del propio binario y lo mantiene
 	// bloqueado en Windows; pararlo libera el .exe para poder actualizarlo. El wiring vive en
