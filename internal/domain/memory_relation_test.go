@@ -6,6 +6,7 @@ func TestRelationTypeValid(t *testing.T) {
 	valid := []RelationType{
 		RelationPending, RelationRelated, RelationCompatible, RelationScoped,
 		RelationConflictsWith, RelationSupersedes, RelationDuplicate, RelationNotConflict,
+		RelationContinues,
 	}
 	for _, k := range valid {
 		if !k.Valid() {

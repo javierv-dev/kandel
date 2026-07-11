@@ -43,6 +43,39 @@ func TestRelationInsertAndGet(t *testing.T) {
 	}
 }
 
+func TestRelationFindBySourceKind(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRelationRepo(db)
+	ctx := context.Background()
+
+	// Enlace `continues` juzgado de mem-c hacia mem-b.
+	rel := sampleRelation()
+	rel.SyncID = "rel-cont"
+	rel.SourceID = "mem-c"
+	rel.TargetID = "mem-b"
+	rel.Kind = domain.RelationContinues
+	rel.Status = domain.JudgmentJudged
+	if _, err := repo.Insert(ctx, rel); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	got, err := repo.FindBySourceKind(ctx, "mem-c", domain.RelationContinues)
+	if err != nil {
+		t.Fatalf("FindBySourceKind: %v", err)
+	}
+	if got == nil || got.TargetID != "mem-b" {
+		t.Fatalf("debía hallar el enlace hacia mem-b, dio: %+v", got)
+	}
+
+	// Otra source o verbo distinto → nil.
+	if other, _ := repo.FindBySourceKind(ctx, "mem-x", domain.RelationContinues); other != nil {
+		t.Errorf("source inexistente debe dar nil, dio: %+v", other)
+	}
+	if other, _ := repo.FindBySourceKind(ctx, "mem-c", domain.RelationSupersedes); other != nil {
+		t.Errorf("verbo distinto debe dar nil, dio: %+v", other)
+	}
+}
+
 func TestRelationJudge(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewRelationRepo(db)

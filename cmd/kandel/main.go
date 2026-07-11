@@ -115,6 +115,7 @@ func run(args []string) error {
 		service.WithNormativeThreshold(normativeThreshold()),
 		service.WithSyncConflicts(syncRepo))
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
+	threadService := service.NewThreadService(memoryRepo, relationRepo, uow, clk)
 	// El seed construye su generador bajo demanda: el agente y el modelo se resuelven en el comando
 	// (flags > entorno > config), no aquí, porque dependen de cómo se invoque.
 	seedService := service.NewSeedService(memoryService, llm.Generator)
@@ -139,6 +140,7 @@ func run(args []string) error {
 		Context:   contextService,
 		Project:   projectMigrator,
 		Seed:      seedService,
+		Thread:    threadService,
 		In:        os.Stdin,
 		Out:       os.Stdout,
 		Err:       os.Stderr,

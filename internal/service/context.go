@@ -130,7 +130,7 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 	if len(journalOpen) > 0 {
 		b.WriteString("### Bitácora — estado actual\n")
 		for _, m := range journalOpen {
-			writeJournalTitle(&b, m)
+			writeJournalTitle(&b, m, c.continuesPredecessorID(ctx, m))
 		}
 		b.WriteString("\n")
 	}
@@ -148,9 +148,33 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 
 // writeJournalTitle escribe una entrada de bitácora como una línea de solo título, con su id para
 // pedir el cuerpo con mem_get o recorrer el hilo con mem_thread. Sin cuerpo: el arranque es un índice
-// de continuidad, no un volcado (el cuerpo llega por relevancia o bajo demanda).
-func writeJournalTitle(b *strings.Builder, m domain.Memory) {
+// de continuidad, no un volcado (el cuerpo llega por relevancia o bajo demanda). Si la entrada
+// continúa a una fase anterior (predID > 0), añade una miga de pan para que el agente pueda seguir la
+// cadena hacia atrás con mem_thread.
+func writeJournalTitle(b *strings.Builder, m domain.Memory, predID int64) {
+	if predID > 0 {
+		fmt.Fprintf(b, "- id %d · %s  (⭱ viene de id %d — usa mem_thread para el hilo)\n", m.ID, m.Title, predID)
+		return
+	}
 	fmt.Fprintf(b, "- id %d · %s\n", m.ID, m.Title)
+}
+
+// continuesPredecessorID devuelve el id local de la fase anterior enlazada por 'continues', o 0 si no
+// hay enlace (o falla la búsqueda). Es tolerante: cualquier error se degrada a "sin miga", nunca
+// tumba la inyección.
+func (c *ContextService) continuesPredecessorID(ctx context.Context, m domain.Memory) int64 {
+	if m.SyncID == "" {
+		return 0
+	}
+	rel, err := c.relations.FindBySourceKind(ctx, m.SyncID, domain.RelationContinues)
+	if err != nil || rel == nil || rel.TargetID == "" {
+		return 0
+	}
+	pred, err := c.memories.GetBySyncID(ctx, rel.TargetID)
+	if err != nil || pred == nil {
+		return 0
+	}
+	return pred.ID
 }
 
 // healthBanners deriva los avisos de la bandeja "Salud de memoria": conflictos reales sin resolver

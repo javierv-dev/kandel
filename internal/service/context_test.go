@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -80,6 +81,30 @@ func TestContextJournalBandeja(t *testing.T) {
 	// Solo el título: el cuerpo de la journal abierta no se vuelca.
 	if strings.Contains(out, "trabajando el journal") {
 		t.Errorf("el cuerpo de la bitácora no debe volcarse (solo título):\n%s", out)
+	}
+}
+
+func TestContextJournalBreadcrumb(t *testing.T) {
+	ctx := context.Background()
+	memories := newFakeObs()
+	// Fase anterior (cerrada) y fase actual (abierta) del mismo hilo, con sync_ids estables.
+	predID, _ := memories.Add(ctx, domain.Memory{SyncID: "mem-b", Project: "kandel", Type: domain.TypeJournal, Title: "Fase 2", Content: "x", Resolution: domain.ResolutionResolved})
+	memories.Add(ctx, domain.Memory{SyncID: "mem-c", Project: "kandel", Type: domain.TypeJournal, Title: "Fase 3", Content: "y", Resolution: domain.ResolutionOpen})
+
+	rels := &fakeRelations{}
+	// La fase actual (mem-c) continúa a la anterior (mem-b).
+	rels.Insert(ctx, domain.MemoryRelation{SourceID: "mem-c", TargetID: "mem-b", Kind: domain.RelationContinues, Status: domain.JudgmentJudged})
+
+	svc := NewContextService(memories, rels)
+	out, err := svc.Format(ctx, "kandel", domain.Scope(""))
+	if err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	if !strings.Contains(out, "Fase 3") {
+		t.Fatalf("debía mostrar la bitácora abierta:\n%s", out)
+	}
+	if !strings.Contains(out, fmt.Sprintf("⭱ viene de id %d", predID)) {
+		t.Errorf("debía mostrar la miga hacia la fase anterior (id %d):\n%s", predID, out)
 	}
 }
 

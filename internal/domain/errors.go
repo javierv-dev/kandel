@@ -19,4 +19,6 @@ var (
 	ErrAmbiguousProject = errors.New("domain: proyecto ambiguo")
 	// ErrNotFound indica que la entidad solicitada no existe.
 	ErrNotFound = errors.New("domain: no encontrado")
+	// ErrSelfContinue indica que se intentó continuar una entrada de bitácora a sí misma.
+	ErrSelfContinue = errors.New("domain: una entrada no puede continuarse a sí misma")
 )

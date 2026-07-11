@@ -137,4 +137,8 @@ type RelationRepo interface {
 	// entre memorias vivas) relevantes para un proyecto (las del proyecto o alguna global). Alimenta el
 	// banner "conflictos sin resolver" del contexto inyectado.
 	CountOpenConflicts(ctx context.Context, project string) (int, error)
+	// FindBySourceKind devuelve la relación juzgada con la source y el verbo dados (o nil si no hay).
+	// Sostiene el recorrido de la cadena de bitácora: dado el sync_id de una entrada, halla su enlace
+	// `continues` hacia la fase anterior. Devuelve la más reciente si hubiera varias.
+	FindBySourceKind(ctx context.Context, sourceSyncID string, kind domain.RelationType) (*domain.MemoryRelation, error)
 }

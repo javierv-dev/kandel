@@ -574,6 +574,19 @@ func (f *fakeRelations) CountOpenConflicts(_ context.Context, _ string) (int, er
 	return n, nil
 }
 
+// FindBySourceKind devuelve la relación juzgada más reciente con la source y el verbo dados.
+func (f *fakeRelations) FindBySourceKind(_ context.Context, sourceSyncID string, kind domain.RelationType) (*domain.MemoryRelation, error) {
+	var found *domain.MemoryRelation
+	for i := range f.items {
+		r := f.items[i]
+		if r.Status == domain.JudgmentJudged && r.SourceID == sourceSyncID && r.Kind == kind {
+			c := r
+			found = &c // el último gana: el fake inserta en orden, así que queda el más reciente
+		}
+	}
+	return found, nil
+}
+
 // fakeRunner es un AgentRunner que devuelve un veredicto fijo (o un error).
 type fakeRunner struct {
 	verdict    domain.Verdict

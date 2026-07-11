@@ -38,6 +38,7 @@ func (mcpCmd) Run(_ context.Context, args []string, app *App) error {
 		Doctor:    app.Doctor,
 		Conflict:  app.Conflict,
 		Sync:      app.Sync,
+		Thread:    app.Thread,
 	}
 	srv := mcpadapter.NewServer(svc, mcpadapter.ResolveTools(*tools))
 	// ServeStdio bloquea leyendo stdin hasta que el cliente cierra la conexión.

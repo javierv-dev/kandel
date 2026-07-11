@@ -53,6 +53,13 @@ type SyncPort interface {
 	ListConflicts(ctx context.Context) ([]domain.SyncConflict, error)
 }
 
+// ThreadPort es la cara de la trazabilidad de bitácora que el MCP consume: enlaza entradas del mismo
+// hilo (continues) y recorre la cadena para reconstruir "cómo llegamos a este estado" (Q3).
+type ThreadPort interface {
+	Link(ctx context.Context, newerID, olderID int64) (domain.MemoryRelation, error)
+	Thread(ctx context.Context, id int64) ([]domain.Memory, error)
+}
+
 // Services agrupa los casos de uso que necesitan los handlers MCP. Es el equivalente al App de
 // la CLI: el wiring concreto vive en cmd/kandel/main.go.
 type Services struct {
@@ -62,6 +69,7 @@ type Services struct {
 	Doctor    DoctorPort
 	Conflict  ConflictPort
 	Sync      SyncPort
+	Thread    ThreadPort
 }
 
 // serverInstructions le dice al cliente MCP cuándo usar las herramientas de kandel. La búsqueda
@@ -102,4 +110,5 @@ func registerTools(srv *server.MCPServer, svc Services, allowlist map[string]boo
 	registerDoctorTools(srv, svc, allowlist)
 	registerConflictTools(srv, svc, allowlist)
 	registerSyncTools(srv, svc, allowlist)
+	registerThreadTools(srv, svc, allowlist)
 }

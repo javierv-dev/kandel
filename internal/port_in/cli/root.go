@@ -96,6 +96,13 @@ type ContextUseCases interface {
 	Format(ctx context.Context, project string, scope domain.Scope) (string, error)
 }
 
+// ThreadUseCases es la cara de la trazabilidad de bitácora (relación continues). Viaja en App porque
+// el servidor MCP la cablea (tools mem_link/mem_thread).
+type ThreadUseCases interface {
+	Link(ctx context.Context, newerID, olderID int64) (domain.MemoryRelation, error)
+	Thread(ctx context.Context, id int64) ([]domain.Memory, error)
+}
+
 // ProjectUseCases migra (renombra) un proyecto. Viaja en App para cablear el servidor HTTP (los
 // hooks lo consumen vía POST /projects/migrate).
 type ProjectUseCases interface {
@@ -125,6 +132,7 @@ type App struct {
 	Context   ContextUseCases
 	Project   ProjectUseCases
 	Seed      SeedUseCases
+	Thread    ThreadUseCases
 
 	In  io.Reader // entrada para confirmaciones interactivas (por defecto os.Stdin)
 	Out io.Writer

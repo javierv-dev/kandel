@@ -24,13 +24,19 @@ const (
 	RelationDuplicate RelationType = "duplicate"
 	// RelationNotConflict indica que no hay solape semántico relevante.
 	RelationNotConflict RelationType = "not_conflict"
+	// RelationContinues enlaza dos entradas de bitácora del MISMO hilo: la source (fase nueva)
+	// continúa a la target (fase anterior). Es una aserción del agente en la transición de fase (no
+	// un veredicto del LLM), así que nace ya juzgada. Define la cadena de trazabilidad que recorre
+	// mem_thread para reconstruir "cómo llegamos a este estado" (Q3 del rediseño de contexto).
+	RelationContinues RelationType = "continues"
 )
 
 // Valid indica si el tipo de relación es uno de los reconocidos.
 func (k RelationType) Valid() bool {
 	switch k {
 	case RelationPending, RelationRelated, RelationCompatible, RelationScoped,
-		RelationConflictsWith, RelationSupersedes, RelationDuplicate, RelationNotConflict:
+		RelationConflictsWith, RelationSupersedes, RelationDuplicate, RelationNotConflict,
+		RelationContinues:
 		return true
 	default:
 		return false

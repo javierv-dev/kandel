@@ -128,6 +128,23 @@ func (r *RelationRepo) CountOpenConflicts(ctx context.Context, project string) (
 	return n, nil
 }
 
+// FindBySourceKind devuelve la relación juzgada con la source y el verbo dados; (nil, nil) si no hay.
+// Sostiene el recorrido de la cadena de bitácora (verbo `continues`). Si hubiera varias, devuelve la
+// más reciente. Se apoya en idx_memrel_source(source_id).
+func (r *RelationRepo) FindBySourceKind(ctx context.Context, sourceSyncID string, kind domain.RelationType) (*domain.MemoryRelation, error) {
+	q := `SELECT ` + relationColumns + ` FROM memory_relations
+		WHERE source_id = ? AND relation = ? AND judgment_status = 'judged'
+		ORDER BY datetime(created_at) DESC, id DESC LIMIT 1`
+	rel, err := scanRelation(execFromCtx(ctx, r.db).QueryRowContext(ctx, q, sourceSyncID, string(kind)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: buscar relación por source y verbo: %w", err)
+	}
+	return &rel, nil
+}
+
 // scanRelation escanea una fila al modelo de dominio.
 func scanRelation(sc rowScanner) (domain.MemoryRelation, error) {
 	var (
