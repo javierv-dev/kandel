@@ -21,13 +21,13 @@ ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem
 Tools principales:
 - `mem_save`, `mem_search`, `mem_context`
 - `mem_get`, `mem_update`
-- `mem_session_start`, `mem_save_prompt`
+- `mem_save_prompt`
 
 **Plan B**: si las tools no están disponibles inesperadamente, ejecuta `kandel install claude-code`
 otra vez y reinicia Claude Code. Repara la config del MCP, los hooks y la skill.
 
 Tools adicionales (diferidas — cárgalas con ToolSearch solo cuando las necesites):
-- `mem_pending`, `mem_capture_passive`, `mem_current_project`
+- `mem_pending`, `mem_current_project`
 - `mem_doctor`, `mem_compare`, `mem_judge`
 - `mem_delete`, `mem_restore`
 

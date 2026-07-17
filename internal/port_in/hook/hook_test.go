@@ -58,7 +58,6 @@ func newStubDaemon(t *testing.T) *stubDaemon {
 	mux.HandleFunc("POST /sessions/{id}/end", record)
 	mux.HandleFunc("POST /prompts", record)
 	mux.HandleFunc("POST /projects/migrate", record)
-	mux.HandleFunc("POST /memories/passive", record)
 	d.srv = httptest.NewServer(mux)
 	t.Cleanup(d.srv.Close)
 	return d
@@ -280,33 +279,6 @@ func TestSessionStopEndsSession(t *testing.T) {
 	}
 }
 
-func TestSubagentStopPassiveCapture(t *testing.T) {
-	d := newStubDaemon(t)
-	cwd := t.TempDir()
-
-	// Con salida: envía la captura pasiva.
-	r1, _ := newTestRunner(t, "subagent-stop", d)
-	if err := r1.subagentStop(payload{SessionID: "s", CWD: cwd, Stdout: "Key Learnings:\n- algo"}); err != nil {
-		t.Fatalf("subagentStop: %v", err)
-	}
-	req := d.find(t, "POST", "/memories/passive")
-	if req.body["content"] != "Key Learnings:\n- algo" {
-		t.Errorf("contenido de captura pasiva incorrecto: %+v", req.body)
-	}
-	if req.body["source"] != "subagent-stop" {
-		t.Errorf("source incorrecto: %v", req.body["source"])
-	}
-
-	// Sin salida: no envía nada.
-	r2, _ := newTestRunner(t, "subagent-stop", d)
-	if err := r2.subagentStop(payload{SessionID: "s", CWD: cwd, Stdout: ""}); err != nil {
-		t.Fatalf("subagentStop vacío: %v", err)
-	}
-	if n := d.count("POST", "/memories/passive"); n != 1 {
-		t.Errorf("salida vacía no debe capturar; total capturas = %d", n)
-	}
-}
-
 func TestPostCompactionInjectsProtocol(t *testing.T) {
 	d := newStubDaemon(t)
 	r, out := newTestRunner(t, "post-compaction", d)
@@ -438,8 +410,8 @@ func TestParseAgInputTolerant(t *testing.T) {
 
 func TestParsePayloadTolerant(t *testing.T) {
 	// JSON válido.
-	p := parsePayload(strings.NewReader(`{"session_id":"a","cwd":"/x","prompt":"p","stdout":"o"}`))
-	if p.SessionID != "a" || p.CWD != "/x" || p.Prompt != "p" || p.Stdout != "o" {
+	p := parsePayload(strings.NewReader(`{"session_id":"a","cwd":"/x","prompt":"p"}`))
+	if p.SessionID != "a" || p.CWD != "/x" || p.Prompt != "p" {
 		t.Errorf("parseo incorrecto: %+v", p)
 	}
 	// Entrada vacía o basura → payload en blanco, sin pánico.

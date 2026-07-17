@@ -45,7 +45,7 @@ func TestClaudeCodeInstall(t *testing.T) {
 		t.Errorf("el config no fija agent_cli=claude: %s", confData)
 	}
 	// Scripts.
-	for _, s := range []string{"session-start.sh", "user-prompt-submit.sh", "session-stop.sh", "subagent-stop.sh", "post-compaction.sh"} {
+	for _, s := range []string{"session-start.sh", "user-prompt-submit.sh", "session-stop.sh", "post-compaction.sh"} {
 		if _, err := os.Stat(filepath.Join(home, ".claude", "kandel", "scripts", s)); err != nil {
 			t.Errorf("falta el script %q: %v", s, err)
 		}

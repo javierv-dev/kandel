@@ -378,16 +378,6 @@ func (f *fakeSessions) Get(_ context.Context, id string) (*domain.Session, error
 	return &c, nil
 }
 
-func (f *fakeSessions) Recent(_ context.Context, project string, limit int) ([]domain.Session, error) {
-	var out []domain.Session
-	for _, s := range f.items {
-		if project == "" || s.Project == project {
-			out = append(out, s)
-		}
-	}
-	return out, nil
-}
-
 func (f *fakeSessions) UpdateProject(_ context.Context, oldProject, newProject string) (int64, error) {
 	var n int64
 	for id, s := range f.items {
@@ -398,23 +388,6 @@ func (f *fakeSessions) UpdateProject(_ context.Context, oldProject, newProject s
 		}
 	}
 	return n, nil
-}
-
-func (f *fakeSessions) MostRecentActive(_ context.Context, project string) (string, bool, error) {
-	var best *domain.Session
-	for _, s := range f.items {
-		if s.Project != project || !s.IsOpen() {
-			continue
-		}
-		c := s
-		if best == nil || c.StartedAt.After(best.StartedAt) {
-			best = &c
-		}
-	}
-	if best == nil {
-		return "", false, nil
-	}
-	return best.ID, true, nil
 }
 
 // fakeEmbedder devuelve un vector constante; basta para probar el cableado del servicio (la

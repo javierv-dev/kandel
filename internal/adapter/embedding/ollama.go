@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,10 @@ type Ollama struct {
 	model      string
 	dimensions int
 	client     *http.Client
+	// keepAlive es el valor del campo keep_alive de /api/embed (cuánto retiene Ollama el modelo en
+	// memoria). nil = no enviar el campo (default de Ollama). Es int (segundos, o -1 = siempre, 0 =
+	// descargar ya) o string de duración ("1h", "30m"), según lo que traiga la config.
+	keepAlive any
 }
 
 var _ ports.Embedder = (*Ollama)(nil)
@@ -43,6 +48,29 @@ type Option func(*Ollama)
 // WithHTTPClient permite inyectar un cliente HTTP propio (útil en tests).
 func WithHTTPClient(c *http.Client) Option {
 	return func(o *Ollama) { o.client = c }
+}
+
+// WithKeepAlive fija el valor keep_alive que se manda en cada petición de embeddings. raw se
+// interpreta así: vacío = no enviar el campo (deja el default de Ollama); un entero ("-1", "0",
+// "300") = número (segundos, con -1 = siempre y 0 = descargar al instante); cualquier otra cosa
+// ("1h", "30m") = string de duración que Ollama parsea. Se envía por petición, así que solo afecta
+// al modelo de kandel y no al resto del servidor Ollama del usuario.
+func WithKeepAlive(raw string) Option {
+	return func(o *Ollama) { o.keepAlive = parseKeepAlive(raw) }
+}
+
+// parseKeepAlive convierte el valor de config en lo que espera el campo JSON keep_alive: nil para
+// omitirlo, un int si es un entero (así "-1"/"0" viajan como número, no como texto), o el string tal
+// cual para las duraciones ("1h", "30m").
+func parseKeepAlive(raw string) any {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if n, err := strconv.Atoi(raw); err == nil {
+		return n
+	}
+	return raw
 }
 
 // NewOllama crea el embedder. host vacío usa DefaultHost; model vacío usa DefaultModel.
@@ -74,6 +102,9 @@ func NewOllama(host, model string, dimensions int, opts ...Option) *Ollama {
 type embedRequest struct {
 	Model string   `json:"model"`
 	Input []string `json:"input"`
+	// KeepAlive es opcional (omitempty): cuánto retiene Ollama el modelo cargado. nil = se omite y
+	// Ollama aplica su default.
+	KeepAlive any `json:"keep_alive,omitempty"`
 }
 
 // embedResponse es la respuesta de /api/embed: un vector por cada texto de entrada, en el mismo
@@ -99,7 +130,7 @@ func (o *Ollama) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
-	body, err := json.Marshal(embedRequest{Model: o.model, Input: texts})
+	body, err := json.Marshal(embedRequest{Model: o.model, Input: texts, KeepAlive: o.keepAlive})
 	if err != nil {
 		return nil, fmt.Errorf("ollama: serializar petición: %w", err)
 	}

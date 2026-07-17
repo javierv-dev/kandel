@@ -179,32 +179,6 @@ func TestContextBadScope(t *testing.T) {
 	}
 }
 
-func TestPassiveCapture(t *testing.T) {
-	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 1}, Outcome: service.SaveCreated}}
-	body := `{"session_id":"s1","project":"kandel","content":"Aprendizajes:\n- el primer aprendizaje útil\n- el segundo aprendizaje útil"}`
-	rec := do(t, Services{Memory: mem}, http.MethodPost, "/memories/passive", body)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, se esperaba 200; body=%s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `"saved":2`) {
-		t.Errorf("se esperaban 2 guardados: %s", rec.Body.String())
-	}
-	if mem.lastSave.Type != domain.TypeDiscovery {
-		t.Errorf("la captura pasiva debe guardar tipo discovery, fue %v", mem.lastSave.Type)
-	}
-}
-
-func TestPassiveCaptureNoSection(t *testing.T) {
-	mem := &fakeMemory{}
-	rec := do(t, Services{Memory: mem}, http.MethodPost, "/memories/passive", `{"content":"texto sin aprendizajes"}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("sin sección debe responder 200 con 0 extraídos, dio %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), `"extracted":0`) {
-		t.Errorf("se esperaban 0 extraídos: %s", rec.Body.String())
-	}
-}
-
 func TestMigrateProject(t *testing.T) {
 	pr := &fakeProject{result: service.MigrateResult{Migrated: true, MemoriesUpdated: 2}}
 	rec := do(t, Services{Project: pr}, http.MethodPost, "/projects/migrate", `{"old_project":"viejo","new_project":"nuevo"}`)
@@ -336,12 +310,6 @@ func (f *fakeSession) Start(_ context.Context, in service.StartInput) (domain.Se
 	return domain.Session{ID: in.ID, Project: in.Project}, nil
 }
 func (f *fakeSession) End(_ context.Context, _ string) error { return f.endErr }
-func (f *fakeSession) Get(_ context.Context, id string) (*domain.Session, error) {
-	if id == "missing" {
-		return nil, nil
-	}
-	return &domain.Session{ID: id}, nil
-}
 
 type fakeLifecycle struct{}
 

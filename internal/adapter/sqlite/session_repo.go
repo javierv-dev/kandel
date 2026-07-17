@@ -60,53 +60,6 @@ func (r *SessionRepo) Get(ctx context.Context, id string) (*domain.Session, erro
 	return &s, nil
 }
 
-// Recent lista las sesiones más recientes de un proyecto (por inicio descendente).
-func (r *SessionRepo) Recent(ctx context.Context, project string, limit int) ([]domain.Session, error) {
-	query := `SELECT id, project, directory, started_at, ended_at
-		FROM sessions`
-	args := []any{}
-	if project != "" {
-		query += ` WHERE project = ?`
-		args = append(args, project)
-	}
-	query += ` ORDER BY datetime(started_at) DESC, id DESC LIMIT ?`
-	args = append(args, normalizeLimit(limit))
-
-	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: consultar sesiones: %w", err)
-	}
-	defer rows.Close()
-	var out []domain.Session
-	for rows.Next() {
-		s, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
-// MostRecentActive devuelve el id de la sesión abierta (sin cerrar) más reciente del proyecto.
-func (r *SessionRepo) MostRecentActive(ctx context.Context, project string) (string, bool, error) {
-	if project == "" {
-		return "", false, nil
-	}
-	const q = `SELECT id FROM sessions
-		WHERE project = ? AND ended_at IS NULL
-		ORDER BY datetime(started_at) DESC, id DESC LIMIT 1`
-	var id string
-	err := execFromCtx(ctx, r.db).QueryRowContext(ctx, q, project).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, fmt.Errorf("sqlite: sesión activa: %w", err)
-	}
-	return id, true, nil
-}
-
 // UpdateProject renombra el proyecto de todas las sesiones que lo tengan; devuelve cuántas filas
 // cambió.
 func (r *SessionRepo) UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error) {

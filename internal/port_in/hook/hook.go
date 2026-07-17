@@ -71,8 +71,6 @@ func Run(ctx context.Context, event, version string, updates ports.ReleaseChecke
 		return r.userPromptSubmit(payload)
 	case "session-stop":
 		return r.sessionStop(payload)
-	case "subagent-stop":
-		return r.subagentStop(payload)
 	default:
 		return fmt.Errorf("hook desconocido: %q", event)
 	}

@@ -22,7 +22,7 @@ func (hookCmd) Synopsis() string {
 
 func (hookCmd) Run(ctx context.Context, args []string, app *App) error {
 	if len(args) == 0 {
-		fmt.Fprintln(app.Err, "uso: kandel hook <session-start|post-compaction|user-prompt-submit|session-stop|subagent-stop|ag-pre-invocation|ag-stop>")
+		fmt.Fprintln(app.Err, "uso: kandel hook <session-start|post-compaction|user-prompt-submit|session-stop|ag-pre-invocation|ag-stop>")
 		return nil
 	}
 	// Un hook NUNCA debe terminar con error: un exit≠0 puede bloquear el mensaje del usuario en el

@@ -191,15 +191,3 @@ func (r *runner) sessionStop(p payload) error {
 	}
 	return nil
 }
-
-// subagentStop maneja el hook SubagentStop: envía la salida del subagente a la captura pasiva, que
-// extrae aprendizajes en el servidor. Si no hay salida, no hace nada.
-func (r *runner) subagentStop(p payload) error {
-	if p.Stdout == "" {
-		return nil
-	}
-	project := detectProject(p.CWD)
-	code, _ := r.client.passiveCapture(r.ctx, p.SessionID, p.Stdout, project, "subagent-stop")
-	r.klog(fmt.Sprintf("POST /memories/passive project=%s -> HTTP %s", project, code))
-	return nil
-}

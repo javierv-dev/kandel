@@ -66,16 +66,6 @@ func (s *SessionService) End(ctx context.Context, id string) error {
 	})
 }
 
-// Get recupera una sesión por id.
-func (s *SessionService) Get(ctx context.Context, id string) (*domain.Session, error) {
-	return s.sessions.Get(ctx, id)
-}
-
-// MostRecentActive devuelve la sesión abierta más reciente del proyecto, resolviendo el nombre.
-func (s *SessionService) MostRecentActive(ctx context.Context, project string) (string, bool, error) {
-	return s.sessions.MostRecentActive(ctx, normalizeProject(project))
-}
-
 // enqueue construye y encola la mutación de sync de una sesión.
 func (s *SessionService) enqueue(ctx context.Context, session domain.Session) error {
 	payload, err := json.Marshal(session)

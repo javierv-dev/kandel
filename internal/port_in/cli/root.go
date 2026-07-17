@@ -40,8 +40,6 @@ type MemoryUseCases interface {
 type SessionUseCases interface {
 	Start(ctx context.Context, in service.StartInput) (domain.Session, error)
 	End(ctx context.Context, id string) error
-	Get(ctx context.Context, id string) (*domain.Session, error)
-	MostRecentActive(ctx context.Context, project string) (string, bool, error)
 }
 
 // LifecycleUseCases es la cara de los casos de uso de ciclo de vida que la CLI consume.

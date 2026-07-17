@@ -26,7 +26,6 @@ type MemoryPort interface {
 type SessionPort interface {
 	Start(ctx context.Context, in service.StartInput) (domain.Session, error)
 	End(ctx context.Context, id string) error
-	Get(ctx context.Context, id string) (*domain.Session, error)
 }
 
 // LifecyclePort es la cara de los casos de uso de ciclo de vida que la API consume.
@@ -103,13 +102,11 @@ func NewHandler(svc Services) http.Handler {
 
 	mux.HandleFunc("POST /sessions", handleStartSession(svc))
 	mux.HandleFunc("POST /sessions/{id}/end", handleEndSession(svc))
-	mux.HandleFunc("GET /sessions/{id}", handleGetSession(svc))
 
 	mux.HandleFunc("POST /prompts", handleSavePrompt(svc))
 
 	// Endpoints que consumen los hooks de integración con agentes (ver §18 del plan).
 	mux.HandleFunc("GET /context", handleContext(svc))
-	mux.HandleFunc("POST /memories/passive", handlePassiveCapture(svc))
 	mux.HandleFunc("POST /projects/migrate", handleMigrateProject(svc))
 
 	// Mantenimiento de vectores disparado por hooks (asíncrono; respuesta 202).

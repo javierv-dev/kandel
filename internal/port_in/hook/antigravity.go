@@ -52,8 +52,8 @@ const agStartHeader = "## Memoria persistente kandel — contexto del proyecto\n
 // (invocationNum==0) hace de arranque: corre los efectos de arranque (prepareStartup) e inyecta el
 // encabezado + los metadatos internos + el contexto reciente como un ephemeralMessage. En las
 // siguientes invocaciones solo dispara el backfill (barato, deja los vectores al día) sin inyectar
-// nada. NOTA: guardar el prompt del usuario y la captura pasiva quedan fuera de esta fase, porque
-// requieren leer el transcript de Antigravity (transcriptPath), cuyo esquema aún no se ha fijado.
+// nada. NOTA: guardar el prompt del usuario queda fuera de esta fase, porque requiere leer el
+// transcript de Antigravity (transcriptPath), cuyo esquema aún no se ha fijado.
 func (r *runner) agPreInvocation(in agInput) error {
 	project := detectProject(in.cwd())
 	sessionID := in.ConversationID
@@ -61,7 +61,7 @@ func (r *runner) agPreInvocation(in agInput) error {
 
 	if in.InvocationNum != 0 {
 		// Turno posterior: leer transcript para guardar el prompt y mantener vectores.
-		lastPrompt, _ := parseTranscript(in.TranscriptPath)
+		lastPrompt := parseTranscript(in.TranscriptPath)
 		if lastPrompt != "" {
 			code, _ := r.client.savePrompt(r.ctx, sessionID, lastPrompt)
 			r.klog(fmt.Sprintf("POST /prompts session_id=%s -> HTTP %s", sessionID, code))
@@ -94,13 +94,6 @@ func (r *runner) agStop(in agInput) error {
 	if in.ConversationID != "" {
 		code, _ := r.client.endSession(r.ctx, in.ConversationID)
 		r.klog(fmt.Sprintf("POST /sessions/%s/end -> HTTP %s", in.ConversationID, code))
-
-		_, fullConv := parseTranscript(in.TranscriptPath)
-		if fullConv != "" {
-			project := detectProject(in.cwd())
-			capCode, _ := r.client.passiveCapture(r.ctx, in.ConversationID, fullConv, project, "ag-stop")
-			r.klog(fmt.Sprintf("POST /memories/passive project=%s -> HTTP %s", project, capCode))
-		}
 	}
 	raw, _ := json.Marshal(map[string]any{"decision": "stop"})
 	fmt.Fprintln(r.out, string(raw))
@@ -127,19 +120,17 @@ func writeInjectSteps(out io.Writer, text string) error {
 	return nil
 }
 
-// parseTranscript lee el transcript JSONL de Antigravity y extrae el último prompt del usuario
-// y la conversación completa para la captura pasiva.
-func parseTranscript(path string) (lastPrompt string, fullConversation string) {
+// parseTranscript lee el transcript JSONL de Antigravity y extrae el último prompt del usuario.
+func parseTranscript(path string) (lastPrompt string) {
 	if path == "" {
-		return "", ""
+		return ""
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return "", ""
+		return ""
 	}
 	defer f.Close()
 
-	var b strings.Builder
 	dec := json.NewDecoder(f)
 	for {
 		var line struct {
@@ -151,10 +142,7 @@ func parseTranscript(path string) (lastPrompt string, fullConversation string) {
 		}
 		if line.Type == "USER_INPUT" && line.Content != "" {
 			lastPrompt = line.Content
-			b.WriteString("User:\n" + line.Content + "\n\n")
-		} else if line.Type == "PLANNER_RESPONSE" && line.Content != "" {
-			b.WriteString("Agent:\n" + line.Content + "\n\n")
 		}
 	}
-	return lastPrompt, strings.TrimSpace(b.String())
+	return lastPrompt
 }

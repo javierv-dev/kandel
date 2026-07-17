@@ -54,7 +54,7 @@ func TestShouldRegisterNilAllowsAll(t *testing.T) {
 // ─── Servidor: la allowlist filtra el registro ─────────────────────────────────
 
 func TestNewServerRegistersOnlyAllowedTools(t *testing.T) {
-	svc := Services{Memory: &fakeMemory{}, Session: &fakeSession{}, Lifecycle: &fakeLifecycle{}}
+	svc := Services{Memory: &fakeMemory{}, Lifecycle: &fakeLifecycle{}}
 	srv := NewServer(svc, ResolveTools("admin"))
 	// El servidor expone una caja de herramientas (map nombre→tool); admin trae mem_delete y
 	// mem_restore (curación: borrar lógico y deshacerlo).
@@ -122,7 +122,7 @@ func TestHandleSearchPassesQueryAndLimit(t *testing.T) {
 	mem := &fakeMemory{}
 	svc := Services{Memory: mem}
 	_, err := handleSearch(svc)(context.Background(), callWith(map[string]any{
-		"query": "login roto", "limit": float64(3), "type": "bugfix",
+		"query": "login roto", "limit": float64(3), "type": "bugfix", "project": "kandel",
 	}))
 	if err != nil {
 		t.Fatalf("handleSearch error: %v", err)
@@ -132,6 +132,42 @@ func TestHandleSearchPassesQueryAndLimit(t *testing.T) {
 	}
 	if mem.lastSearch.Type != domain.TypeBugfix {
 		t.Errorf("type mal traducido: %q", mem.lastSearch.Type)
+	}
+	if mem.lastSearch.Project != "kandel" {
+		t.Errorf("project mal traducido: %q", mem.lastSearch.Project)
+	}
+}
+
+// La lectura es estricta: omitir el proyecto es ambiguo (no hay "proyecto del proceso").
+func TestHandleSearchRequiresProject(t *testing.T) {
+	mem := &fakeMemory{}
+	res, _ := handleSearch(Services{Memory: mem})(context.Background(), callWith(map[string]any{"query": "x"}))
+	if !res.IsError {
+		t.Error("mem_search sin project debe devolver error de ambigüedad")
+	}
+	if mem.lastSearch.Query != "" {
+		t.Error("no debe llegar a la búsqueda si el proyecto es ambiguo")
+	}
+}
+
+// El comodín "*" desactiva el filtro de proyecto (busca en todos): el servicio recibe project vacío.
+func TestHandleSearchWildcardMeansAllProjects(t *testing.T) {
+	mem := &fakeMemory{}
+	_, err := handleSearch(Services{Memory: mem})(context.Background(), callWith(map[string]any{"query": "x", "project": "*"}))
+	if err != nil {
+		t.Fatalf("handleSearch error: %v", err)
+	}
+	if mem.lastSearch.Project != "" {
+		t.Errorf(`project="*" debe traducirse a filtro vacío (todos), fue %q`, mem.lastSearch.Project)
+	}
+}
+
+// mem_context aplica la misma política estricta que mem_search.
+func TestHandleContextRequiresProject(t *testing.T) {
+	mem := &fakeMemory{}
+	res, _ := handleContext(Services{Memory: mem})(context.Background(), callWith(map[string]any{}))
+	if !res.IsError {
+		t.Error("mem_context sin project debe devolver error de ambigüedad")
 	}
 }
 
@@ -180,38 +216,6 @@ func TestHandleSavePrompt(t *testing.T) {
 	}
 	if pr.last.Content != "arregla X" || pr.last.Project != "kandel" {
 		t.Errorf("prompt mal traducido: %+v", pr.last)
-	}
-}
-
-func TestHandleCapturePassiveExtractsAndSaves(t *testing.T) {
-	mem := &fakeMemory{saveResult: service.SaveResult{Memory: domain.Memory{ID: 1}}}
-	svc := Services{Memory: mem}
-	content := "Resumen del trabajo.\n\n## Key Learnings:\n- FTS5 no es LIKE\n- Sanitizar siempre\n\nFin."
-	res, err := handleCapturePassive(svc)(context.Background(), callWith(map[string]any{"content": content}))
-	if err != nil {
-		t.Fatalf("capture error: %v", err)
-	}
-	got := textOf(t, res)
-	var parsed struct {
-		Extracted int `json:"extracted"`
-		Saved     int `json:"saved"`
-	}
-	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
-		t.Fatalf("respuesta no es JSON: %q", got)
-	}
-	if parsed.Extracted != 2 || parsed.Saved != 2 {
-		t.Errorf("extracted/saved = %d/%d, se esperaba 2/2", parsed.Extracted, parsed.Saved)
-	}
-	if mem.saveCount != 2 {
-		t.Errorf("Memory.Save llamado %d veces, se esperaban 2", mem.saveCount)
-	}
-}
-
-func TestHandleCapturePassiveNoSection(t *testing.T) {
-	svc := Services{Memory: &fakeMemory{}}
-	res, _ := handleCapturePassive(svc)(context.Background(), callWith(map[string]any{"content": "sin viñetas ni encabezado"}))
-	if !res.IsError {
-		t.Error("sin sección de aprendizajes debe devolver error de tool")
 	}
 }
 
@@ -554,16 +558,6 @@ func (f *fakeMemory) Restore(_ context.Context, id int64) (domain.Memory, error)
 	return domain.Memory{ID: id}, nil
 }
 
-type fakeSession struct{}
-
-func (f *fakeSession) Start(_ context.Context, in service.StartInput) (domain.Session, error) {
-	return domain.Session{ID: in.ID, Project: in.Project}, nil
-}
-func (f *fakeSession) Get(_ context.Context, _ string) (*domain.Session, error) { return nil, nil }
-func (f *fakeSession) MostRecentActive(_ context.Context, _ string) (string, bool, error) {
-	return "", false, nil
-}
-
 type fakeLifecycle struct {
 	byProject map[string][]domain.Memory // respuesta por proyecto ("" = todos)
 	calls     []string                   // proyectos consultados, en orden
@@ -634,7 +628,6 @@ func (f *fakeSync) ListConflicts(context.Context) ([]domain.SyncConflict, error)
 
 var (
 	_ MemoryPort    = (*fakeMemory)(nil)
-	_ SessionPort   = (*fakeSession)(nil)
 	_ LifecyclePort = (*fakeLifecycle)(nil)
 	_ PromptPort    = (*fakePrompt)(nil)
 	_ DoctorPort    = fakeDoctor{}

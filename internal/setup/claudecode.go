@@ -49,7 +49,6 @@ var hookSpecs = []hookSpec{
 	{event: "SessionStart", matcher: "compact", script: "post-compaction.sh", timeout: 10},
 	{event: "UserPromptSubmit", script: "user-prompt-submit.sh", timeout: 5},
 	{event: "Stop", script: "session-stop.sh", timeout: 5},
-	{event: "SubagentStop", script: "subagent-stop.sh", timeout: 10},
 }
 
 // versionFile es la ruta del marcador de versión de los assets instalados (§21 Eje 3). Vive junto
