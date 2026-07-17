@@ -418,21 +418,27 @@ func (f *fakeSessions) MostRecentActive(_ context.Context, project string) (stri
 }
 
 // fakeEmbedder devuelve un vector constante; basta para probar el cableado del servicio (la
-// corrección del coseno/ranking se prueba en el adaptador SQLite). failWith fuerza un error.
+// corrección del coseno/ranking se prueba en el adaptador SQLite). failWith fuerza un error del
+// backend (caída); unembeddable simula un texto que el modelo no puede vectorizar (bge-m3 → NaN):
+// devuelve ports.ErrUnembeddable, un fallo por-entrada que el backfill debe saltar sin abortar.
 type fakeEmbedder struct {
-	vec      []float32
-	failWith error
-	calls    int
+	vec          []float32
+	failWith     error
+	unembeddable map[string]bool
+	calls        int
 }
 
 func newFakeEmbedder() *fakeEmbedder {
 	return &fakeEmbedder{vec: []float32{1, 0, 0}}
 }
 
-func (e *fakeEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
+func (e *fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
 	e.calls++
 	if e.failWith != nil {
 		return nil, e.failWith
+	}
+	if e.unembeddable[text] {
+		return nil, ports.ErrUnembeddable
 	}
 	return e.vec, nil
 }
@@ -440,6 +446,12 @@ func (e *fakeEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float3
 	e.calls++
 	if e.failWith != nil {
 		return nil, e.failWith
+	}
+	// Como Ollama: si un solo texto del lote sale con NaN, cae toda la petición.
+	for _, t := range texts {
+		if e.unembeddable[t] {
+			return nil, ports.ErrUnembeddable
+		}
 	}
 	vectors := make([][]float32, len(texts))
 	for i := range texts {

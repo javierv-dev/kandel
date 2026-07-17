@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/javierv-dev/kandel/internal/domain"
@@ -73,7 +74,9 @@ func WithTitleBackfill(titleVectors ports.VectorIndex) EmbeddingOption {
 
 // BackfillResult resume lo que hizo Backfill.
 type BackfillResult struct {
-	Embedded int // número de memorias a las que se les calculó (o recalculó) el vector
+	Embedded   int     // número de memorias a las que se les calculó (o recalculó) el vector
+	Skipped    int     // memorias saltadas porque el modelo no pudo vectorizar su texto (ErrUnembeddable)
+	SkippedIDs []int64 // ids de las memorias saltadas, para poder reportarlas y reintentarlas luego
 }
 
 // Backfill calcula el vector de toda memoria viva que no lo tenga, o que lo tenga de un modelo
@@ -128,13 +131,17 @@ func (s *EmbeddingService) Warmup(ctx context.Context) error {
 func (s *EmbeddingService) backfill(ctx context.Context) (BackfillResult, error) {
 	model := s.embedder.Model()
 	var result BackfillResult
-	if err := s.drainPending(ctx, s.vectors, model, func(id int64) (bool, error) {
+	// skipped acumula las memorias que el modelo no pudo vectorizar, compartido por los dos frentes:
+	// evita reintentar (y recontar) la misma memoria envenenada, que PendingEmbedding vuelve a listar
+	// en cada lote mientras siga sin vector.
+	skipped := map[int64]bool{}
+	if err := s.drainPending(ctx, s.vectors, model, skipped, func(id int64) (bool, error) {
 		return s.reembed(ctx, id, model)
 	}, &result); err != nil {
 		return result, err
 	}
 	if s.titleVectors != nil {
-		if err := s.drainPending(ctx, s.titleVectors, model, func(id int64) (bool, error) {
+		if err := s.drainPending(ctx, s.titleVectors, model, skipped, func(id int64) (bool, error) {
 			return s.reembedTitle(ctx, id, model)
 		}, &result); err != nil {
 			return result, err
@@ -145,8 +152,9 @@ func (s *EmbeddingService) backfill(ctx context.Context) (BackfillResult, error)
 
 // drainPending vacía una cola de pendientes por lotes reanudables: pide un lote a idx.PendingEmbedding,
 // lo rellena con fill y repite hasta que no queden. Corta si un lote no progresa (p. ej. las filas
-// desaparecieron en una carrera), para evitar un bucle infinito. Comparte la mecánica de los dos frentes.
-func (s *EmbeddingService) drainPending(ctx context.Context, idx ports.VectorIndex, model string, fill func(id int64) (bool, error), result *BackfillResult) error {
+// desaparecieron en una carrera, o solo quedan memorias no vectorizables), para evitar un bucle
+// infinito. Comparte la mecánica de los dos frentes. El mapa skipped es compartido entre frentes.
+func (s *EmbeddingService) drainPending(ctx context.Context, idx ports.VectorIndex, model string, skipped map[int64]bool, fill func(id int64) (bool, error), result *BackfillResult) error {
 	for {
 		ids, err := idx.PendingEmbedding(ctx, model, s.batch)
 		if err != nil {
@@ -157,8 +165,20 @@ func (s *EmbeddingService) drainPending(ctx context.Context, idx ports.VectorInd
 		}
 		progressed := false
 		for _, id := range ids {
+			if skipped[id] {
+				continue // ya marcada como no vectorizable: no reintentar el embed ni recontarla
+			}
 			done, err := fill(id)
 			if err != nil {
+				// Un texto que el modelo no puede vectorizar (bge-m3 → NaN) NO aborta la pasada: se
+				// marca la memoria y se sigue con las demás. Cualquier otro error (embebedor caído,
+				// red, DB) SÍ aborta: barrer toda la base contra un backend roto no tiene sentido.
+				if errors.Is(err, ports.ErrUnembeddable) {
+					skipped[id] = true
+					result.Skipped++
+					result.SkippedIDs = append(result.SkippedIDs, id)
+					continue
+				}
 				return err
 			}
 			if done {

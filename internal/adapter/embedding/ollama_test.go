@@ -3,11 +3,14 @@ package embedding
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/javierv-dev/kandel/internal/ports"
 )
 
 func TestOllamaEmbed(t *testing.T) {
@@ -110,6 +113,21 @@ func TestOllamaEmbedServerError(t *testing.T) {
 	emb := NewOllama(server.URL, "bge-m3", 3)
 	if _, err := emb.Embed(context.Background(), "x"); err == nil {
 		t.Error("un error del servidor debe propagarse")
+	}
+}
+
+func TestOllamaEmbedNaNIsUnembeddable(t *testing.T) {
+	// Ollama devuelve 500 con este cuerpo cuando bge-m3 produce NaN en el vector; debe mapearse a
+	// ports.ErrUnembeddable (fallo por-entrada) y no a un error genérico de servidor.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"failed to encode response: json: unsupported value: NaN"}`))
+	}))
+	defer server.Close()
+
+	emb := NewOllama(server.URL, "bge-m3", 3)
+	if _, err := emb.Embed(context.Background(), "texto envenenado"); !errors.Is(err, ports.ErrUnembeddable) {
+		t.Errorf("un 500 por NaN debe ser ports.ErrUnembeddable, se obtuvo: %v", err)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -114,6 +115,14 @@ func (o *Ollama) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		// Ollama responde 500 cuando el modelo produce NaN/Inf en el vector y su serializador JSON no
+		// puede codificarlo (bug conocido de bge-m3 con ciertos textos, ollama/ollama#15582). Es un
+		// fallo POR-ENTRADA, no del backend: se envuelve en ports.ErrUnembeddable para que el backfill
+		// salte esa memoria y siga. Cualquier otro estado es un fallo genérico del servidor y aborta.
+		msg, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusInternalServerError && isUnembeddable(string(msg)) {
+			return nil, fmt.Errorf("ollama: el modelo %q no pudo vectorizar el texto (NaN): %w", o.model, ports.ErrUnembeddable)
+		}
 		return nil, fmt.Errorf("ollama: respuesta %s del servidor", resp.Status)
 	}
 
@@ -130,6 +139,13 @@ func (o *Ollama) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 		}
 	}
 	return parsed.Embeddings, nil
+}
+
+// isUnembeddable reconoce la respuesta de Ollama cuando el vector salió con NaN/Inf y no se pudo
+// serializar. Cubre tanto el mensaje del bug clásico ("...json: unsupported value: NaN") como el
+// error limpio que devuelven las versiones parcheadas ("embedding contains NaN or Inf values").
+func isUnembeddable(body string) bool {
+	return strings.Contains(body, "NaN") || strings.Contains(body, "unsupported value")
 }
 
 // Dimensions devuelve la dimensión esperada del vector (para validar consistencia en la DB).
