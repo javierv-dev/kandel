@@ -50,14 +50,21 @@ var (
 	OllamaHost = Key{File: "ollama_host", Env: "KANDEL_OLLAMA_HOST", Default: "http://127.0.0.1:11434",
 		Doc: "host del servidor Ollama (embebedor)"}
 	// EmbedModel es el modelo de embeddings. Es contrato de datos: cambiarlo obliga a re-embedding total.
-	EmbedModel = Key{File: "embed_model", Env: "KANDEL_EMBED_MODEL", Default: "bge-m3",
+	EmbedModel = Key{File: "embed_model", Env: "KANDEL_EMBED_MODEL", Default: "qwen3-embedding:0.6b",
 		Doc: "modelo de embeddings (cambiarlo obliga a re-embedding total)"}
-	// EmbedDimensions es la dimensión del vector; vacío deja el default del embebedor (1024 para bge-m3).
+	// EmbedDimensions es la dimensión del vector; vacío deja el default del embebedor (1024 para
+	// qwen3-embedding:0.6b).
 	EmbedDimensions = Key{File: "embed_dimensions", Env: "KANDEL_EMBED_DIMENSIONS", Default: "",
-		Doc: "dimensión del vector; vacío = default del embebedor (1024 para bge-m3)"}
+		Doc: "dimensión del vector; vacío = default del embebedor (1024 para qwen3-embedding:0.6b)"}
+	// EmbedNumCtx limita el contexto (options.num_ctx) con el que Ollama carga el embebedor. Sin
+	// límite, el modelo carga con su contexto máximo y el KV cache multiplica la huella en memoria
+	// (qwen3-embedding: ~6.3 GB a 32K vs ~1.5 GB a 4096). 4096 tokens cubre con holgura la memoria
+	// más larga; vacío o 0 = no enviar (contexto máximo del modelo).
+	EmbedNumCtx = Key{File: "embed_num_ctx", Env: "KANDEL_EMBED_NUM_CTX", Default: "4096",
+		Doc: "contexto (num_ctx) con el que se carga el embebedor; acota su huella en memoria; vacío = máximo del modelo"}
 	// EmbedKeepAlive controla cuánto mantiene Ollama el modelo de embeddings cargado en memoria tras
 	// cada petición (campo keep_alive de /api/embed). "-1" lo deja cargado indefinidamente para eliminar
-	// el arranque en frío (bge-m3 ocupa ~0.66 GB). Acepta también una duración ("1h", "30m") o "0" para
+	// el arranque en frío (qwen3-embedding:0.6b ocupa ~1.5 GB con num_ctx 4096). Acepta también una duración ("1h", "30m") o "0" para
 	// descargarlo al instante. Se envía por petición, así que solo afecta al modelo de kandel, no al
 	// resto del servidor Ollama del usuario. Vacío = no enviar el campo (deja el default de Ollama, ~5m).
 	EmbedKeepAlive = Key{File: "embed_keep_alive", Env: "KANDEL_EMBED_KEEP_ALIVE", Default: "-1",
@@ -123,7 +130,7 @@ var (
 
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
-	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
+	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedNumCtx, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
 	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, BackfillInterval, UpdateCheck, InstalledAgents,
 }
 

@@ -91,6 +91,7 @@ func run(args []string) error {
 		config.Resolve(config.EmbedModel),
 		embedDimensions(),
 		embedding.WithKeepAlive(config.Resolve(config.EmbedKeepAlive)),
+		embedding.WithNumCtx(config.Resolve(config.EmbedNumCtx)),
 	)
 
 	// Casos de uso (service/).

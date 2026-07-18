@@ -17,11 +17,13 @@ import (
 	"github.com/javierv-dev/kandel/internal/ports"
 )
 
-// Valores por defecto. El modelo bge-m3 es multilingüe (es+en) y produce vectores de 1024
-// dimensiones. El modelo es contrato de datos: cambiarlo obliga a re-embedding total.
+// Valores por defecto. El modelo qwen3-embedding:0.6b es multilingüe (es+en) y produce vectores
+// de 1024 dimensiones. Se eligió sobre bge-m3 porque su tokenizador BPE esquiva el bug NaN del
+// tokenizador t5/SentencePiece de Ollama (ollama/ollama#15582) que dejaba memorias sin vector.
+// El modelo es contrato de datos: cambiarlo obliga a re-embedding total.
 const (
 	DefaultHost       = "http://127.0.0.1:11434"
-	DefaultModel      = "bge-m3"
+	DefaultModel      = "qwen3-embedding:0.6b"
 	DefaultDimensions = 1024
 )
 
@@ -38,6 +40,10 @@ type Ollama struct {
 	// memoria). nil = no enviar el campo (default de Ollama). Es int (segundos, o -1 = siempre, 0 =
 	// descargar ya) o string de duración ("1h", "30m"), según lo que traiga la config.
 	keepAlive any
+	// numCtx limita el contexto (options.num_ctx) con el que Ollama carga el modelo. Sin límite,
+	// el modelo se carga con su contexto máximo y el KV cache infla la huella en memoria
+	// (qwen3-embedding: ~6.3 GB a 32K vs ~1.5 GB a 4096). 0 = no enviar (contexto máximo).
+	numCtx int
 }
 
 var _ ports.Embedder = (*Ollama)(nil)
@@ -57,6 +63,17 @@ func WithHTTPClient(c *http.Client) Option {
 // al modelo de kandel y no al resto del servidor Ollama del usuario.
 func WithKeepAlive(raw string) Option {
 	return func(o *Ollama) { o.keepAlive = parseKeepAlive(raw) }
+}
+
+// WithNumCtx fija el contexto (options.num_ctx) con el que Ollama carga el modelo de embeddings.
+// raw viene de la config como texto: un entero > 0 se envía; vacío, 0 o inválido = no enviar el
+// campo (Ollama usa el contexto máximo del modelo).
+func WithNumCtx(raw string) Option {
+	return func(o *Ollama) {
+		if n, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && n > 0 {
+			o.numCtx = n
+		}
+	}
 }
 
 // parseKeepAlive convierte el valor de config en lo que espera el campo JSON keep_alive: nil para
@@ -105,6 +122,13 @@ type embedRequest struct {
 	// KeepAlive es opcional (omitempty): cuánto retiene Ollama el modelo cargado. nil = se omite y
 	// Ollama aplica su default.
 	KeepAlive any `json:"keep_alive,omitempty"`
+	// Options lleva opciones de carga del modelo; aquí solo num_ctx. nil = se omite.
+	Options *embedOptions `json:"options,omitempty"`
+}
+
+// embedOptions es el subobjeto options de /api/embed que kandel usa (solo num_ctx).
+type embedOptions struct {
+	NumCtx int `json:"num_ctx"`
 }
 
 // embedResponse es la respuesta de /api/embed: un vector por cada texto de entrada, en el mismo
@@ -130,7 +154,11 @@ func (o *Ollama) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
-	body, err := json.Marshal(embedRequest{Model: o.model, Input: texts, KeepAlive: o.keepAlive})
+	payload := embedRequest{Model: o.model, Input: texts, KeepAlive: o.keepAlive}
+	if o.numCtx > 0 {
+		payload.Options = &embedOptions{NumCtx: o.numCtx}
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("ollama: serializar petición: %w", err)
 	}
