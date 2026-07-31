@@ -3,11 +3,14 @@ package embedding
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/javierv-dev/kandel/internal/ports"
 )
 
 func TestOllamaEmbed(t *testing.T) {
@@ -113,6 +116,21 @@ func TestOllamaEmbedServerError(t *testing.T) {
 	}
 }
 
+func TestOllamaEmbedNaNIsUnembeddable(t *testing.T) {
+	// Ollama devuelve 500 con este cuerpo cuando bge-m3 produce NaN en el vector; debe mapearse a
+	// ports.ErrUnembeddable (fallo por-entrada) y no a un error genérico de servidor.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"failed to encode response: json: unsupported value: NaN"}`))
+	}))
+	defer server.Close()
+
+	emb := NewOllama(server.URL, "bge-m3", 3)
+	if _, err := emb.Embed(context.Background(), "texto envenenado"); !errors.Is(err, ports.ErrUnembeddable) {
+		t.Errorf("un 500 por NaN debe ser ports.ErrUnembeddable, se obtuvo: %v", err)
+	}
+}
+
 func TestOllamaEmbedEmptyVector(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(embedResponse{Embeddings: [][]float32{{}}})
@@ -182,6 +200,52 @@ func TestOllamaKeepAliveOmitted(t *testing.T) {
 	}
 	if _, present := raw["keep_alive"]; present {
 		t.Errorf("keep_alive no debía enviarse, pero está presente: %#v", raw["keep_alive"])
+	}
+}
+
+// TestOllamaNumCtx verifica que un num_ctx > 0 viaja como options.num_ctx en el cuerpo, para que
+// Ollama cargue el modelo con contexto acotado (huella de memoria) y no con su máximo.
+func TestOllamaNumCtx(t *testing.T) {
+	var raw map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &raw)
+		_ = json.NewEncoder(w).Encode(embedResponse{Embeddings: [][]float32{{0.1, 0.2, 0.3}}})
+	}))
+	defer server.Close()
+
+	emb := NewOllama(server.URL, "qwen3-embedding:0.6b", 3, WithNumCtx("4096"))
+	if _, err := emb.Embed(context.Background(), "x"); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	opts, ok := raw["options"].(map[string]any)
+	if !ok {
+		t.Fatalf("options no presente o con forma inesperada: %#v", raw["options"])
+	}
+	if v, ok := opts["num_ctx"].(float64); !ok || v != 4096 {
+		t.Errorf("num_ctx esperado 4096, se obtuvo: %#v", opts["num_ctx"])
+	}
+}
+
+// TestOllamaNumCtxOmitted verifica que con num_ctx vacío, cero o inválido el campo options NO se
+// envía, dejando que Ollama use el contexto máximo del modelo.
+func TestOllamaNumCtxOmitted(t *testing.T) {
+	for _, rawCfg := range []string{"", "0", "-8", "abc"} {
+		var raw map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &raw)
+			_ = json.NewEncoder(w).Encode(embedResponse{Embeddings: [][]float32{{0.1, 0.2, 0.3}}})
+		}))
+
+		emb := NewOllama(server.URL, "qwen3-embedding:0.6b", 3, WithNumCtx(rawCfg))
+		if _, err := emb.Embed(context.Background(), "x"); err != nil {
+			t.Fatalf("Embed con num_ctx %q: %v", rawCfg, err)
+		}
+		if _, present := raw["options"]; present {
+			t.Errorf("options no debía enviarse con num_ctx %q, pero está presente: %#v", rawCfg, raw["options"])
+		}
+		server.Close()
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // embeddingsCmd agrupa el mantenimiento de los vectores: backfill (rellenar los que faltan o
@@ -41,7 +42,20 @@ func embeddingsBackfill(ctx context.Context, app *App) error {
 		return err
 	}
 	fmt.Fprintf(app.Out, "backfill: %d memoria(s) con vector al día\n", res.Embedded)
+	if res.Skipped > 0 {
+		fmt.Fprintf(app.Err, "backfill: %d memoria(s) saltada(s) porque el modelo de embeddings no pudo vectorizar su texto (ids: %s)\n",
+			res.Skipped, joinIDs(res.SkippedIDs))
+	}
 	return nil
+}
+
+// joinIDs formatea una lista de ids como "1, 2, 3" para los mensajes al usuario.
+func joinIDs(ids []int64) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatInt(id, 10)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // embeddingsReembed fuerza el recálculo del vector de una memoria por id.

@@ -115,6 +115,37 @@ func TestBackfillAbortsOnEmbedError(t *testing.T) {
 	}
 }
 
+// TestBackfillSkipsUnembeddableAndContinues verifica que una memoria cuyo texto el modelo no puede
+// vectorizar (ErrUnembeddable, p. ej. bge-m3 → NaN) se salta y NO aborta la pasada: las demás quedan
+// vectorizadas y el resultado la reporta en Skipped/SkippedIDs.
+func TestBackfillSkipsUnembeddableAndContinues(t *testing.T) {
+	repo := newFakeObs()
+	a := seedMemory(t, repo, "buena uno")
+	bad := seedMemory(t, repo, "envenenada")
+	c := seedMemory(t, repo, "buena dos")
+	emb := newFakeEmbedder()
+	emb.unembeddable = map[string]bool{"envenenada": true}
+	idx := newPendingIndex([]int64{a, bad, c})
+	svc := newBackfillService(idx, repo, emb)
+
+	res, err := svc.Backfill(context.Background())
+	if err != nil {
+		t.Fatalf("una memoria no vectorizable no debe abortar el backfill: %v", err)
+	}
+	if res.Embedded != 2 {
+		t.Errorf("Embedded = %d, se esperaba 2 (las buenas)", res.Embedded)
+	}
+	if res.Skipped != 1 || len(res.SkippedIDs) != 1 || res.SkippedIDs[0] != bad {
+		t.Errorf("se esperaba 1 saltada (id=%d), se obtuvo Skipped=%d ids=%v", bad, res.Skipped, res.SkippedIDs)
+	}
+	if idx.upserted[a] == "" || idx.upserted[c] == "" {
+		t.Errorf("las memorias buenas deben quedar vectorizadas: %+v", idx.upserted)
+	}
+	if _, ok := idx.upserted[bad]; ok {
+		t.Error("la memoria envenenada no debe tener vector")
+	}
+}
+
 func TestReembedSingle(t *testing.T) {
 	repo := newFakeObs()
 	id := seedMemory(t, repo, "contenido")

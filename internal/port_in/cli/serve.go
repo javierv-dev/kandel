@@ -202,6 +202,9 @@ func runBackfillSweep(ctx context.Context, app *App, interval time.Duration) {
 			case res.Embedded > 0:
 				log.Printf("barrido de backfill: %d memoria(s) embebida(s)", res.Embedded)
 			}
+			if res.Skipped > 0 {
+				log.Printf("barrido de backfill: %d memoria(s) saltada(s) por texto no vectorizable (ids: %v)", res.Skipped, res.SkippedIDs)
+			}
 		}
 	}
 }

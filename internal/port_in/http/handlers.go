@@ -420,6 +420,9 @@ func handleBackfill(svc Services) http.HandlerFunc {
 			case res.Embedded > 0:
 				log.Printf("backfill (disparado): %d memoria(s) embebida(s)", res.Embedded)
 			}
+			if res.Skipped > 0 {
+				log.Printf("backfill (disparado): %d memoria(s) saltada(s) por texto no vectorizable (ids: %v)", res.Skipped, res.SkippedIDs)
+			}
 		}()
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "backfill lanzado"})
 	}

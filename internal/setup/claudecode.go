@@ -119,8 +119,8 @@ func (c claudeCode) Install(home, version string, out io.Writer) error {
 	fmt.Fprintf(out, "✓ versión de assets (%s) marcada en %s\n", version, c.versionFile(home))
 
 	fmt.Fprintln(out, "\nListo. Reinicia Claude Code para que tome la configuración.")
-	fmt.Fprintln(out, "Requisito: Ollama corriendo con el modelo de embeddings (por defecto bge-m3).")
-	fmt.Fprintln(out, "  Si falta: ollama pull bge-m3")
+	fmt.Fprintln(out, "Requisito: Ollama corriendo con el modelo de embeddings (por defecto qwen3-embedding:0.6b).")
+	fmt.Fprintln(out, "  Si falta: ollama pull qwen3-embedding:0.6b")
 	return nil
 }
 
