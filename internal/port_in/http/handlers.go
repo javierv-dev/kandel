@@ -212,10 +212,23 @@ func handleSearch(svc Services) http.HandlerFunc {
 }
 
 // Defaults de la inyección por relevancia (Capa 2). El umbral es similitud de coseno [0..1]: solo
-// entra lo que lo supera, de modo que un prompt sin memorias afines no inyecta nada. El 0.45 sale de
-// una calibración empírica (Fase 4) contra la memoria real con bge-m3: los aciertos relevantes caen
-// en ~0.49-0.64 y un prompt no relacionado tope ~0.35, así que 0.45 se sitúa en el hueco entre ambos
-// (captura lo relevante, rechaza el ruido). Configurable por config/query (ver server.Services).
+// entra lo que lo supera, de modo que un prompt sin memorias afines no inyecta nada. Configurable
+// por config/query (ver server.Services).
+//
+// El 0.45 se calibró en la Fase 4 contra bge-m3 y se REVALIDÓ tras el cambio de embebedor por
+// defecto a qwen3-embedding:0.6b, midiendo sobre la memoria real (187 memorias, 21 sondas
+// relevantes que cubren los 6 tipos y 8 no relacionadas):
+//
+//	modelo y lado consulta                 ruido hasta   aciertos desde   margen del 0.45
+//	qwen3-embedding + Instruct (actual)         0.3188           0.5236   +0.131 / +0.074
+//	qwen3-embedding con consulta cruda          0.4696           0.4358   SOLAPAN
+//	bge-m3 con consulta cruda                   0.4460           0.4972   +0.004 / +0.047
+//
+// Dos avisos que se desprenden de ahí. El primero: con qwen3 el 0.45 solo es válido PORQUE la
+// consulta se embebe con instrucción (ports.Embedder.EmbedQuery); si alguien la embebiera cruda,
+// no habría hueco y ningún umbral separaría el ruido de los aciertos. El segundo: quien siga en
+// bge-m3 tiene un margen de apenas 0.004 sobre el ruido —la calibración original lo sobreestimó
+// por medir con una sola sonda no relacionada—, así que ahí conviene subir el umbral por config.
 const (
 	relevantDefaultLimit     = 5
 	relevantDefaultThreshold = 0.45

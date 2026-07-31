@@ -277,3 +277,90 @@ func TestOllamaDefaults(t *testing.T) {
 		t.Errorf("host por defecto inesperado: %q", emb.host)
 	}
 }
+
+// captureInput levanta un servidor que anota el `input` de /api/embed y responde un vector fijo.
+// Sirve para comprobar QUÉ texto se manda, que es lo único que distingue Embed de EmbedQuery.
+func captureInput(t *testing.T, got *[]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body embedRequest
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		*got = body.Input
+		_ = json.NewEncoder(w).Encode(embedResponse{Embeddings: [][]float32{{1, 0, 0}}})
+	}))
+}
+
+// Con qwen3 la consulta viaja envuelta en la instrucción: sin ella el ruido solapa con los
+// aciertos y el umbral de la inyección por relevancia deja de separar nada.
+func TestOllamaEmbedQueryAddsInstructForQwen3(t *testing.T) {
+	var got []string
+	server := captureInput(t, &got)
+	defer server.Close()
+
+	emb := NewOllama(server.URL, "qwen3-embedding:0.6b", 3)
+	if _, err := emb.EmbedQuery(context.Background(), "cómo se resuelve el proyecto"); err != nil {
+		t.Fatalf("EmbedQuery: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("se esperaba 1 input, hubo %d", len(got))
+	}
+	if !strings.HasPrefix(got[0], queryInstruct) {
+		t.Errorf("la consulta debe llevar la instrucción delante; se mandó: %q", got[0])
+	}
+	if !strings.HasSuffix(got[0], "cómo se resuelve el proyecto") {
+		t.Errorf("la consulta original debe conservarse al final; se mandó: %q", got[0])
+	}
+}
+
+// El lado DOCUMENTO nunca se envuelve, ni siquiera con qwen3: el índice guarda texto crudo. Si
+// esto se rompiera, los vectores guardados dejarían de ser comparables con los ya existentes.
+func TestOllamaEmbedDoesNotAddInstruct(t *testing.T) {
+	var got []string
+	server := captureInput(t, &got)
+	defer server.Close()
+
+	emb := NewOllama(server.URL, "qwen3-embedding:0.6b", 3)
+	if _, err := emb.Embed(context.Background(), "contenido de la memoria"); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(got) != 1 || got[0] != "contenido de la memoria" {
+		t.Errorf("el documento debe viajar crudo; se mandó: %q", got)
+	}
+}
+
+// Los modelos simétricos no reciben instrucción: para ellos es texto parásito dentro de la
+// consulta. Cubre también el modelo desconocido, que se trata como simétrico por seguridad.
+func TestOllamaEmbedQueryLeavesSymmetricModelsAlone(t *testing.T) {
+	for _, model := range []string{"bge-m3", "bge-m3:latest", "snowflake-arctic-embed2:latest", "modelo-inventado"} {
+		var got []string
+		server := captureInput(t, &got)
+		emb := NewOllama(server.URL, model, 3)
+		if _, err := emb.EmbedQuery(context.Background(), "una consulta"); err != nil {
+			server.Close()
+			t.Fatalf("EmbedQuery con %s: %v", model, err)
+		}
+		server.Close()
+		if len(got) != 1 || got[0] != "una consulta" {
+			t.Errorf("%s no debe recibir instrucción; se mandó: %q", model, got)
+		}
+	}
+}
+
+// La detección es por prefijo del nombre, para cubrir las variantes de tamaño y etiqueta.
+func TestWantsQueryInstruct(t *testing.T) {
+	quiere := []string{"qwen3-embedding:0.6b", "qwen3-embedding:4b", "qwen3-embedding:latest",
+		"QWEN3-EMBEDDING:0.6B", "  qwen3-embedding:8b  "}
+	for _, m := range quiere {
+		if !wantsQueryInstruct(m) {
+			t.Errorf("%q debería querer instrucción", m)
+		}
+	}
+	noQuiere := []string{"bge-m3", "bge-m3:latest", "snowflake-arctic-embed2:latest",
+		"nomic-embed-text", "", "qwen2-embedding:0.6b"}
+	for _, m := range noQuiere {
+		if wantsQueryInstruct(m) {
+			t.Errorf("%q NO debería querer instrucción", m)
+		}
+	}
+}

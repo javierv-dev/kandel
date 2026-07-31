@@ -259,7 +259,10 @@ func (m *MemoryService) Projects(ctx context.Context) ([]string, error) {
 // más cercanos al índice y los hidrata a memorias aplicando los filtros de q. Pide un conjunto
 // de candidatos más amplio que el límite final porque luego se filtran por proyecto/alcance/tipo.
 func (m *MemoryService) Search(ctx context.Context, q ports.SearchQuery) ([]domain.SearchResult, error) {
-	vector, err := m.embedder.Embed(ctx, q.Query)
+	// EmbedQuery, no Embed: esto es el lado CONSULTA. Con modelos asimétricos (qwen3-embedding) el
+	// adaptador antepone la instrucción de recuperación, sin la cual el ruido solapa con los
+	// aciertos. Los vectores del índice se siguen calculando con Embed (lado documento).
+	vector, err := m.embedder.EmbedQuery(ctx, q.Query)
 	if err != nil {
 		return nil, err
 	}

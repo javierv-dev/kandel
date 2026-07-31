@@ -27,6 +27,22 @@ const (
 	DefaultDimensions = 1024
 )
 
+// queryInstruct es la instrucción que la familia qwen3-embedding espera delante de una CONSULTA
+// (el documento va crudo). Va en inglés a propósito: midiendo contra la memoria real de kandel
+// —corpus y consultas en español— la versión inglesa separó mejor que la española (hueco +0.205
+// frente a +0.160), consistente con que estos modelos se entrenaron con instrucciones en inglés.
+//
+// No es cosmético. Sobre 21 sondas relevantes y 8 de ruido, con qwen3-embedding:0.6b:
+//
+//	consulta cruda        ruido hasta 0.4696, aciertos desde 0.4358  -> SOLAPAN, no hay umbral posible
+//	consulta con Instruct ruido hasta 0.3188, aciertos desde 0.5236  -> hueco limpio de 0.205
+//
+// El prefijo no sube los aciertos: hunde el ruido (las 8 sondas no relacionadas caen entre 0.15 y
+// 0.19 puntos). Ese es todo el efecto, y es lo que hace viable el umbral de la inyección por
+// relevancia. Quitarlo rompe la separación en silencio: la búsqueda sigue devolviendo resultados,
+// solo que el ruido pasa el filtro y los aciertos flojos no.
+const queryInstruct = "Instruct: Given a user prompt, retrieve project memories relevant to it\nQuery: "
+
 // Ollama implementa ports.Embedder llamando al endpoint /api/embed de un servidor Ollama. Ese
 // endpoint acepta un texto o un arreglo de textos en `input` y responde `embeddings` (arreglo de
 // vectores), lo que permite embeber contenido y título en una sola petición. Requiere una versión
@@ -138,12 +154,32 @@ type embedResponse struct {
 }
 
 // Embed convierte un texto en un vector. Es un caso particular de EmbedBatch con un solo texto.
+// Es el lado DOCUMENTO: el texto viaja crudo, sin envolver (ver EmbedQuery para el lado consulta).
 func (o *Ollama) Embed(ctx context.Context, text string) ([]float32, error) {
 	vectors, err := o.EmbedBatch(ctx, []string{text})
 	if err != nil {
 		return nil, err
 	}
 	return vectors[0], nil
+}
+
+// EmbedQuery convierte una consulta en un vector, anteponiendo la instrucción que el modelo
+// espera cuando es asimétrico. Con modelos simétricos (bge-m3, snowflake-arctic-embed2) delega
+// en Embed sin tocar el texto, así que su comportamiento no cambia.
+func (o *Ollama) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
+	if !wantsQueryInstruct(o.model) {
+		return o.Embed(ctx, query)
+	}
+	return o.Embed(ctx, queryInstruct+query)
+}
+
+// wantsQueryInstruct indica si el modelo pertenece a la familia qwen3-embedding, la única que
+// hoy pide instrucción en la consulta. Se compara por prefijo del nombre para cubrir todas sus
+// variantes de tamaño y etiqueta ("qwen3-embedding:0.6b", "qwen3-embedding:4b", ":latest").
+// Cualquier otro modelo se trata como simétrico: ante uno desconocido, no envolver es la opción
+// segura, porque una instrucción que el modelo no espera es texto parásito dentro de la consulta.
+func wantsQueryInstruct(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "qwen3-embedding")
 }
 
 // EmbedBatch convierte varios textos en sus vectores en una sola llamada a Ollama, preservando el

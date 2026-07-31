@@ -522,3 +522,33 @@ var errInducedSvc = errInducedError("fallo inducido")
 type errInducedError string
 
 func (e errInducedError) Error() string { return string(e) }
+
+// TestSearchUsesQuerySide fija que la búsqueda embeba por el lado CONSULTA y no por el de
+// documento. No es un detalle de estilo: con modelos asimétricos (qwen3-embedding) el adaptador
+// antepone una instrucción solo en EmbedQuery, y sin ella el ruido solapa con los aciertos, de
+// modo que el umbral de la inyección por relevancia deja de separar nada. Si alguien revierte
+// esta llamada a Embed, la búsqueda sigue devolviendo resultados y el fallo pasa desapercibido:
+// por eso se ancla en un test.
+func TestSearchUsesQuerySide(t *testing.T) {
+	obs, sync := newFakeObs(), &fakeSync{}
+	emb, vecs := newFakeEmbedder(), newFakeVectorIndex()
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, emb, vecs)
+	ctx := context.Background()
+	if _, err := svc.Save(ctx, baseSaveInput()); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// Save embebe por el lado documento: no debe haber tocado el lado consulta.
+	if len(emb.queries) != 0 {
+		t.Fatalf("guardar no debe usar EmbedQuery, usó: %v", emb.queries)
+	}
+
+	if _, err := svc.Search(ctx, ports.SearchQuery{Query: "una consulta cualquiera", Limit: 5}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(emb.queries) != 1 {
+		t.Fatalf("Search debe embeber por EmbedQuery exactamente una vez, hubo %d", len(emb.queries))
+	}
+	if emb.queries[0] != "una consulta cualquiera" {
+		t.Errorf("la consulta debe llegar íntegra al embebedor, llegó %q", emb.queries[0])
+	}
+}

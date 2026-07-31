@@ -399,6 +399,9 @@ type fakeEmbedder struct {
 	failWith     error
 	unembeddable map[string]bool
 	calls        int
+	// queries registra los textos que entraron por EmbedQuery (lado consulta), para poder
+	// comprobar que la búsqueda no los embebe por Embed (lado documento).
+	queries []string
 }
 
 func newFakeEmbedder() *fakeEmbedder {
@@ -414,6 +417,13 @@ func (e *fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) 
 		return nil, ports.ErrUnembeddable
 	}
 	return e.vec, nil
+}
+
+// EmbedQuery es el lado consulta. Anota el texto en queries y reusa Embed: al fake no le importa
+// el formato de la instrucción (eso es cosa del adaptador), solo por dónde entró la llamada.
+func (e *fakeEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
+	e.queries = append(e.queries, query)
+	return e.Embed(ctx, query)
 }
 func (e *fakeEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float32, error) {
 	e.calls++
