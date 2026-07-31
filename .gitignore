@@ -27,7 +27,11 @@ Thumbs.db
 *~
 
 legacy/
+
+# Notas y borradores en la raíz: no se publican. La documentación versionada vive en docs/.
+# README.md es la excepción: es la portada del repo.
 /*.md
+!/README.md
 
 # Scripts de exploración local (NO se suben; embed_bench.py puede contener API keys en claro)
 /scripts/embed_bench.py
