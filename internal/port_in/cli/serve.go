@@ -26,6 +26,11 @@ const defaultBackfillInterval = 2 * time.Minute
 // sobreescribe (sync_interval); "0" lo desactiva.
 const defaultSyncInterval = 5 * time.Minute
 
+// defaultMaintenanceInterval es cada cuánto el daemon ejecuta el barrido de mantenimiento (checkpoint de WAL
+// y purga de mutaciones confirmadas) requerido por la auditoría de durabilidad. config lo
+// sobreescribe (maintenance_interval); "0" lo desactiva.
+const defaultMaintenanceInterval = 1 * time.Hour
+
 // resolvePort devuelve el puerto efectivo del daemon, resuelto por config (env KANDEL_PORT >
 // archivo > default 8765). Único origen de verdad del puerto entre hooks y servidor.
 func resolvePort() string {
@@ -132,6 +137,11 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 		if interval := resolveSyncInterval(); interval > 0 {
 			go runSyncSweep(ctx, app, interval)
 		}
+	}
+
+	// Barrido periódico de mantenimiento de base de datos (truncado de WAL, purga de sync_mutations).
+	if interval := resolveMaintenanceInterval(); interval > 0 {
+		go runMaintenanceSweep(ctx, app, interval)
 	}
 
 	fmt.Fprintf(app.Out, "kandel HTTP escuchando en http://%s\n", *addr)
@@ -256,6 +266,43 @@ func runSyncSweep(ctx context.Context, app *App, interval time.Duration) {
 				// ya había un sync en curso; nada que registrar.
 			case res.Count > 0:
 				log.Printf("push periódico de sync: %d fila(s) subida(s)", res.Count)
+			}
+		}
+	}
+}
+
+// resolveMaintenanceInterval devuelve el intervalo del barrido de mantenimiento: KANDEL_MAINTENANCE_INTERVAL
+// si está definido, si no el default (1h). "0" (o <= 0) desactiva el timer.
+func resolveMaintenanceInterval() time.Duration {
+	raw := strings.TrimSpace(config.Resolve(config.MaintenanceInterval))
+	if raw == "" {
+		return defaultMaintenanceInterval
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return defaultMaintenanceInterval
+	}
+	return d
+}
+
+// runMaintenanceSweep corre el barrido de mantenimiento de base de datos hasta que el contexto se
+// cancela. Cada tick trunca el WAL y purga las mutaciones sincronizadas. Los errores se registran
+// pero no detienen el barrido.
+func runMaintenanceSweep(ctx context.Context, app *App, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if app.Maintenance != nil {
+				purged, err := app.Maintenance.Sweep(ctx)
+				if err != nil {
+					log.Printf("barrido de mantenimiento: error: %v", err)
+				} else if purged > 0 {
+					log.Printf("barrido de mantenimiento: %d mutación(es) sincronizada(s) purgada(s)", purged)
+				}
 			}
 		}
 	}

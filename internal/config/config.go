@@ -130,6 +130,9 @@ var (
 	// UpdateCheck controla el chequeo de versión nueva; "off" lo desactiva (offline-first estricto).
 	UpdateCheck = Key{File: "update_check", Env: "KANDEL_UPDATE_CHECK", Default: "",
 		Doc: "chequeo de versión nueva; 'off' lo desactiva"}
+	// MaintenanceInterval es cada cuánto el daemon ejecuta el barrido de mantenimiento (WAL y purga); vacío = default (1h); 0 desactiva.
+	MaintenanceInterval = Key{File: "maintenance_interval", Env: "KANDEL_MAINTENANCE_INTERVAL", Default: "",
+		Doc: "intervalo del barrido de mantenimiento de BD; vacío = default (1h); 0 desactiva"}
 	// InstalledAgents es el conjunto de agentes con kandel instalado (lista separada por comas). Lo
 	// gestionan install/uninstall; no se edita a mano. Sirve para validar el cambio de agente activo.
 	InstalledAgents = Key{File: "installed_agents", Env: "KANDEL_INSTALLED_AGENTS", Default: "",
@@ -139,7 +142,7 @@ var (
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
 	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedNumCtx, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
-	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, RelevanceThreshold, RelevanceLimit, BackfillInterval, UpdateCheck, InstalledAgents,
+	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, RelevanceThreshold, RelevanceLimit, BackfillInterval, UpdateCheck, MaintenanceInterval, InstalledAgents,
 }
 
 // configFileName es el nombre del archivo dentro del directorio de datos.

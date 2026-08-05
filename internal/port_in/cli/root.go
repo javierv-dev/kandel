@@ -117,22 +117,30 @@ type SeedUseCases interface {
 	Save(ctx context.Context, candidates []service.SeedCandidate, project string) (service.SeedSaveResult, error)
 }
 
+// MaintenanceUseCases agrupa el mantenimiento de infraestructura: copias de seguridad de la base de
+// datos local (backup) y barridos periódicos (checkpoint de WAL y purgas) requeridos por auditoría.
+type MaintenanceUseCases interface {
+	Backup(ctx context.Context, destPath string) error
+	Sweep(ctx context.Context) (int, error)
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
 type App struct {
-	Memory    MemoryUseCases
-	Session   SessionUseCases
-	Lifecycle LifecycleUseCases
-	Embedding EmbeddingUseCases
-	Prompt    PromptUseCases
-	Doctor    DoctorUseCases
-	Conflict  ConflictUseCases
-	Sync      SyncUseCases
-	Context   ContextUseCases
-	Project   ProjectUseCases
-	Seed      SeedUseCases
-	Thread    ThreadUseCases
+	Memory      MemoryUseCases
+	Session     SessionUseCases
+	Lifecycle   LifecycleUseCases
+	Embedding   EmbeddingUseCases
+	Prompt      PromptUseCases
+	Doctor      DoctorUseCases
+	Conflict    ConflictUseCases
+	Sync        SyncUseCases
+	Context     ContextUseCases
+	Project     ProjectUseCases
+	Seed        SeedUseCases
+	Thread      ThreadUseCases
+	Maintenance MaintenanceUseCases
 
 	In  io.Reader // entrada para confirmaciones interactivas (por defecto os.Stdin)
 	Out io.Writer
