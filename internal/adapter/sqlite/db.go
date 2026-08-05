@@ -25,13 +25,16 @@ type execer interface {
 // DB envuelve la conexión a SQLite ya abierta, configurada y migrada. Es el punto de entrada
 // del adaptador: de aquí cuelgan los repos.
 type DB struct {
-	sql *sql.DB
+	sql  *sql.DB
+	path string
 }
 
 // pragmas son los ajustes de conexión que se aplican al abrir, en la sintaxis de parámetros de DSN
 // de modernc.org/sqlite. foreign_keys protege la integridad referencial; busy_timeout hace que una
 // escritura espere su turno en vez de rendirse ante un bloqueo; WAL mejora la concurrencia
-// lectura/escritura sobre el archivo local.
+// lectura/escritura sobre el archivo local; synchronous(NORMAL) es seguro en WAL (las
+// transacciones quedan en memoria pero el SO las baja a disco eventualmente sin corromper la base
+// en caso de caída) y mucho más rápido que el valor por defecto FULL.
 //
 // Van por el DSN y NO por un ExecContext posterior, y eso no es un detalle de estilo. foreign_keys
 // y busy_timeout son estado POR CONEXIÓN: un ExecContext sobre el *sql.DB solo configura la
@@ -54,6 +57,7 @@ var pragmas = []string{
 	"_pragma=foreign_keys(1)",
 	"_pragma=busy_timeout(5000)",
 	"_pragma=journal_mode(WAL)",
+	"_pragma=synchronous(NORMAL)",
 	"_txlock=immediate",
 }
 
@@ -95,7 +99,7 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		sqldb.Close()
 		return nil, fmt.Errorf("sqlite: conectar %q: %w", path, err)
 	}
-	d := &DB{sql: sqldb}
+	d := &DB{sql: sqldb, path: path}
 	if err := d.migrate(ctx); err != nil {
 		sqldb.Close()
 		return nil, fmt.Errorf("sqlite: migrar: %w", err)

@@ -123,6 +123,7 @@ func run(args []string) error {
 	// Chequeo de versión nueva (§21 Eje 6): única llamada de red saliente, opcional y cacheada.
 	updateChecker := release.NewChecker()
 	doctor := diagnostic.NewRunner(
+		sqlite.NewDatabaseCheck(db),
 		diagnostic.EmbedderCheck{Embedder: embedder},
 		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, TitleVectors: titleVectorIndex, Model: embedder.Model()},
 		diagnostic.InstalledAssetsCheck{Running: version, Probe: installedAssetsProbe{}},
