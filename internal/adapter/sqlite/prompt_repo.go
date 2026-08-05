@@ -30,6 +30,12 @@ func (r *PromptRepo) Add(ctx context.Context, p domain.Prompt) (int64, error) {
 		nullString(p.SyncID), nullString(p.SessionID), p.Content, nullString(p.Project), formatTime(p.CreatedAt),
 	)
 	if err != nil {
+		if esViolaciónDeClaveForánea(err) {
+			// La única clave foránea de prompts es session_id → sessions.id, así que una violación
+			// aquí solo puede significar que la sesión no existe. Se traduce a un error de dominio
+			// para que el servicio decida qué hacer sin conocer los códigos de SQLite.
+			return 0, fmt.Errorf("sqlite: insertar prompt: %w", domain.ErrUnknownSession)
+		}
 		return 0, fmt.Errorf("sqlite: insertar prompt: %w", err)
 	}
 	id, err := res.LastInsertId()

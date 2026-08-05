@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/javierv-dev/kandel/internal/domain"
@@ -33,6 +34,17 @@ func nullString(s string) any {
 		return nil
 	}
 	return s
+}
+
+// esViolaciónDeClaveForánea indica si el error viene de incumplir una clave foránea (SQLite código
+// 787, SQLITE_CONSTRAINT_FOREIGNKEY). Se compara por texto porque el driver puro-Go no expone
+// centinelas comparables; el número va incluido en el mensaje, que es lo más estable que hay.
+func esViolaciónDeClaveForánea(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "foreign key constraint failed") || strings.Contains(msg, "(787)")
 }
 
 // parseTime interpreta un TEXT de la base de datos como instante UTC. Una cadena vacía da el

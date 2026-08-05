@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/javierv-dev/kandel/internal/domain"
@@ -35,6 +36,9 @@ type SavePromptInput struct {
 type SavePromptResult struct {
 	Prompt   domain.Prompt
 	Inserted bool
+	// SessionDropped indica que el prompt se guardó SIN sesión porque la referenciada no existía.
+	// El contenido se conservó; lo que se perdió es el enlace con la conversación.
+	SessionDropped bool
 }
 
 // Save guarda un prompt de forma idempotente. Si ya existía uno idéntico (misma sesión, proyecto
@@ -54,6 +58,33 @@ func (s *PromptService) Save(ctx context.Context, in SavePromptInput) (SavePromp
 		CreatedAt: now,
 	}
 
+	result, err := s.persist(ctx, prompt)
+	if err == nil {
+		return result, nil
+	}
+
+	// La sesión referenciada no existe. Antes que perder el prompt, se guarda sin sesión: el
+	// contenido es el dato durable —lo que el usuario pidió, que la capa determinista promete
+	// registrar siempre— mientras que la sesión es solo el contenedor que lo liga a su
+	// conversación, y de hecho el camino de importación por sync ya la descarta a propósito.
+	// Rechazar el prompt sacrificaría lo valioso por preservar lo accesorio.
+	//
+	// No se crea la sesión al vuelo a propósito: aquí no se conocen su directorio ni su instante de
+	// arranque reales, y fabricar una fila con datos inventados es peor que no tenerla.
+	if errors.Is(err, domain.ErrUnknownSession) && prompt.SessionID != "" {
+		prompt.SessionID = ""
+		result, err = s.persist(ctx, prompt)
+		if err != nil {
+			return SavePromptResult{}, err
+		}
+		result.SessionDropped = true
+		return result, nil
+	}
+	return SavePromptResult{}, err
+}
+
+// persist guarda el prompt dentro de una transacción y encola su mutación de sync si es nuevo.
+func (s *PromptService) persist(ctx context.Context, prompt domain.Prompt) (SavePromptResult, error) {
 	var result SavePromptResult
 	err := s.uow.Do(ctx, func(ctx context.Context) error {
 		id, inserted, err := s.prompts.AddIfMissing(ctx, prompt)

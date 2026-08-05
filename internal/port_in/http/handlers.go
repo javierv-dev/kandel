@@ -350,7 +350,19 @@ func handleSavePrompt(svc Services) http.HandlerFunc {
 			writeError(w, statusForError(err), err.Error())
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]any{"id": res.Prompt.ID, "inserted": res.Inserted})
+		// El prompt se guardó, pero sin su sesión: la referenciada no existía. Se registra porque es
+		// una anomalía real —normalmente el hook SessionStart la crea antes de cualquier prompt— y
+		// sin este aviso quedaría invisible, que es justo el defecto que la auditoría de durabilidad
+		// vino a corregir (docs/auditoria-durabilidad.md §5, hallazgo 5).
+		if res.SessionDropped {
+			log.Printf("prompt guardado SIN sesión: la sesión %q no existe (id de prompt %d)",
+				body.SessionID, res.Prompt.ID)
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"id":              res.Prompt.ID,
+			"inserted":        res.Inserted,
+			"session_dropped": res.SessionDropped,
+		})
 	}
 }
 

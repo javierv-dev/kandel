@@ -43,13 +43,14 @@ func (r *runner) prepareStartup(project, old string, p payload) (ctxText string,
 
 	// Migra el nombre del proyecto si cambió (idempotente en el servidor).
 	if old != project && old != "" && project != "" {
-		_, _ = r.client.migrateProject(r.ctx, old, project)
+		code, err := r.client.migrateProject(r.ctx, old, project)
+		r.klogResultado("POST /projects/migrate", code, err)
 	}
 
 	// Crea la sesión (se registra el código HTTP para diagnosticar fallos).
 	if p.SessionID != "" && project != "" {
-		code, _ := r.client.postSession(r.ctx, p.SessionID, project, p.CWD)
-		r.klog("POST /sessions -> HTTP " + code)
+		code, err := r.client.postSession(r.ctx, p.SessionID, project, p.CWD)
+		r.klogResultado("POST /sessions", code, err)
 	} else {
 		r.klog("no se crea sesión: session_id o project vacíos")
 	}
@@ -59,14 +60,14 @@ func (r *runner) prepareStartup(project, old string, p payload) (ctxText string,
 	// delega al daemon. Lo recién bajado entra al vuelo (puede no verse en el contexto de ESTA sesión,
 	// pero sí en la siguiente y lo cubre el timer).
 	if config.AutoSyncEnabled() {
-		code, _ := r.client.triggerSyncPull(r.ctx)
-		r.klog("POST /sync/pull -> HTTP " + code)
+		code, err := r.client.triggerSyncPull(r.ctx)
+		r.klogResultado("POST /sync/pull", code, err)
 	}
 
 	// Precalienta el modelo de embeddings (asíncrono en el daemon): mata el arranque en frío de
 	// Ollama (~7s) para que el primer Save real de la sesión responda rápido.
-	code, _ := r.client.warmup(r.ctx)
-	r.klog("POST /embeddings/warmup -> HTTP " + code)
+	code, err := r.client.warmup(r.ctx)
+	r.klogResultado("POST /embeddings/warmup", code, err)
 
 	return r.client.fetchContext(r.ctx, project), true
 }
@@ -122,8 +123,8 @@ func (r *runner) postCompaction(p payload) error {
 	}
 
 	if p.SessionID != "" && project != "" {
-		code, _ := r.client.postSession(r.ctx, p.SessionID, project, p.CWD)
-		r.klog("POST /sessions -> HTTP " + code)
+		code, err := r.client.postSession(r.ctx, p.SessionID, project, p.CWD)
+		r.klogResultado("POST /sessions", code, err)
 	}
 
 	r.printPostCompaction(project, p.SessionID, r.client.fetchContext(r.ctx, project))
@@ -147,9 +148,18 @@ func (r *runner) printPostCompaction(project, sessionID, context string) {
 // la sesión, inyecta la instrucción de cargar las tools mem_* (diferidas). Siempre imprime JSON
 // válido por stdout (si no, el agente bloquea el mensaje).
 func (r *runner) userPromptSubmit(p payload) error {
+	project := detectProject(p.CWD)
+
+	// firstMessage tiene efecto colateral (crea el marcador de la sesión), así que se consulta UNA
+	// sola vez y el valor se reutiliza más abajo para el recordatorio de tools.
+	primerMensaje := firstMessage(p.SessionID)
+	if primerMensaje {
+		r.ensureSession(p, project)
+	}
+
 	if p.Prompt != "" && p.SessionID != "" {
-		code, _ := r.client.savePrompt(r.ctx, p.SessionID, p.Prompt)
-		r.klog(fmt.Sprintf("POST /prompts session_id=%s -> HTTP %s", p.SessionID, code))
+		code, err := r.client.savePrompt(r.ctx, p.SessionID, p.Prompt)
+		r.klogResultado("POST /prompts session_id="+p.SessionID, code, err)
 	} else {
 		r.klog("no se persiste prompt: session_id o prompt vacíos")
 	}
@@ -157,13 +167,12 @@ func (r *runner) userPromptSubmit(p payload) error {
 	// Dispara un backfill inmediato (asíncrono en el daemon) de las memorias que se hayan guardado
 	// sin vector. Es barato si no hay pendientes (una consulta que vuelve vacía) y deja los vectores
 	// al día sin esperar al barrido periódico. No bloquea: el daemon responde 202.
-	bfCode, _ := r.client.triggerBackfill(r.ctx)
-	r.klog("POST /embeddings/backfill -> HTTP " + bfCode)
+	bfCode, bfErr := r.client.triggerBackfill(r.ctx)
+	r.klogResultado("POST /embeddings/backfill", bfCode, bfErr)
 
 	// Capa 2 — inyección por relevancia: embebe el prompt en el daemon, busca semántico e inyecta el
 	// cuerpo completo de lo que supera el umbral, excluyendo lo ya inyectado antes en la sesión
 	// (dedup). Sin coincidencia o daemon caído → relText vacío (no inyecta nada, no mete ruido).
-	project := detectProject(p.CWD)
 	relText, injected := "", []int64(nil)
 	if p.Prompt != "" {
 		relText, injected = r.client.fetchRelevant(r.ctx, project, p.Prompt, loadInjectedIDs(p.SessionID))
@@ -173,7 +182,7 @@ func (r *runner) userPromptSubmit(p payload) error {
 	// El recordatorio de carga de tools solo va en el primer mensaje; el bloque de relevancia, en
 	// cualquiera que tenga coincidencias. Se concatenan cuando ambos aplican.
 	var parts []string
-	if firstMessage(p.SessionID) {
+	if primerMensaje {
 		parts = append(parts, firstMessageContext)
 	}
 	if relText != "" {
@@ -199,15 +208,37 @@ func (r *runner) sessionStop(p payload) error {
 	if p.SessionID == "" {
 		return nil
 	}
-	code, _ := r.client.endSession(r.ctx, p.SessionID)
-	r.klog(fmt.Sprintf("POST /sessions/%s/end -> HTTP %s", p.SessionID, code))
+	code, err := r.client.endSession(r.ctx, p.SessionID)
+	r.klogResultado(fmt.Sprintf("POST /sessions/%s/end", p.SessionID), code, err)
 
 	// Sube lo local al hub (asíncrono en el daemon; responde 202) si los disparadores automáticos
 	// están activos. NO corre `kandel sync` síncrono: podría tardar por red y colgar la terminal al
 	// cerrar (§13.1). El daemon hace el push de fondo; lo no enviado se reintenta (la cola es la verdad).
 	if config.AutoSyncEnabled() {
-		syncCode, _ := r.client.triggerSyncPush(r.ctx)
-		r.klog("POST /sync/push -> HTTP " + syncCode)
+		syncCode, syncErr := r.client.triggerSyncPush(r.ctx)
+		r.klogResultado("POST /sync/push", syncCode, syncErr)
 	}
 	return nil
+}
+
+// ensureSession garantiza que el daemon está arriba y que la sesión existe antes de guardar el
+// primer prompt.
+//
+// Cierra un hueco real: prepareStartup (SessionStart) sale sin crear la sesión si ensureDaemon
+// falla, y el arranque en frío es justo cuando eso ocurre —el daemon se lanza pero puede no
+// responder dentro de los 3 s que se le esperan—. Para cuando el usuario termina de escribir, el
+// daemon ya está arriba, y sin esta llamada el prompt viajaría con un session_id que nunca se creó.
+//
+// Solo corre en el primer mensaje de la sesión: postSession es idempotente (crea o reactiva), pero
+// llamarlo en cada prompt añadiría una escritura por mensaje sin ganar nada.
+func (r *runner) ensureSession(p payload, project string) {
+	if p.SessionID == "" || project == "" {
+		return
+	}
+	if err := r.client.ensureDaemon(r.ctx, r); err != nil {
+		r.klog("ERROR no se pudo asegurar el daemon antes del primer prompt: " + err.Error())
+		return
+	}
+	code, err := r.client.postSession(r.ctx, p.SessionID, project, p.CWD)
+	r.klogResultado("POST /sessions (asegurada desde el primer prompt)", code, err)
 }

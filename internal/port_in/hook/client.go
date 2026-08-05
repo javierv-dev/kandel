@@ -72,6 +72,12 @@ func (c *client) ensureDaemon(ctx context.Context, r *runner) error {
 
 // postJSON envía body como JSON a path por POST y devuelve el código HTTP como texto (para el log)
 // o "sin-respuesta" si la petición ni siquiera llegó.
+//
+// Un código fuera del rango 2xx devuelve ERROR. Antes no lo hacía: solo fallaba si la petición no
+// llegaba, así que un rechazo del servidor volvía como (código, nil) y todos los llamadores lo
+// descartaban con `code, _ :=`. La auditoría de durabilidad midió el resultado: el daemon rechazaba
+// el guardado con HTTP 500 y el hook terminaba con éxito, sin más rastro que una línea entre
+// cientos en el log (docs/auditoria-durabilidad.md §5, hallazgo 5).
 func (c *client) postJSON(ctx context.Context, path string, body any) (string, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -87,23 +93,69 @@ func (c *client) postJSON(ctx context.Context, path string, body any) (string, e
 		return "sin-respuesta", err
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return fmt.Sprintf("%d", resp.StatusCode), nil
+	cuerpo, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	code := fmt.Sprintf("%d", resp.StatusCode)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return code, fmt.Errorf("%s %s: HTTP %s: %s", http.MethodPost, path, code,
+			strings.TrimSpace(string(cuerpo)))
+	}
+	return code, nil
 }
 
-// postSession crea (o reactiva) una sesión.
+// intentosEscrituraCrítica es cuántas veces se reintenta una escritura que no se puede perder, y
+// cuánto se espera entre intentos. El presupuesto total (~200 ms en el peor caso) está acotado a
+// propósito: un hook corre delante del usuario y no puede colgarse.
+var esperasReintento = []time.Duration{50 * time.Millisecond, 150 * time.Millisecond}
+
+// esTransitorio indica si vale la pena reintentar. Un 5xx o un 429 suelen ser contención pasajera
+// (la base ocupada, el daemon saturado) y el siguiente intento tiene buenas probabilidades. Un 4xx
+// no: la petición está mal formada y repetirla solo gasta el tiempo del usuario. "sin-respuesta"
+// significa que la petición ni salió —daemon arrancando, por ejemplo—, y eso sí se reintenta.
+func esTransitorio(code string) bool {
+	if code == "sin-respuesta" {
+		return true
+	}
+	n, err := strconv.Atoi(code)
+	if err != nil {
+		return false
+	}
+	return n >= 500 || n == http.StatusTooManyRequests
+}
+
+// postCrítico envía una escritura que no debe perderse, reintentando ante un fallo transitorio.
+//
+// Es seguro reintentar porque las dos operaciones que lo usan son idempotentes en el servidor: la
+// creación de sesión crea o reactiva, y el guardado de prompt no duplica uno idéntico de la misma
+// sesión y proyecto. Un reintento de más no ensucia nada.
+func (c *client) postCrítico(ctx context.Context, path string, body any) (string, error) {
+	code, err := c.postJSON(ctx, path, body)
+	for i := 0; err != nil && esTransitorio(code) && i < len(esperasReintento); i++ {
+		select {
+		case <-ctx.Done():
+			return code, err
+		case <-time.After(esperasReintento[i]):
+		}
+		code, err = c.postJSON(ctx, path, body)
+	}
+	return code, err
+}
+
+// postSession crea (o reactiva) una sesión. Escritura crítica: si no se crea, los prompts
+// posteriores cuelgan de un session_id inexistente.
 func (c *client) postSession(ctx context.Context, id, project, directory string) (string, error) {
-	return c.postJSON(ctx, "/sessions", map[string]string{"id": id, "project": project, "directory": directory})
+	return c.postCrítico(ctx, "/sessions", map[string]string{"id": id, "project": project, "directory": directory})
 }
 
-// endSession marca una sesión como cerrada.
+// endSession marca una sesión como cerrada. No es crítica: si falla, la sesión queda abierta, que
+// es un defecto cosmético y no una pérdida de datos.
 func (c *client) endSession(ctx context.Context, id string) (string, error) {
 	return c.postJSON(ctx, "/sessions/"+url.PathEscape(id)+"/end", map[string]string{})
 }
 
-// savePrompt persiste un prompt del usuario.
+// savePrompt persiste un prompt del usuario. Escritura crítica: es la razón de ser de la capa
+// determinista, que promete registrar SIEMPRE lo que el usuario pidió.
 func (c *client) savePrompt(ctx context.Context, sessionID, content string) (string, error) {
-	return c.postJSON(ctx, "/prompts", map[string]string{"session_id": sessionID, "content": content})
+	return c.postCrítico(ctx, "/prompts", map[string]string{"session_id": sessionID, "content": content})
 }
 
 // migrateProject renombra un proyecto en todas sus entidades (idempotente en el servidor).

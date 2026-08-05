@@ -21,4 +21,8 @@ var (
 	ErrNotFound = errors.New("domain: no encontrado")
 	// ErrSelfContinue indica que se intentó continuar una entrada de bitácora a sí misma.
 	ErrSelfContinue = errors.New("domain: una entrada no puede continuarse a sí misma")
+	// ErrUnknownSession indica que se intentó ligar algo a una sesión que no existe. Lo traduce el
+	// adaptador desde la violación de la clave foránea, para que la capa de servicio pueda decidir
+	// qué hacer sin conocer los códigos de error de SQLite.
+	ErrUnknownSession = errors.New("domain: la sesión referenciada no existe")
 )

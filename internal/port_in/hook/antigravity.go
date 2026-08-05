@@ -63,11 +63,11 @@ func (r *runner) agPreInvocation(in agInput) error {
 		// Turno posterior: leer transcript para guardar el prompt y mantener vectores.
 		lastPrompt := parseTranscript(in.TranscriptPath)
 		if lastPrompt != "" {
-			code, _ := r.client.savePrompt(r.ctx, sessionID, lastPrompt)
-			r.klog(fmt.Sprintf("POST /prompts session_id=%s -> HTTP %s", sessionID, code))
+			code, err := r.client.savePrompt(r.ctx, sessionID, lastPrompt)
+			r.klogResultado("POST /prompts session_id="+sessionID, code, err)
 		}
-		bfCode, _ := r.client.triggerBackfill(r.ctx)
-		r.klog("POST /embeddings/backfill -> HTTP " + bfCode)
+		bfCode, bfErr := r.client.triggerBackfill(r.ctx)
+		r.klogResultado("POST /embeddings/backfill", bfCode, bfErr)
 		return writeInjectSteps(r.out, "")
 	}
 
@@ -92,8 +92,8 @@ func (r *runner) agPreInvocation(in agInput) error {
 // en el bucle de ejecución, que no es lo que queremos).
 func (r *runner) agStop(in agInput) error {
 	if in.ConversationID != "" {
-		code, _ := r.client.endSession(r.ctx, in.ConversationID)
-		r.klog(fmt.Sprintf("POST /sessions/%s/end -> HTTP %s", in.ConversationID, code))
+		code, err := r.client.endSession(r.ctx, in.ConversationID)
+		r.klogResultado(fmt.Sprintf("POST /sessions/%s/end", in.ConversationID), code, err)
 	}
 	raw, _ := json.Marshal(map[string]any{"decision": "stop"})
 	fmt.Fprintln(r.out, string(raw))

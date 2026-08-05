@@ -42,19 +42,16 @@ CREATE INDEX IF NOT EXISTS idx_hub_changes_seq ON hub_changes (ns, token, server
 // OpenHubStore abre (o crea) la base de datos del hub en la ruta dada, aplica los PRAGMA y crea el
 // esquema. ":memory:" da una base en memoria, útil en pruebas.
 func OpenHubStore(ctx context.Context, path string) (*HubStore, error) {
-	sqldb, err := sql.Open("sqlite", path)
+	// Mismo DSN con PRAGMA incorporados que la base del cliente: el hub es un servidor HTTP y por
+	// tanto escribe desde varias goroutines a la vez, que es justo el caso donde los PRAGMA
+	// aplicados por ExecContext no llegaban a las conexiones nuevas del pool (ver buildDSN).
+	sqldb, err := sql.Open("sqlite", buildDSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("hubstore: abrir %q: %w", path, err)
 	}
 	if err := sqldb.PingContext(ctx); err != nil {
 		sqldb.Close()
 		return nil, fmt.Errorf("hubstore: conectar %q: %w", path, err)
-	}
-	for _, p := range pragmas {
-		if _, err := sqldb.ExecContext(ctx, p); err != nil {
-			sqldb.Close()
-			return nil, fmt.Errorf("hubstore: aplicar %q: %w", p, err)
-		}
 	}
 	if _, err := sqldb.ExecContext(ctx, hubSchema); err != nil {
 		sqldb.Close()

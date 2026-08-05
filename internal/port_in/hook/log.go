@@ -50,6 +50,20 @@ func (r *runner) klog(msg string) {
 	fmt.Fprintf(f, "%s [%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), r.event, msg)
 }
 
+// klogResultado registra el desenlace de una llamada al daemon. Un fallo se marca con el prefijo
+// ERROR para que sea distinguible de un vistazo (y con grep) entre las líneas normales.
+//
+// Es la señal mínima que exige la auditoría de durabilidad: un hook NO puede terminar con exit≠0
+// —bloquearía el mensaje del usuario en el agente—, así que el registro diferenciado es lo máximo
+// que puede hacer sin romper esa restricción. Ver docs/auditoria-durabilidad.md §6, corrección 2.
+func (r *runner) klogResultado(operación, code string, err error) {
+	if err != nil {
+		r.klog(fmt.Sprintf("ERROR %s -> HTTP %s: %v", operación, code, err))
+		return
+	}
+	r.klog(fmt.Sprintf("%s -> HTTP %s", operación, code))
+}
+
 // orQ devuelve s, o "?" si está vacío (para que el log muestre un marcador legible).
 func orQ(s string) string {
 	if s == "" {
