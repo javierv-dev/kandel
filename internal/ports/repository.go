@@ -46,6 +46,10 @@ type SearchQuery struct {
 	// búsqueda semántica las esconde; se activa para no ocultar la historia cuando se busca a
 	// propósito (flag include_superseded en mem_search).
 	IncludeSuperseded bool
+	// ExcludeSessionID, si no está vacío, omite las memorias guardadas en ESA sesión. Lo usa la
+	// inyección por relevancia para no devolverle al agente lo que él mismo acaba de guardar: ya lo
+	// tiene delante en la conversación, y reinyectarlo es gastar contexto en un eco.
+	ExcludeSessionID string
 }
 
 // MemoryRepo persiste y recupera memorias. Interfaz cohesiva (no un God Object):

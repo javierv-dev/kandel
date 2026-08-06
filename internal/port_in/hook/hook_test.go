@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ type capturedRequest struct {
 	method string
 	path   string
 	body   map[string]any
+	query  url.Values
 }
 
 // stubDaemon es un daemon HTTP simulado: responde /health 200, /context con un texto fijo y
@@ -30,8 +32,9 @@ type stubDaemon struct {
 	srv         *httptest.Server
 	contextText string
 
-	mu       sync.Mutex
-	requests []capturedRequest
+	mu          sync.Mutex
+	requests    []capturedRequest
+	relevantIDs []int64 // ids que /relevant devuelve como inyectados
 }
 
 func newStubDaemon(t *testing.T) *stubDaemon {
@@ -50,7 +53,7 @@ func newStubDaemon(t *testing.T) *stubDaemon {
 			_ = json.Unmarshal(raw, &body)
 		}
 		d.mu.Lock()
-		d.requests = append(d.requests, capturedRequest{method: r.Method, path: r.URL.Path, body: body})
+		d.requests = append(d.requests, capturedRequest{method: r.Method, path: r.URL.Path, body: body, query: r.URL.Query()})
 		d.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 	}
@@ -58,6 +61,19 @@ func newStubDaemon(t *testing.T) *stubDaemon {
 	mux.HandleFunc("POST /sessions/{id}/end", record)
 	mux.HandleFunc("POST /prompts", record)
 	mux.HandleFunc("POST /projects/migrate", record)
+	// /relevant registra la petición (para poder afirmar sobre exclude_session) y devuelve lo que el
+	// test haya preparado en relevantIDs; sin nada preparado, no inyecta.
+	mux.HandleFunc("GET /relevant", func(w http.ResponseWriter, r *http.Request) {
+		d.mu.Lock()
+		d.requests = append(d.requests, capturedRequest{method: r.Method, path: r.URL.Path, query: r.URL.Query()})
+		ids := d.relevantIDs
+		d.mu.Unlock()
+		body := map[string]any{"context": "", "ids": ids}
+		if len(ids) > 0 {
+			body["context"] = "MEMORIA RELEVANTE"
+		}
+		_ = json.NewEncoder(w).Encode(body)
+	})
 	d.srv = httptest.NewServer(mux)
 	t.Cleanup(d.srv.Close)
 	return d
@@ -420,5 +436,79 @@ func TestParsePayloadTolerant(t *testing.T) {
 	}
 	if got := parsePayload(strings.NewReader("no es json")); got.SessionID != "" {
 		t.Errorf("basura debe dar payload en blanco")
+	}
+}
+
+// El filtro de sesión en curso: lo guardado en esta misma sesión no se reinyecta, porque el agente
+// ya lo tiene delante en la conversación.
+func TestUserPromptSubmitExcluyeLaSesionEnCurso(t *testing.T) {
+	d := newStubDaemon(t)
+	r, _ := newTestRunner(t, "user-prompt-submit", d)
+	isolateTempDir(t)
+
+	if err := r.userPromptSubmit(payload{SessionID: "sx-1", CWD: t.TempDir(), Prompt: "¿qué decidimos?"}); err != nil {
+		t.Fatalf("userPromptSubmit: %v", err)
+	}
+
+	req := d.find(t, http.MethodGet, "/relevant")
+	if got := req.query.Get("exclude_session"); got != "sx-1" {
+		t.Errorf("exclude_session = %q, se esperaba sx-1", got)
+	}
+}
+
+// La excepción: tras una compactación la conversación previa ya no está, así que lo guardado en la
+// misma sesión vuelve a ser recuperable. Si el filtro siguiera activo, el agente perdería justo el
+// contexto que la compactación acaba de borrar.
+func TestUserPromptSubmitLevantaElFiltroTrasCompactar(t *testing.T) {
+	d := newStubDaemon(t)
+	isolateTempDir(t)
+	cwd := t.TempDir()
+
+	rc, _ := newTestRunner(t, "post-compaction", d)
+	if err := rc.postCompaction(payload{SessionID: "sx-2", CWD: cwd}); err != nil {
+		t.Fatalf("postCompaction: %v", err)
+	}
+
+	r, _ := newTestRunner(t, "user-prompt-submit", d)
+	if err := r.userPromptSubmit(payload{SessionID: "sx-2", CWD: cwd, Prompt: "sigue donde estábamos"}); err != nil {
+		t.Fatalf("userPromptSubmit: %v", err)
+	}
+
+	req := d.find(t, http.MethodGet, "/relevant")
+	if got := req.query.Get("exclude_session"); got != "" {
+		t.Errorf("tras compactar no debe filtrarse la sesión, exclude_session = %q", got)
+	}
+}
+
+// El otro efecto de compactar: reiniciar el registro de ids ya inyectados. Sin esto el agente queda
+// doblemente sin contexto —perdió la conversación y el dedup se niega a repetirle lo ya dado—.
+func TestPostCompactionReiniciaElDedup(t *testing.T) {
+	d := newStubDaemon(t)
+	isolateTempDir(t)
+
+	recordInjectedIDs("sx-3", []int64{7, 9})
+	if len(loadInjectedIDs("sx-3")) != 2 {
+		t.Fatal("precondición: los ids debían quedar registrados")
+	}
+
+	r, _ := newTestRunner(t, "post-compaction", d)
+	if err := r.postCompaction(payload{SessionID: "sx-3", CWD: t.TempDir()}); err != nil {
+		t.Fatalf("postCompaction: %v", err)
+	}
+
+	if ids := loadInjectedIDs("sx-3"); len(ids) != 0 {
+		t.Errorf("el dedup debía reiniciarse al compactar, quedaron %v", ids)
+	}
+}
+
+// isolateTempDir redirige os.TempDir a un directorio de la prueba, para que los marcadores por
+// sesión (primer mensaje, ids inyectados, compactación) no se escriban en el temporal real ni se
+// pisen entre pruebas. Hay que fijar las tres variables porque cada sistema mira la suya: TMPDIR en
+// Unix, TMP y TEMP en Windows.
+func isolateTempDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, dir)
 	}
 }

@@ -117,6 +117,12 @@ func (r *runner) postCompaction(p payload) error {
 	project := detectProject(p.CWD)
 	r.klog(fmt.Sprintf("inicio: session_id=%s project=%s", orQ(p.SessionID), orQ(project)))
 
+	// La compactación borró la conversación previa, así que las dos defensas contra reinyectar lo
+	// que el agente "ya tiene delante" dejan de aplicar: ya no lo tiene. Se levanta el filtro de
+	// sesión en curso y se reinicia el dedup, o el agente quedaría doblemente sin contexto.
+	markCompacted(p.SessionID)
+	resetInjectedIDs(p.SessionID)
+
 	if err := r.client.ensureDaemon(r.ctx, r); err != nil {
 		r.printPostCompaction(project, p.SessionID, "")
 		return nil
@@ -173,9 +179,17 @@ func (r *runner) userPromptSubmit(p payload) error {
 	// Capa 2 — inyección por relevancia: embebe el prompt en el daemon, busca semántico e inyecta el
 	// cuerpo completo de lo que supera el umbral, excluyendo lo ya inyectado antes en la sesión
 	// (dedup). Sin coincidencia o daemon caído → relText vacío (no inyecta nada, no mete ruido).
+	//
+	// Además se omite lo guardado en ESTA sesión: el agente ya lo tiene delante en la conversación y
+	// reinyectarlo es gastar contexto en un eco. La excepción es tras una compactación, donde la
+	// conversación previa ya no está y esas memorias vuelven a ser lo más valioso que hay.
 	relText, injected := "", []int64(nil)
 	if p.Prompt != "" {
-		relText, injected = r.client.fetchRelevant(r.ctx, project, p.Prompt, loadInjectedIDs(p.SessionID))
+		excludeSession := p.SessionID
+		if wasCompacted(p.SessionID) {
+			excludeSession = ""
+		}
+		relText, injected = r.client.fetchRelevant(r.ctx, project, p.Prompt, loadInjectedIDs(p.SessionID), excludeSession)
 		recordInjectedIDs(p.SessionID, injected)
 	}
 

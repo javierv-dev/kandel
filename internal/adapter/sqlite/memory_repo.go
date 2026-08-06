@@ -215,6 +215,10 @@ func (r *MemoryRepo) Search(ctx context.Context, q ports.SearchQuery, neighbors 
 		query += ` AND scope = ?`
 		args = append(args, string(q.Scope))
 	}
+	if q.ExcludeSessionID != "" {
+		query += ` AND ifnull(session_id, '') <> ?`
+		args = append(args, q.ExcludeSessionID)
+	}
 	if !q.IncludeSuperseded {
 		query += supersededClause
 	}

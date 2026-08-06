@@ -262,10 +262,15 @@ func handleRelevant(svc Services) http.HandlerFunc {
 		if svc.RelevanceThreshold > 0 {
 			baseThreshold = svc.RelevanceThreshold
 		}
+		// exclude_session omite lo guardado en la sesión en curso: el agente ya tiene eso delante en
+		// la conversación, así que reinyectarlo es pagar contexto por un eco. El hook lo levanta tras
+		// una compactación, donde justamente lo guardado antes en la sesión es lo que hay que
+		// recuperar porque la conversación previa ya no está.
 		results, err := svc.Memory.Search(r.Context(), ports.SearchQuery{
-			Query:   query,
-			Project: r.URL.Query().Get("project"),
-			Limit:   queryInt(r, "limit", baseLimit),
+			Query:            query,
+			Project:          r.URL.Query().Get("project"),
+			Limit:            queryInt(r, "limit", baseLimit),
+			ExcludeSessionID: r.URL.Query().Get("exclude_session"),
 		})
 		if err != nil {
 			writeError(w, statusForError(err), err.Error())

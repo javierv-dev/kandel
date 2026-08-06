@@ -724,3 +724,42 @@ func TestUnitOfWorkCommitAndRollback(t *testing.T) {
 		t.Errorf("tras rollback debe seguir habiendo 1 memoria, obtuve %d", len(got))
 	}
 }
+
+// La inyección por relevancia no debe devolverle al agente lo que él mismo guardó en la sesión en
+// curso: eso ya lo tiene delante en la conversación. Las de otras sesiones sí pasan.
+func TestSearchExcludeSessionID(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	seedSession(t, db, "s2")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	actual := sampleMemory() // SessionID s1: la sesión en curso
+	idActual, _ := repo.Add(ctx, actual)
+	anterior := sampleMemory()
+	anterior.SyncID = "mem-2"
+	anterior.SessionID = "s2"
+	idAnterior, _ := repo.Add(ctx, anterior)
+
+	neighbors := []ports.Neighbor{
+		{MemoryID: idActual, Score: 0.9},
+		{MemoryID: idAnterior, Score: 0.8},
+	}
+
+	got, err := repo.Search(ctx, ports.SearchQuery{Limit: 10, ExcludeSessionID: "s1"}, neighbors)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != 1 || got[0].Memory.ID != idAnterior {
+		t.Fatalf("con ExcludeSessionID=s1 esperaba solo la memoria de s2, obtuve %d resultados: %+v", len(got), got)
+	}
+
+	// Sin el filtro (el caso tras una compactación) vuelven a entrar las dos.
+	todas, err := repo.Search(ctx, ports.SearchQuery{Limit: 10}, neighbors)
+	if err != nil {
+		t.Fatalf("Search sin filtro: %v", err)
+	}
+	if len(todas) != 2 {
+		t.Fatalf("sin ExcludeSessionID esperaba 2, obtuve %d", len(todas))
+	}
+}

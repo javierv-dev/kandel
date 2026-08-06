@@ -231,10 +231,15 @@ func (c *client) fetchContext(ctx context.Context, project string) string {
 // inyectados (para el dedup por sesión). exclude son ids ya inyectados antes en la sesión. Devuelve
 // "" y nil si el daemon no responde, no hay coincidencia o falla el decode: el hook simplemente no
 // inyecta nada en ese caso (degradación silenciosa, nunca bloquea el prompt).
-func (c *client) fetchRelevant(ctx context.Context, project, prompt string, exclude []int64) (string, []int64) {
+// excludeSession, si no va vacío, omite lo guardado en esa sesión (ver el filtro de sesión en curso
+// en userPromptSubmit).
+func (c *client) fetchRelevant(ctx context.Context, project, prompt string, exclude []int64, excludeSession string) (string, []int64) {
 	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	endpoint := c.base + "/relevant?project=" + url.QueryEscape(project) + "&q=" + url.QueryEscape(prompt)
+	if excludeSession != "" {
+		endpoint += "&exclude_session=" + url.QueryEscape(excludeSession)
+	}
 	if len(exclude) > 0 {
 		parts := make([]string, len(exclude))
 		for i, id := range exclude {
