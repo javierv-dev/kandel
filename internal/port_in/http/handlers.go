@@ -21,6 +21,9 @@ type saveMemoryRequest struct {
 	Content    string `json:"content"`
 	ToolName   string `json:"tool_name"`
 	Resolution string `json:"resolution"`
+	// Supersedes, si es > 0, es el id de una memoria a la que esta reemplaza. La relación se crea en
+	// la misma transacción que el guardado.
+	Supersedes int64 `json:"supersedes"`
 }
 
 // handleSaveMemory crea una memoria nueva.
@@ -49,6 +52,7 @@ func handleSaveMemory(svc Services) http.HandlerFunc {
 			Content:    body.Content,
 			ToolName:   body.ToolName,
 			Resolution: resolution,
+			Supersedes: body.Supersedes,
 		})
 		if err != nil {
 			writeError(w, statusForError(err), err.Error())
@@ -197,12 +201,15 @@ func handleSearch(svc Services) http.HandlerFunc {
 			}
 			scope = s
 		}
+		// include_superseded destapa las memorias reemplazadas, que por defecto se ocultan. Es el único
+		// camino para ver la historia de un supersede desde HTTP (el MCP ya lo tenía).
 		results, err := svc.Memory.Search(r.Context(), ports.SearchQuery{
-			Query:   query,
-			Type:    domain.MemoryType(r.URL.Query().Get("type")),
-			Project: r.URL.Query().Get("project"),
-			Scope:   scope,
-			Limit:   queryInt(r, "limit", 10),
+			Query:             query,
+			Type:              domain.MemoryType(r.URL.Query().Get("type")),
+			Project:           r.URL.Query().Get("project"),
+			Scope:             scope,
+			Limit:             queryInt(r, "limit", 10),
+			IncludeSuperseded: queryBool(r, "include_superseded", false),
 		})
 		if err != nil {
 			writeError(w, statusForError(err), err.Error())

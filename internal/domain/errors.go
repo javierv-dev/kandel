@@ -21,6 +21,10 @@ var (
 	ErrNotFound = errors.New("domain: no encontrado")
 	// ErrSelfContinue indica que se intentó continuar una entrada de bitácora a sí misma.
 	ErrSelfContinue = errors.New("domain: una entrada no puede continuarse a sí misma")
+	// ErrSelfSupersede indica que se intentó reemplazar una memoria consigo misma. Ocurre cuando se
+	// reguarda contenido idéntico (que el dedupe resuelve devolviendo la memoria existente) pasando
+	// como supersedes esa misma memoria: aceptarlo la ocultaría a ella misma.
+	ErrSelfSupersede = errors.New("domain: una memoria no puede reemplazarse a sí misma")
 	// ErrUnknownSession indica que se intentó ligar algo a una sesión que no existe. Lo traduce el
 	// adaptador desde la violación de la clave foránea, para que la capa de servicio pueda decidir
 	// qué hacer sin conocer los códigos de error de SQLite.

@@ -28,6 +28,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
 				mcp.WithString("tool", mcp.Description("Herramienta que originó la memoria (procedencia), p. ej. kandel-seed")),
 				mcp.WithString("resolution", mcp.Description("Estado de pendiente: open (pendiente) o resolved; vacío = normal")),
+				mcp.WithNumber("supersedes", mcp.Description("Id de una memoria a la que esta REEMPLAZA: la vieja deja de aparecer al instante, sin editarle el título a mano. Úsalo cuando lo que guardas actualiza o corrige algo ya guardado, en vez de guardar la versión nueva y dejar las dos conviviendo.")),
 			),
 			handleSave(svc),
 		)
@@ -169,6 +170,7 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 			Content:    content,
 			ToolName:   argString(req, "tool"),
 			Resolution: resolution,
+			Supersedes: int64(argInt(req, "supersedes", 0)),
 		})
 		if err != nil {
 			return mcp.NewToolResultError("error al guardar: " + err.Error()), nil
@@ -177,6 +179,10 @@ func handleSave(svc Services) server.ToolHandlerFunc {
 			"id":      res.Memory.ID,
 			"outcome": string(res.Outcome),
 			"title":   res.Memory.Title,
+		}
+		if supersedes := argInt(req, "supersedes", 0); supersedes > 0 {
+			out["supersedes"] = supersedes
+			out["note_supersedes"] = fmt.Sprintf("la memoria %d queda reemplazada y ya no aparece en las búsquedas (usa include_superseded para verla)", supersedes)
 		}
 		if res.EmbeddingDeferred {
 			// La memoria se guardó, pero sin vector (embebedor caído): se avisa al agente para que

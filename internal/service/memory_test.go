@@ -552,3 +552,113 @@ func TestSearchUsesQuerySide(t *testing.T) {
 		t.Errorf("la consulta debe llegar íntegra al embebedor, llegó %q", emb.queries[0])
 	}
 }
+
+// newSupersedesFixture arma el servicio con el repositorio de relaciones cableado (lo que habilita
+// el parámetro supersedes) y devuelve también ese repositorio para poder afirmar sobre él.
+func newSupersedesFixture() (*MemoryService, *fakeObs, *fakeRelations) {
+	obs := newFakeObs()
+	rels := &fakeRelations{}
+	svc := NewMemoryService(obs, &fakeSync{}, passthroughUoW{}, fixedClock{now: clockNow},
+		newFakeEmbedder(), newFakeVectorIndex(), WithRelations(rels))
+	return svc, obs, rels
+}
+
+// El caso central de 1.3: guardar declarando el reemplazo crea la relación en el mismo Save, sin que
+// nadie tenga que editar la memoria vieja a mano después.
+func TestSaveConSupersedesCreaLaRelacion(t *testing.T) {
+	svc, _, rels := newSupersedesFixture()
+	ctx := context.Background()
+
+	vieja, err := svc.Save(ctx, baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save de la vieja: %v", err)
+	}
+
+	in := baseSaveInput()
+	in.Title = "Usar hexagonal, con matices"
+	in.Content = "Se mantiene hexagonal pero el adaptador HTTP no pasa por el servicio."
+	in.Supersedes = vieja.Memory.ID
+	nueva, err := svc.Save(ctx, in)
+	if err != nil {
+		t.Fatalf("Save con supersedes: %v", err)
+	}
+
+	if len(rels.items) != 1 {
+		t.Fatalf("se esperaba 1 relación, hubo %d", len(rels.items))
+	}
+	rel := rels.items[0]
+	if rel.Kind != domain.RelationSupersedes {
+		t.Errorf("relación = %q, se esperaba supersedes", rel.Kind)
+	}
+	if rel.SourceID != nueva.Memory.SyncID || rel.TargetID != vieja.Memory.SyncID {
+		t.Errorf("dirección incorrecta: la nueva (%s) debe reemplazar a la vieja (%s), fue %s→%s",
+			nueva.Memory.SyncID, vieja.Memory.SyncID, rel.SourceID, rel.TargetID)
+	}
+	// Nace juzgada: es una aserción de quien guarda, no una sospecha pendiente de confirmar. Si
+	// quedara pendiente, la memoria vieja seguiría apareciendo hasta que alguien la juzgara.
+	if rel.Status != domain.JudgmentJudged {
+		t.Errorf("estado = %q, se esperaba judged para que la vieja deje de aparecer al instante", rel.Status)
+	}
+}
+
+// Un id de reemplazo inexistente no debe guardar la memoria nueva a medias: si se guardara y la
+// relación no, quien pidió reemplazar creería que la vieja ya no aparece.
+func TestSaveConSupersedesInexistenteNoGuarda(t *testing.T) {
+	svc, obs, rels := newSupersedesFixture()
+
+	in := baseSaveInput()
+	in.Supersedes = 4242
+	if _, err := svc.Save(context.Background(), in); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("se esperaba ErrNotFound, fue %v", err)
+	}
+	if len(obs.items) != 0 {
+		t.Errorf("no debía guardarse ninguna memoria, hay %d", len(obs.items))
+	}
+	if len(rels.items) != 0 {
+		t.Errorf("no debía crearse ninguna relación, hay %d", len(rels.items))
+	}
+}
+
+// Sin el repositorio de relaciones cableado, pedir un reemplazo falla en vez de ignorarse: un
+// supersedes que no ocurre y no avisa es peor que no tenerlo.
+func TestSaveConSupersedesSinRelacionesFalla(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+
+	in := baseSaveInput()
+	in.Supersedes = 1
+	if _, err := svc.Save(context.Background(), in); err == nil {
+		t.Error("se esperaba un error al pedir supersedes sin repositorio de relaciones")
+	}
+}
+
+// Reguardar contenido idéntico dispara el dedupe y devuelve la MISMA memoria. Si además se pide que
+// se reemplace a sí misma, aceptarlo la ocultaría por completo: no quedaría nada visible.
+func TestSaveConSupersedesASiMismaFalla(t *testing.T) {
+	svc, _, rels := newSupersedesFixture()
+	ctx := context.Background()
+
+	primera, err := svc.Save(ctx, baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save inicial: %v", err)
+	}
+
+	in := baseSaveInput()
+	in.Supersedes = primera.Memory.ID
+	if _, err := svc.Save(ctx, in); !errors.Is(err, domain.ErrSelfSupersede) {
+		t.Fatalf("se esperaba ErrSelfSupersede, fue %v", err)
+	}
+	if len(rels.items) != 0 {
+		t.Errorf("no debía crearse la relación, hay %d", len(rels.items))
+	}
+}
+
+// Sin supersedes (el caso normal) no se toca el repositorio de relaciones.
+func TestSaveSinSupersedesNoCreaRelacion(t *testing.T) {
+	svc, _, rels := newSupersedesFixture()
+	if _, err := svc.Save(context.Background(), baseSaveInput()); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if len(rels.items) != 0 {
+		t.Errorf("sin supersedes no debía crearse ninguna relación, hay %d", len(rels.items))
+	}
+}

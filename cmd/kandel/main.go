@@ -98,7 +98,8 @@ func run(args []string) error {
 	// Casos de uso (service/).
 	memoryService := service.NewMemoryService(memoryRepo, syncRepo, uow, clk, embedder, vectorIndex,
 		service.WithWarnLogger(embeddingWarnLogger()),
-		service.WithTitleVectors(titleVectorIndex))
+		service.WithTitleVectors(titleVectorIndex),
+		service.WithRelations(relationRepo))
 	sessionService := service.NewSessionService(sessionRepo, syncRepo, uow, clk)
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)

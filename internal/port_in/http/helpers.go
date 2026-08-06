@@ -70,6 +70,20 @@ func queryFloat(r *http.Request, name string, def float64) float64 {
 	return f
 }
 
+// queryBool lee un parámetro de consulta booleano; def si falta o no es un booleano reconocible
+// ("true"/"1"/"false"/"0", ver strconv.ParseBool).
+func queryBool(r *http.Request, name string, def bool) bool {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		return def
+	}
+	return b
+}
+
 // parseIDSet lee una lista de ids separados por coma ("12,7,40") en un conjunto. Ignora entradas
 // vacías o no numéricas. Devuelve nil si no hay ninguna (leer de un mapa nil es seguro).
 func parseIDSet(raw string) map[int64]bool {

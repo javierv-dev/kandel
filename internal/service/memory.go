@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -36,6 +38,10 @@ type SaveInput struct {
 	Content    string
 	ToolName   string
 	Resolution domain.Resolution
+	// Supersedes, si es > 0, es el id local de una memoria a la que esta reemplaza. La relación se
+	// crea en la MISMA transacción que el guardado, así que o quedan las dos cosas o ninguna: no
+	// existe el estado intermedio de "memoria nueva guardada, la vieja sigue apareciendo".
+	Supersedes int64
 }
 
 // SaveResult es el resultado de Save: la memoria resultante y qué ocurrió.
@@ -99,7 +105,8 @@ type MemoryService struct {
 	clock        ports.Clock
 	embedder     ports.Embedder
 	vectors      ports.VectorIndex
-	titleVectors ports.VectorIndex // índice del vector del título; nil = deshabilitado (solo contenido)
+	titleVectors ports.VectorIndex  // índice del vector del título; nil = deshabilitado (solo contenido)
+	relations    ports.RelationRepo // nil = el parámetro supersedes de Save no está disponible
 	dedupeWindow time.Duration
 	warnf        func(format string, args ...any)
 }
@@ -125,6 +132,18 @@ func WithTitleVectors(titleVectors ports.VectorIndex) MemoryOption {
 	return func(m *MemoryService) {
 		if titleVectors != nil {
 			m.titleVectors = titleVectors
+		}
+	}
+}
+
+// WithRelations cablea el repositorio de relaciones, habilitando el parámetro `supersedes` de Save:
+// declarar al guardar que la memoria nueva reemplaza a otra, en la MISMA transacción que el guardado.
+// Sin esta opción el parámetro se rechaza en vez de ignorarse en silencio: quien pide reemplazar y no
+// obtiene reemplazo tiene que enterarse.
+func WithRelations(relations ports.RelationRepo) MemoryOption {
+	return func(m *MemoryService) {
+		if relations != nil {
+			m.relations = relations
 		}
 	}
 }
@@ -197,8 +216,16 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 		return SaveResult{}, err
 	}
 
+	// El reemplazo se valida ANTES de abrir la transacción. Si el id es erróneo, es mejor no guardar
+	// nada y decirlo, que guardar la memoria nueva y dejar la vieja visible: quien pidió reemplazar
+	// creería que ya no aparece.
+	superseded, err := m.resolveSupersedes(ctx, in.Supersedes)
+	if err != nil {
+		return SaveResult{}, err
+	}
+
 	var result SaveResult
-	err := m.uow.Do(ctx, func(ctx context.Context) error {
+	err = m.uow.Do(ctx, func(ctx context.Context) error {
 		// 1. Dedupe exacto dentro de la ventana. La bitácora (journal) se exime: es un log
 		// append-only donde cada entrada es un registro puntual, así que dos entradas iguales
 		// seguidas son DOS filas, no un duplicado que contar.
@@ -212,6 +239,9 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 			dup.UpdatedAt = now
 			updated, err := m.memories.Update(ctx, dup.ID, *dup)
 			if err != nil {
+				return err
+			}
+			if err := m.linkSupersedes(ctx, updated.SyncID, superseded, now); err != nil {
 				return err
 			}
 			result = SaveResult{Memory: *updated, Outcome: SaveDuplicate}
@@ -231,6 +261,9 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 		if err != nil {
 			return err
 		}
+		if err := m.linkSupersedes(ctx, candidate.SyncID, superseded, now); err != nil {
+			return err
+		}
 		result = SaveResult{Memory: candidate, Outcome: SaveCreated, EmbeddingDeferred: deferred}
 		return m.enqueueUpsert(ctx, candidate)
 	})
@@ -238,6 +271,54 @@ func (m *MemoryService) Save(ctx context.Context, in SaveInput) (SaveResult, err
 		return SaveResult{}, err
 	}
 	return result, nil
+}
+
+// resolveSupersedes valida el id de la memoria a reemplazar y la devuelve. Un id 0 (el caso normal:
+// no se pidió reemplazo) devuelve nil sin error. Los fallos son explícitos a propósito —repositorio
+// no cableado, memoria inexistente— porque un reemplazo que no ocurre y no se avisa deja al usuario
+// creyendo que la memoria vieja ya no aparece.
+func (m *MemoryService) resolveSupersedes(ctx context.Context, id int64) (*domain.Memory, error) {
+	if id <= 0 {
+		return nil, nil
+	}
+	if m.relations == nil {
+		return nil, fmt.Errorf("supersedes: %w", errors.New("el repositorio de relaciones no está cableado"))
+	}
+	target, err := m.memories.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if target == nil {
+		return nil, fmt.Errorf("supersedes: la memoria %d no existe: %w", id, domain.ErrNotFound)
+	}
+	return target, nil
+}
+
+// linkSupersedes crea la relación "la nueva reemplaza a la vieja" dentro de la transacción del
+// guardado. Nace ya juzgada: es una aserción explícita de quien guarda, no una sospecha que el LLM
+// tenga que confirmar después, así que la memoria vieja deja de aparecer al instante (la búsqueda ya
+// oculta las reemplazadas salvo include_superseded).
+func (m *MemoryService) linkSupersedes(ctx context.Context, newSyncIDValue string, superseded *domain.Memory, now time.Time) error {
+	if superseded == nil {
+		return nil
+	}
+	// El dedupe puede haber devuelto la MISMA memoria que se pretendía reemplazar (se reguardó
+	// contenido idéntico). Aceptarlo la ocultaría a sí misma y no quedaría nada visible.
+	if newSyncIDValue == superseded.SyncID {
+		return domain.ErrSelfSupersede
+	}
+	_, err := m.relations.Insert(ctx, domain.MemoryRelation{
+		SyncID:     newSyncID("rel"),
+		SourceID:   newSyncIDValue,
+		TargetID:   superseded.SyncID,
+		Kind:       domain.RelationSupersedes,
+		Reason:     "declarado al guardar (supersedes)",
+		Confidence: 1,
+		Status:     domain.JudgmentJudged,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	return err
 }
 
 // Get recupera una memoria por id.
