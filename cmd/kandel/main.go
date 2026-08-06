@@ -82,6 +82,7 @@ func run(args []string) error {
 	promptRepo := sqlite.NewPromptRepo(db)
 	relationRepo := sqlite.NewRelationRepo(db)
 	syncRepo := sqlite.NewSyncRepo(db)
+	usageRepo := sqlite.NewUsageRepo(db)
 	vectorIndex := sqlite.NewVectorIndex(db)
 	titleVectorIndex := sqlite.NewTitleVectorIndex(db)
 	uow := sqlite.NewUnitOfWork(db)
@@ -115,6 +116,7 @@ func run(args []string) error {
 	contextService := service.NewContextService(memoryRepo, relationRepo,
 		service.WithNormativeThreshold(normativeThreshold()),
 		service.WithSyncConflicts(syncRepo))
+	usageService := service.NewUsageService(usageRepo, memoryRepo, clk)
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
 	threadService := service.NewThreadService(memoryRepo, relationRepo, uow, clk)
 	// El seed construye su generador bajo demanda: el agente y el modelo se resuelven en el comando
@@ -128,30 +130,32 @@ func run(args []string) error {
 		diagnostic.PendingEmbeddingsCheck{Vectors: vectorIndex, TitleVectors: titleVectorIndex, Model: embedder.Model()},
 		diagnostic.InstalledAssetsCheck{Running: version, Probe: installedAssetsProbe{}},
 		diagnostic.LatestReleaseCheck{Running: version, Checker: updateChecker},
+		diagnostic.MemoryUsageCheck{Usage: usageService},
 	)
 
 	app := &cli.App{
-		Memory:    memoryService,
-		Session:   sessionService,
-		Lifecycle: lifecycleService,
-		Embedding: embeddingService,
-		Prompt:    promptService,
-		Doctor:    doctor,
-		Conflict:  conflictService,
-		Sync:      syncService,
-		Context:   contextService,
+		Memory:      memoryService,
+		Session:     sessionService,
+		Lifecycle:   lifecycleService,
+		Embedding:   embeddingService,
+		Prompt:      promptService,
+		Doctor:      doctor,
+		Conflict:    conflictService,
+		Sync:        syncService,
+		Context:     contextService,
+		Usage:       usageService,
 		Project:     projectMigrator,
 		Seed:        seedService,
 		Thread:      threadService,
 		Maintenance: sqlite.NewMaintenance(db),
 		In:          os.Stdin,
-		Out:       os.Stdout,
-		Err:       os.Stderr,
-		Version:   version,
-		Commit:    commit,
-		BuildDate: buildDate,
-		Schema:    schemaVersion,
-		Update:    updateChecker,
+		Out:         os.Stdout,
+		Err:         os.Stderr,
+		Version:     version,
+		Commit:      commit,
+		BuildDate:   buildDate,
+		Schema:      schemaVersion,
+		Update:      updateChecker,
 		// OpenHub abre la base del hub bajo demanda (solo `serve --sync-hub`), separada de la del
 		// cliente: el hub es un almacén sin lógica de dominio.
 		OpenHub: func(ctx context.Context) (hub.Store, func() error, error) {

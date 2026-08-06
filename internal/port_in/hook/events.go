@@ -208,7 +208,9 @@ func (r *runner) sessionStop(p payload) error {
 	if p.SessionID == "" {
 		return nil
 	}
-	code, err := r.client.endSession(r.ctx, p.SessionID)
+	// Los ids inyectados durante la sesión viajan con el cierre: es lo que el daemon necesita para
+	// cruzarlos contra la transcripción y saber cuáles se usaron de verdad (telemetría de uso).
+	code, err := r.client.endSession(r.ctx, p.SessionID, p.TranscriptPath, loadInjectedIDs(p.SessionID))
 	r.klogResultado(fmt.Sprintf("POST /sessions/%s/end", p.SessionID), code, err)
 
 	// Sube lo local al hub (asíncrono en el daemon; responde 202) si los disparadores automáticos

@@ -124,6 +124,16 @@ type MaintenanceUseCases interface {
 	Sweep(ctx context.Context) (int, error)
 }
 
+// UsageUseCases es la cara de la telemetría de uso de la memoria: qué se está inyectando y cuánto
+// de eso el agente acaba usando. Es lo que convierte la poda en una decisión con datos en vez de una
+// corazonada. La CLI la expone en `kandel usage`; el daemon la usa además para anotar.
+type UsageUseCases interface {
+	RecordInjected(ctx context.Context, ids []int64) error
+	RecordMentions(ctx context.Context, ids []int64, transcriptPath string) (service.MentionResult, error)
+	Stats(ctx context.Context, limit int) ([]service.UsageStat, error)
+	CountDormant(ctx context.Context) (int, error)
+}
+
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
@@ -141,6 +151,7 @@ type App struct {
 	Seed        SeedUseCases
 	Thread      ThreadUseCases
 	Maintenance MaintenanceUseCases
+	Usage       UsageUseCases
 
 	In  io.Reader // entrada para confirmaciones interactivas (por defecto os.Stdin)
 	Out io.Writer

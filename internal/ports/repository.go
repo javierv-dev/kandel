@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 )
@@ -88,6 +89,27 @@ type MemoryRepo interface {
 	// Projects devuelve la lista de nombres de proyectos únicos de las memorias vivas, ordenada
 	// alfabéticamente.
 	Projects(ctx context.Context) ([]string, error)
+}
+
+// UsageRepo persiste la telemetría de uso de la memoria (cuántas veces se inyectó cada una y
+// cuántas se mencionó). Va aparte de MemoryRepo porque es un eje distinto: MemoryRepo guarda lo que
+// el usuario dijo, esto guarda cómo se comporta el sistema al servirlo. Además es dato local que no
+// entra en el sync, así que no debe colarse por el camino que serializa memorias.
+type UsageRepo interface {
+	// RecordInjected suma una inyección a cada id (creando la fila si no existía) y actualiza el
+	// instante de la última. Es el camino caliente: corre en cada prompt del usuario.
+	RecordInjected(ctx context.Context, ids []int64, at time.Time) error
+	// RecordMentioned suma una mención a cada id y actualiza el instante de la última.
+	RecordMentioned(ctx context.Context, ids []int64, at time.Time) error
+	// Get devuelve la telemetría de una memoria. Una memoria sin fila devuelve el cero (nunca
+	// inyectada), no un error: "sin registro" y "nunca inyectada" son lo mismo.
+	Get(ctx context.Context, memoryID int64) (domain.MemoryUsage, error)
+	// TopInjected lista la telemetría ordenada por inyecciones descendentes, solo de memorias vivas.
+	// Es la vista de "qué se está sirviendo de verdad" que consume el diagnóstico.
+	TopInjected(ctx context.Context, limit int) ([]domain.MemoryUsage, error)
+	// CountDormant cuenta las memorias vivas inyectadas al menos minInjections veces y nunca
+	// mencionadas: las candidatas a poda.
+	CountDormant(ctx context.Context, minInjections int) (int, error)
 }
 
 // SessionRepo persiste y recupera sesiones.

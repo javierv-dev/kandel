@@ -146,10 +146,20 @@ func (c *client) postSession(ctx context.Context, id, project, directory string)
 	return c.postCrítico(ctx, "/sessions", map[string]string{"id": id, "project": project, "directory": directory})
 }
 
-// endSession marca una sesión como cerrada. No es crítica: si falla, la sesión queda abierta, que
-// es un defecto cosmético y no una pérdida de datos.
-func (c *client) endSession(ctx context.Context, id string) (string, error) {
-	return c.postJSON(ctx, "/sessions/"+url.PathEscape(id)+"/end", map[string]string{})
+// endSession marca una sesión como cerrada y, de paso, le entrega al daemon lo que hace falta para
+// medir si la memoria inyectada sirvió de algo: la ruta de la transcripción y los ids que se
+// inyectaron durante la sesión. Ambos son opcionales; sin ellos la sesión se cierra igual.
+//
+// Los ids los aporta el hook porque es quien los tiene: el registro por sesión vive en un archivo
+// temporal local (ver dedup.go), no en la base.
+//
+// No es crítica: si falla, la sesión queda abierta —defecto cosmético, no pérdida de datos— y esa
+// medición se pierde.
+func (c *client) endSession(ctx context.Context, id, transcriptPath string, injectedIDs []int64) (string, error) {
+	return c.postJSON(ctx, "/sessions/"+url.PathEscape(id)+"/end", map[string]any{
+		"transcript_path": transcriptPath,
+		"injected_ids":    injectedIDs,
+	})
 }
 
 // savePrompt persiste un prompt del usuario. Escritura crítica: es la razón de ser de la capa

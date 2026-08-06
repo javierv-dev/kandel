@@ -195,3 +195,51 @@ func (c PendingEmbeddingsCheck) Run(ctx context.Context) []Finding {
 		NextStep: "corre `kandel embeddings backfill` para reindexarlas",
 	}}
 }
+
+// UsageCounter cuenta las memorias que se inyectan y nunca se usan. La service.UsageService la
+// cumple. Se declara aquí, en el consumidor, para que diagnostic no dependa de service.
+type UsageCounter interface {
+	CountDormant(ctx context.Context) (int, error)
+}
+
+// MemoryUsageCheck avisa de las memorias "dormidas": se han inyectado suficientes veces como para
+// juzgarlas y el agente nunca las mencionó. Son peso constante en el contexto sin rendimiento
+// observable, y por tanto las primeras candidatas a reescribir o podar.
+//
+// Es warning y no error a propósito: una memoria dormida no rompe nada, solo cuesta tokens. Y el
+// dato tarda en tener sentido —una instalación recién actualizada no tiene historial de inyecciones
+// todavía—, así que sin ninguna dormida el chequeo se limita a informar.
+type MemoryUsageCheck struct {
+	Usage UsageCounter
+}
+
+// Name identifica el chequeo.
+func (MemoryUsageCheck) Name() string { return "memory_usage" }
+
+// Run cuenta las memorias dormidas y las reporta.
+func (c MemoryUsageCheck) Run(ctx context.Context) []Finding {
+	if c.Usage == nil {
+		return nil
+	}
+	n, err := c.Usage.CountDormant(ctx)
+	if err != nil {
+		return []Finding{{
+			Check:    c.Name(),
+			Severity: SeverityError,
+			Message:  "no se pudo consultar la telemetría de uso de la memoria: " + err.Error(),
+		}}
+	}
+	if n == 0 {
+		return []Finding{{
+			Check:    c.Name(),
+			Severity: SeverityInfo,
+			Message:  "ninguna memoria se está inyectando repetidamente sin usarse",
+		}}
+	}
+	return []Finding{{
+		Check:    c.Name(),
+		Severity: SeverityWarning,
+		Message:  fmt.Sprintf("%d memoria(s) inyectada(s) repetidamente y nunca mencionada(s) por el agente", n),
+		NextStep: "revísalas con `kandel usage`: reescríbelas para que digan cuándo hacen falta, o bórralas",
+	}}
+}

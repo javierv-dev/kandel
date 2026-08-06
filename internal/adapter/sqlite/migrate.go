@@ -204,6 +204,31 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
 );
 `
 
+// schemaV7 añade la telemetría de uso de la memoria: cuántas veces se inyectó cada una por
+// relevancia y cuántas de esas veces el agente acabó mencionándola. Sin esto no hay forma de saber
+// qué se usa y, por tanto, no hay poda posible (§ "medir va primero" del plan de mejoras).
+//
+// Va en tabla APARTE, no como columnas de memories, y a propósito:
+//   - Es telemetría LOCAL. Cada máquina inyecta lo suyo; sumar los contadores de otra no significa
+//     nada. Como columnas de memories viajarían en el sync (memory.go serializa el objeto entero) y
+//     el LWW las pisaría en cada viaje de ida y vuelta.
+//   - La clave es el id local, que es justamente el identificador que no cruza máquinas.
+//
+// Additiva: la tabla nace vacía y "sin fila" = "nunca inyectada", que es el valor correcto para todo
+// lo guardado antes de esta versión.
+const schemaV7 = `
+CREATE TABLE IF NOT EXISTS memory_usage (
+	memory_id         INTEGER PRIMARY KEY,
+	injected_count    INTEGER NOT NULL DEFAULT 0,
+	mentioned_count   INTEGER NOT NULL DEFAULT 0,
+	last_injected_at  TEXT,
+	last_mentioned_at TEXT,
+	FOREIGN KEY (memory_id) REFERENCES memories(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_injected ON memory_usage(injected_count DESC);
+`
+
 // migration es un paso de evolución del esquema, identificado por un número de versión
 // estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
 // de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
@@ -228,6 +253,7 @@ var migrations = []migration{
 	{version: 4, sql: schemaV4},
 	{version: 5, sql: schemaV5},
 	{version: 6, sql: schemaV6},
+	{version: 7, sql: schemaV7},
 }
 
 // migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base

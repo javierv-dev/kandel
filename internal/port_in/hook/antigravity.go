@@ -92,7 +92,10 @@ func (r *runner) agPreInvocation(in agInput) error {
 // en el bucle de ejecución, que no es lo que queremos).
 func (r *runner) agStop(in agInput) error {
 	if in.ConversationID != "" {
-		code, err := r.client.endSession(r.ctx, in.ConversationID)
+		// Antigravity no entrega la ruta de la transcripción, así que aquí no hay telemetría de uso:
+		// se cierra la sesión y ya. Los ids inyectados van igualmente por si el día que la entregue
+		// baste con rellenar la ruta.
+		code, err := r.client.endSession(r.ctx, in.ConversationID, "", loadInjectedIDs(in.ConversationID))
 		r.klogResultado(fmt.Sprintf("POST /sessions/%s/end", in.ConversationID), code, err)
 	}
 	raw, _ := json.Marshal(map[string]any{"decision": "stop"})

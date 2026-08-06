@@ -56,6 +56,14 @@ type EmbeddingPort interface {
 	Warmup(ctx context.Context) error
 }
 
+// UsagePort cubre la telemetría de uso de la memoria: se anota qué se inyectó (en /relevant) y, al
+// cerrar la sesión, cuánto de eso acabó apareciendo en las respuestas del agente. Es opcional: sin
+// ella cableada la API funciona igual, solo deja de medir.
+type UsagePort interface {
+	RecordInjected(ctx context.Context, ids []int64) error
+	RecordMentions(ctx context.Context, ids []int64, transcriptPath string) (service.MentionResult, error)
+}
+
 // SyncPort cubre los disparos ASÍNCRONOS de sincronización que los hooks lanzan contra el daemon:
 // push al cerrar la sesión y pull al iniciarla. Ambos corren en segundo plano (los endpoints solo los
 // lanzan y responden 202), serializados y omitibles si ya hay un auto-sync en curso (bool skipped).
@@ -75,6 +83,7 @@ type Services struct {
 	Project   ProjectPort
 	Embedding EmbeddingPort
 	Sync      SyncPort
+	Usage     UsagePort
 
 	// RelevanceThreshold y RelevanceLimit fijan la línea base de la inyección de memoria por
 	// relevancia (endpoint /relevant). Un valor no positivo usa el default del handler. El parámetro

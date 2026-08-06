@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 
@@ -265,9 +266,18 @@ func handleRelevant(svc Services) http.HandlerFunc {
 		}
 		threshold := queryFloat(r, "threshold", baseThreshold)
 		exclude := parseIDSet(r.URL.Query().Get("exclude"))
+		ids := service.RelevantIDs(results, threshold, exclude)
+		// Telemetría de inyección: se anota aquí, donde el daemon ya sabe exactamente qué devolvió,
+		// en vez de pedirle al hook que informe de vuelta (una llamada más por prompt que además
+		// podría perderse). Best-effort a propósito: si la anotación falla, la inyección sigue.
+		if svc.Usage != nil {
+			if err := svc.Usage.RecordInjected(r.Context(), ids); err != nil {
+				log.Printf("telemetría de inyección: %v", err)
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"context": service.FormatRelevant(results, threshold, exclude),
-			"ids":     service.RelevantIDs(results, threshold, exclude),
+			"ids":     ids,
 		})
 	}
 }
@@ -315,7 +325,21 @@ func handleStartSession(svc Services) http.HandlerFunc {
 	}
 }
 
-// handleEndSession cierra una sesión (marca su instante de cierre). No lleva cuerpo.
+// endSessionRequest es el cuerpo OPCIONAL de POST /sessions/{id}/end. Sin cuerpo, la sesión se
+// cierra igual: los dos campos solo alimentan la telemetría de uso.
+type endSessionRequest struct {
+	// TranscriptPath es la ruta del archivo con la conversación completa, que el agente le pasa al
+	// hook de cierre. Es la única forma automática de saber si una memoria inyectada sirvió de algo.
+	TranscriptPath string `json:"transcript_path"`
+	// InjectedIDs son las memorias que se inyectaron durante la sesión. Las aporta el hook, que las
+	// lleva registradas para no repetirlas; el daemon no las guarda por sesión.
+	InjectedIDs []int64 `json:"injected_ids"`
+}
+
+// handleEndSession cierra una sesión (marca su instante de cierre) y, si el cuerpo trae la
+// transcripción y los ids inyectados, mide cuántos de ellos acabaron apareciendo en las respuestas
+// del agente. El cuerpo es opcional y su procesado es best-effort: cerrar la sesión es lo que no
+// puede fallar; medir es un extra que nunca debe impedirlo.
 func handleEndSession(svc Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -323,7 +347,20 @@ func handleEndSession(svc Services) http.HandlerFunc {
 			writeError(w, statusForError(err), err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"id": id, "ended": true})
+
+		var body endSessionRequest
+		_ = json.NewDecoder(r.Body).Decode(&body) // cuerpo ausente o malformado = sin telemetría
+
+		out := map[string]any{"id": id, "ended": true}
+		if svc.Usage != nil && len(body.InjectedIDs) > 0 {
+			res, err := svc.Usage.RecordMentions(r.Context(), body.InjectedIDs, body.TranscriptPath)
+			if err != nil {
+				log.Printf("telemetría de menciones (sesión %s): %v", id, err)
+			} else {
+				out["scanned"], out["mentioned"] = res.Scanned, res.Mentioned
+			}
+		}
+		writeJSON(w, http.StatusOK, out)
 	}
 }
 

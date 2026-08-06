@@ -107,6 +107,7 @@ func (serveCmd) Run(ctx context.Context, args []string, app *App) error {
 		Project:   app.Project,
 		Embedding: app.Embedding,
 		Sync:      app.Sync,
+		Usage:     app.Usage,
 		// Línea base de la inyección por relevancia (config del daemon); 0 = default del handler.
 		RelevanceThreshold: relevanceThreshold(),
 		RelevanceLimit:     relevanceLimit(),

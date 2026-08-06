@@ -11,6 +11,10 @@ type payload struct {
 	SessionID string `json:"session_id"`
 	CWD       string `json:"cwd"`
 	Prompt    string `json:"prompt"`
+	// TranscriptPath es la ruta del archivo con la conversación completa. El agente la manda en
+	// todos los hooks; kandel solo la usa al cerrar (Stop), para medir cuáles de las memorias
+	// inyectadas acabaron apareciendo en las respuestas.
+	TranscriptPath string `json:"transcript_path"`
 }
 
 // parsePayload lee y decodifica el JSON de entrada. Es tolerante a propósito: si el cuerpo está
