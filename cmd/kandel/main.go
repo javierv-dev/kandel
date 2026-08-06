@@ -116,6 +116,7 @@ func run(args []string) error {
 	syncService := service.NewSyncService(syncRepo, syncClient, memoryRepo, uow, config.Resolve(config.SyncToken))
 	contextService := service.NewContextService(memoryRepo, relationRepo,
 		service.WithNormativeThreshold(normativeThreshold()),
+		service.WithJournalOpen(contextJournalOpen()),
 		service.WithSyncConflicts(syncRepo))
 	usageService := service.NewUsageService(usageRepo, memoryRepo, clk)
 	projectMigrator := service.NewProjectMigrator(memoryRepo, sessionRepo, promptRepo, uow)
@@ -268,6 +269,20 @@ func conflictTopK() int {
 // 0 (o inválido) deja el valor por defecto del servicio.
 func normativeThreshold() int {
 	raw := strings.TrimSpace(config.Resolve(config.NormativeThreshold))
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// contextJournalOpen lee de KANDEL_CONTEXT_JOURNAL_OPEN cuántos hilos de bitácora abiertos lista el
+// bloque de arranque; 0 (o inválido) deja el valor por defecto del servicio.
+func contextJournalOpen() int {
+	raw := strings.TrimSpace(config.Resolve(config.ContextJournalOpen))
 	if raw == "" {
 		return 0
 	}

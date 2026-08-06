@@ -84,6 +84,26 @@ func TestContextJournalBandeja(t *testing.T) {
 	}
 }
 
+// La lista de bitácoras abiertas es el único contenido que el arranque paga SIEMPRE, así que su tope
+// tiene que respetarse y ser configurable (context_journal_open). Se comprueba cuántas entran, no
+// cuáles: qué hilo cae fuera lo decide el orden por fecha del repositorio real, no este servicio.
+func TestContextJournalOpenLimit(t *testing.T) {
+	ctx := context.Background()
+	memories := newFakeObs()
+	for _, title := range []string{"hilo uno", "hilo dos", "hilo tres"} {
+		memories.Add(ctx, domain.Memory{Project: "kandel", Type: domain.TypeJournal, Title: title, Content: "x", Resolution: domain.ResolutionOpen})
+	}
+
+	svc := NewContextService(memories, &fakeRelations{}, WithJournalOpen(2))
+	out, err := svc.Format(ctx, "kandel", domain.Scope(""))
+	if err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	if n := strings.Count(out, "\n- id "); n != 2 {
+		t.Errorf("con tope 2 debían listarse 2 hilos, se listaron %d:\n%s", n, out)
+	}
+}
+
 func TestContextJournalBreadcrumb(t *testing.T) {
 	ctx := context.Background()
 	memories := newFakeObs()

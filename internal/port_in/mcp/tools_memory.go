@@ -11,23 +11,61 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// Las descripciones largas viven aquí, no en el protocolo que el hook imprime al arrancar la sesión.
+// La diferencia importa en tokens: el protocolo se paga en TODAS las sesiones, se use la memoria o
+// no, mientras que una descripción de tool solo se carga cuando el agente va a usar esa tool. Todo
+// lo que sea "cómo se usa mem_X" pertenece a este archivo.
+
+// saveToolDescription enumera los disparadores del guardado proactivo. Es la doctrina que antes se
+// imprimía entera en cada arranque de sesión.
+const saveToolDescription = `Guarda una memoria persistente entre sesiones. Llámala PROACTIVAMENTE, sin esperar a que te lo pidan, INMEDIATAMENTE después de cualquiera de estos:
+- Se toma una decisión (arquitectura, convención, flujo de trabajo, elección de herramienta)
+- Se arregla un bug (incluye la causa raíz, no solo el síntoma)
+- Se documenta o actualiza una convención o un flujo de trabajo
+- Se descubre algo no obvio, un gotcha o un caso límite
+- Se establece un patrón (nombres, estructura, enfoque)
+- Se aprende una preferencia o una restricción del usuario
+- El usuario confirma tu recomendación o rechaza un enfoque
+- Una discusión concluye con una dirección clara elegida
+
+Guarda lo que el repositorio NO puede contar: por qué se descartó una alternativa, qué tropiezo del entorno costó una hora, qué prefiere el usuario. Duplicar aquí lo que ya vive en el código o en las guías rompe la fuente única de verdad y envejece mal.
+
+Si lo que guardas ACTUALIZA o CORRIGE una memoria anterior, pasa su id en supersedes en vez de dejar las dos conviviendo.`
+
+// saveTypeDescription explica el enrutado por tipo y las reglas de la bitácora. El tipo no es
+// decorativo: parte las memorias en normativas y factuales, y de ahí depende qué revisiones
+// automáticas se les aplican.
+const saveTypeDescription = `Tipo, enrutado por lo que la memoria ES: decisión→decision; gusto o convención del usuario→preference (suele ser global); patrón de código o estructura→architecture; causa raíz de un bug→bugfix; hecho, aprendizaje o configuración→discovery (default); avance del desarrollo→journal.
+
+BITÁCORA (journal): registra el avance por hito (fecha + qué + por qué). Es un log APPEND-ONLY exento del filtro de trivialidad: aunque sea cronológico o efímero, SÍ se guarda. Mientras el tema está en vuelo va con resolution=open (es el "estado actual" que aparece al arrancar la sesión, editable con mem_update); cuando el tema se cierra, pásala a resolution=resolved. Si una decisión de la bitácora restringe el trabajo futuro, guárdala ADEMÁS como type=decision: la bitácora cuenta qué pasó, la decision manda sobre lo que viene.
+
+Al pasar a una fase nueva: cierra la anterior, abre la nueva y enlázalas con mem_link(from_id=<nueva>, to_id=<anterior>) para poder reconstruir el hilo después con mem_thread.`
+
+// searchToolDescription dice CUÁNDO buscar, no solo qué hace la búsqueda. Sin ese "cuándo" el agente
+// tiende a los dos extremos: no buscar nunca, o buscar en cada petición trivial.
+const searchToolDescription = `Busca en tu memoria persistente por SIGNIFICADO (búsqueda semántica): encuentra decisiones, bugs, patrones o contexto de sesiones anteriores aunque no recuerdes las palabras exactas.
+
+Cuándo usarla (no en peticiones triviales): el usuario pide recordar algo ("recuerda", "qué hicimos", o el equivalente en su idioma), o vas a tocar algo que quizá ya se hizo antes y lo que se inyectó solo no basta.
+
+Ten en cuenta que las memorias relevantes a cada petición del usuario YA se inyectan automáticamente por similitud. Esta tool es para ir MÁS ALLÁ de eso, no para recuperar lo que ya tienes delante.`
+
 // registerMemoryTools registra las herramientas que operan sobre memorias.
 func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[string]bool) {
 	if shouldRegister("mem_save", allowlist) {
 		srv.AddTool(
 			mcp.NewTool("mem_save",
-				mcp.WithDescription("Guarda una memoria importante de forma persistente. Llámala PROACTIVAMENTE tras completar trabajo significativo (decisiones, arreglos de bugs, patrones, configuración, descubrimientos), no esperes a que te lo pidan."),
+				mcp.WithDescription(saveToolDescription),
 				mcp.WithTitleAnnotation("Guardar memoria"),
 				mcp.WithReadOnlyHintAnnotation(false),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Título corto y buscable")),
 				mcp.WithString("content", mcp.Required(), mcp.Description("Contenido, idealmente con formato **What**/**Why**/**Where**/**Learned**")),
-				mcp.WithString("type", mcp.Description("Tipo: decision, preference, architecture, bugfix, discovery, journal (entrada de bitácora)")),
-				mcp.WithString("scope", mcp.Description("Alcance: project (def.) o global")),
+				mcp.WithString("type", mcp.Description(saveTypeDescription)),
+				mcp.WithString("scope", mcp.Description("Alcance: global solo si aplica a TODOS los proyectos; si no, project (def.).")),
 				mcp.WithString("project", mcp.Description(`Proyecto de la memoria. Obligatorio para scope=project (si falta, error); en scope=global se ignora (la global se desancla del proyecto). Usa el "Proyecto actual" inyectado.`)),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
 				mcp.WithString("tool", mcp.Description("Herramienta que originó la memoria (procedencia), p. ej. kandel-seed")),
-				mcp.WithString("resolution", mcp.Description("Estado de pendiente: open (pendiente) o resolved; vacío = normal")),
+				mcp.WithString("resolution", mcp.Description("Estado de pendiente: open (pendiente) o resolved; vacío = normal. Marca open si el usuario deja algo sin resolver.")),
 				mcp.WithNumber("supersedes", mcp.Description("Id de una memoria a la que esta REEMPLAZA: la vieja deja de aparecer al instante, sin editarle el título a mano. Úsalo cuando lo que guardas actualiza o corrige algo ya guardado, en vez de guardar la versión nueva y dejar las dos conviviendo.")),
 			),
 			handleSave(svc),
@@ -37,7 +75,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 	if shouldRegister("mem_search", allowlist) {
 		srv.AddTool(
 			mcp.NewTool("mem_search",
-				mcp.WithDescription("Busca en tu memoria persistente por SIGNIFICADO (búsqueda semántica). Úsala para encontrar decisiones, bugs, patrones o contexto de sesiones anteriores aunque no recuerdes las palabras exactas."),
+				mcp.WithDescription(searchToolDescription),
 				mcp.WithTitleAnnotation("Buscar memoria"),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithIdempotentHintAnnotation(true),

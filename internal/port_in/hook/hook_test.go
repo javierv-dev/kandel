@@ -512,3 +512,37 @@ func isolateTempDir(t *testing.T) {
 		t.Setenv(key, dir)
 	}
 }
+
+// El bloque de arranque se paga en TODAS las sesiones, se use la memoria o no, así que su tamaño es
+// un presupuesto, no un detalle. Partía de 6.620 caracteres; la doctrina ("qué guardar", "cómo
+// clasificar el tipo", las reglas de la bitácora) se movió a las descripciones de las tools, que
+// solo se cargan cuando el agente va a usarlas.
+//
+// El tope es holgado respecto al tamaño actual: no se trata de perseguir cada carácter, sino de que
+// volver a volcar doctrina aquí falle en vez de pasar desapercibido.
+func TestProtocoloDeArranqueSeMantieneCorto(t *testing.T) {
+	const tope = 3000
+	if n := len(protocolSessionStart); n > tope {
+		t.Errorf("el protocolo de arranque mide %d caracteres (tope %d). Lo que sea 'cómo se usa mem_X' "+
+			"va en la descripción de esa tool (internal/port_in/mcp/tools_memory.go), no aquí", n, tope)
+	}
+}
+
+// Adelgazar no puede llevarse por delante lo que solo puede vivir aquí: cómo cargar las tools
+// diferidas (sin eso el agente no puede llamar a ninguna), el disparador del guardado proactivo, la
+// revisión de cierre y qué hacer con el contexto inyectado debajo.
+func TestProtocoloDeArranqueConservaLoImprescindible(t *testing.T) {
+	imprescindibles := []string{
+		"ToolSearch select:mcp__kandel__mem_save", // sin esto no se puede llamar a ninguna tool
+		"mem_save",                 // el disparador del guardado proactivo
+		"supersedes",               // la revisión de cierre necesita saber cómo corregir
+		"Bitácora — estado actual", // qué hacer con el contexto de abajo
+		"Salud de memoria",
+		"[uso interno kandel]", // de dónde saca el project/session_id obligatorios
+	}
+	for _, want := range imprescindibles {
+		if !strings.Contains(protocolSessionStart, want) {
+			t.Errorf("el protocolo de arranque ya no menciona %q", want)
+		}
+	}
+}

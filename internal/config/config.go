@@ -122,7 +122,12 @@ var (
 		Doc: "umbral de similitud de la inyección por relevancia (0..1); vacío = default del servicio (0.45)"}
 	// RelevanceLimit es el top-K de memorias que la inyección por relevancia trae por prompt; vacío = default.
 	RelevanceLimit = Key{File: "relevance_limit", Env: "KANDEL_RELEVANCE_LIMIT", Default: "",
-		Doc: "top-K de memorias de la inyección por relevancia; vacío = default del servicio (5)"}
+		Doc: "top-K de memorias de la inyección por relevancia; vacío = default del servicio (3)"}
+	// ContextJournalOpen acota cuántos hilos de bitácora abiertos ("estado actual") lista el bloque de
+	// arranque; vacío = default del servicio. Es el único contenido de memoria que se paga SIEMPRE al
+	// abrir sesión, así que bajarlo es la palanca más barata para adelgazar el arranque.
+	ContextJournalOpen = Key{File: "context_journal_open", Env: "KANDEL_CONTEXT_JOURNAL_OPEN", Default: "",
+		Doc: "hilos de bitácora abiertos que lista el arranque; vacío = default del servicio (3)"}
 	// BackfillInterval es cada cuánto el daemon barre y reembebe memorias sin vector; vacío = default;
 	// "0" desactiva el barrido.
 	BackfillInterval = Key{File: "backfill_interval", Env: "KANDEL_BACKFILL_INTERVAL", Default: "",
@@ -142,7 +147,7 @@ var (
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
 	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedNumCtx, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
-	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, RelevanceThreshold, RelevanceLimit, BackfillInterval, UpdateCheck, MaintenanceInterval, InstalledAgents,
+	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, RelevanceThreshold, RelevanceLimit, ContextJournalOpen, BackfillInterval, UpdateCheck, MaintenanceInterval, InstalledAgents,
 }
 
 // configFileName es el nombre del archivo dentro del directorio de datos.

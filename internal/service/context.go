@@ -14,9 +14,11 @@ import (
 // El contenido pesado (normativas, factuales, pendientes) ya NO se vuelca aquí: se inyecta bajo
 // demanda por relevancia al prompt del usuario (hook UserPromptSubmit) o se recupera con mem_search.
 const (
-	// contextJournalOpen acota los hilos de bitácora "abiertos" (estado actual). En la práctica hay
-	// muy pocos temas vivos a la vez; el tope solo evita un caso patológico.
-	contextJournalOpen = 5
+	// defaultContextJournalOpen acota los hilos de bitácora "abiertos" (estado actual). En la práctica
+	// hay muy pocos temas vivos a la vez, y esta lista es el único contenido de memoria que se paga
+	// SIEMPRE al abrir sesión: por encima de 3 el arranque empieza a listar hilos que ya no son "dónde
+	// nos quedamos" sino cola de trabajo vieja. Ajustable por config (context_journal_open).
+	defaultContextJournalOpen = 3
 	// defaultNormativeThreshold dispara el aviso de mantenimiento "demasiadas normativas".
 	defaultNormativeThreshold = 50
 )
@@ -27,10 +29,11 @@ const (
 // salud de memoria. Es lectura directa (no depende del embebedor). El resto de la memoria llega por
 // relevancia al prompt (hook UserPromptSubmit) o por mem_search; los prompts crudos NO se inyectan.
 type ContextService struct {
-	memories  ports.MemoryRepo
-	relations ports.RelationRepo
-	conflicts ports.SyncConflictReader // opcional: avisa de ediciones concurrentes del sync (§6.5)
-	threshold int                      // umbral del aviso "demasiadas normativas"
+	memories    ports.MemoryRepo
+	relations   ports.RelationRepo
+	conflicts   ports.SyncConflictReader // opcional: avisa de ediciones concurrentes del sync (§6.5)
+	threshold   int                      // umbral del aviso "demasiadas normativas"
+	journalOpen int                      // tope de hilos de bitácora abiertos listados al arranque
 }
 
 // ContextOption configura un ContextService opcionalmente.
@@ -46,6 +49,16 @@ func WithNormativeThreshold(n int) ContextOption {
 	}
 }
 
+// WithJournalOpen fija cuántos hilos de bitácora abiertos lista el arranque. Un valor no positivo se
+// ignora (se conserva el default).
+func WithJournalOpen(n int) ContextOption {
+	return func(c *ContextService) {
+		if n > 0 {
+			c.journalOpen = n
+		}
+	}
+}
+
 // WithSyncConflicts cablea el lector de conflictos de edición concurrente, para que la bandeja "Salud
 // de memoria" avise cuando hay ediciones sin resolver. Opcional: sin él, no se muestra ese aviso.
 func WithSyncConflicts(r ports.SyncConflictReader) ContextOption {
@@ -54,7 +67,12 @@ func WithSyncConflicts(r ports.SyncConflictReader) ContextOption {
 
 // NewContextService construye el servicio con sus repos inyectados.
 func NewContextService(memories ports.MemoryRepo, relations ports.RelationRepo, opts ...ContextOption) *ContextService {
-	c := &ContextService{memories: memories, relations: relations, threshold: defaultNormativeThreshold}
+	c := &ContextService{
+		memories:    memories,
+		relations:   relations,
+		threshold:   defaultNormativeThreshold,
+		journalOpen: defaultContextJournalOpen,
+	}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -89,7 +107,7 @@ func (c *ContextService) Format(ctx context.Context, project string, scope domai
 		Project:    project,
 		Types:      []domain.MemoryType{domain.TypeJournal},
 		Resolution: domain.ResolutionOpen,
-		Limit:      contextJournalOpen,
+		Limit:      c.journalOpen,
 	})
 	if err != nil {
 		return "", err

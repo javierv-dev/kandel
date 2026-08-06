@@ -237,8 +237,13 @@ func handleSearch(svc Services) http.HandlerFunc {
 // no habría hueco y ningún umbral separaría el ruido de los aciertos. El segundo: quien siga en
 // bge-m3 tiene un margen de apenas 0.004 sobre el ruido —la calibración original lo sobreestimó
 // por medir con una sola sonda no relacionada—, así que ahí conviene subir el umbral por config.
+// Y un tercer aviso, este sobre la palanca equivocada: el ruido que se observa en la práctica NO es
+// ruido del embebedor —a 0.47 el modelo instruido ya no produce ninguno—, sino memoria temáticamente
+// afín pero inútil para lo que se está haciendo. Eso puntúa alto con razón y ningún umbral lo
+// distingue; lo único que lo recorta es traer menos. Por eso el límite baja a 3 y el umbral se queda
+// en 0.45: subirlo a 0.52+ empezaría a cortar los aciertos de la tabla, no el ruido.
 const (
-	relevantDefaultLimit     = 5
+	relevantDefaultLimit     = 3
 	relevantDefaultThreshold = 0.45
 )
 

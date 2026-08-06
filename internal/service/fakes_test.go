@@ -149,6 +149,10 @@ func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memor
 		out = append(out, o)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	// Limit positivo recorta a las más recientes; -1 (o 0) devuelve todo, como en el adaptador real.
+	if q.Limit > 0 && len(out) > q.Limit {
+		out = out[:q.Limit]
+	}
 	return out, nil
 }
 

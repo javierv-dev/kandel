@@ -2,49 +2,48 @@ package hook
 
 // protocolSessionStart es el bloque que el hook SessionStart imprime por stdout; el agente lo
 // inyecta como contexto adicional. Recuerda al modelo el protocolo de memoria persistente.
+//
+// Es deliberadamente CORTO. Este texto se paga en CADA sesión, se use la memoria o no, así que solo
+// puede contener lo que hace falta antes de tocar ninguna tool: cómo cargarlas, cuándo disparar el
+// guardado, y qué hacer con el contexto que viene debajo. Todo lo que sea "cómo se usa esta tool"
+// —qué guardar, cómo clasificar el tipo, las reglas de la bitácora— vive en la DESCRIPCIÓN de cada
+// tool (internal/port_in/mcp/tools_memory.go), que el agente solo carga cuando va a usarla. Antes de
+// añadir nada aquí, comprueba que no pueda ir allí.
 const protocolSessionStart = `## Memoria persistente kandel — PROTOCOLO ACTIVO
 
-Tienes herramientas de memoria kandel (servidor MCP: kandel). Este protocolo es OBLIGATORIO y SIEMPRE ACTIVO.
+Tienes memoria persistente entre sesiones (servidor MCP: kandel). Es OBLIGATORIA, no opcional.
 
-### LAS TOOLS ESTÁN DIFERIDAS — DEBES cargarlas con ToolSearch antes de llamar cualquier tool mem_*
-Los esquemas de las tools mem_* NO se cargan por defecto: llamar una sin cargarla falla. Carga el
-conjunto principal con UN SOLO ToolSearch (hazlo la primera vez que la memoria sea relevante en la sesión):
+### Carga las tools antes de llamarlas
+Los esquemas mem_* están DIFERIDOS: llamar una sin cargarla falla. Una sola llamada, la primera vez
+que la memoria sea relevante en la sesión:
   ToolSearch select:mcp__kandel__mem_save,mcp__kandel__mem_search,mcp__kandel__mem_context,mcp__kandel__mem_get,mcp__kandel__mem_save_prompt
 
-Otras tools (cárgalas con ToolSearch cuando las necesites): mem_update, mem_pending, mem_compare, mem_judge, mem_delete (lógico/reversible), mem_restore
+Las demás (mem_update, mem_link, mem_thread, mem_pending, mem_compare, mem_judge, mem_delete,
+mem_restore) cárgalas cuando las necesites. Cada tool explica en su descripción cuándo y cómo usarla.
 
-### GUARDADO PROACTIVO — no esperes a que el usuario lo pida
-Llama a ` + "`mem_save`" + ` INMEDIATAMENTE después de CUALQUIERA de estos:
-- Se toma una decisión (arquitectura, convención, flujo de trabajo, elección de herramienta)
-- Se arregla un bug (incluye la causa raíz)
-- Se documenta o actualiza una convención o un flujo de trabajo
-- Se descubre algo no obvio, un gotcha o un caso límite
-- Se establece un patrón (nombres, estructura, enfoque)
-- Se aprende una preferencia o restricción del usuario
-- El usuario confirma tu recomendación o rechaza un enfoque
-- Una discusión concluye con una dirección clara elegida
+### Guarda en el momento en que ocurre, no al final
+Después de CADA tarea pregúntate: "¿se acaba de tomar una decisión, confirmar una recomendación,
+expresar una preferencia, arreglar un bug, descubrir algo no obvio o fijar una convención?" Si la
+respuesta es sí → ` + "`mem_save`" + ` AHORA, sin esperar a que el usuario lo pida.
 
-**Autochequeo después de CADA tarea**: "¿Acabo yo o el usuario de tomar una decisión, confirmar una recomendación, expresar una preferencia, arreglar un bug, aprender algo o establecer una convención? Si es así → mem_save AHORA."
+Al guardar en scope=project (incluida la bitácora) pasa SIEMPRE el project y el session_id del bloque
+"[uso interno kandel]"; sin project el guardado falla con "proyecto ambiguo".
 
-Al guardar, enruta el type por lo que ES: decisión→decision, gusto/convención del usuario→preference (suele global), patrón/idioma de código o estructura→architecture, causa raíz de bug→bugfix, hecho/aprendizaje/config→discovery (default), narrativa/avance del desarrollo→journal (la bitácora). scope=global solo si aplica a TODOS tus proyectos; si no, project. Marca resolution=open si el usuario deja algo sin resolver. En scope=project (incluido journal) PASA SIEMPRE el project explícito = el "Proyecto actual" que aparece más abajo en este contexto inyectado (o el del bloque "[uso interno kandel]"); si lo omites, el guardado falla con "proyecto ambiguo". Pasa también el session_id del bloque "[uso interno kandel]" para ligar la memoria a la charla que la originó.
+### Revisa antes de cerrar
+Al terminar el trabajo, repasa lo que guardaste hoy: ¿alguna memoria quedó equivocada, incompleta o
+caducada por lo que pasó después? Corrígela con mem_update, o guarda la versión buena pasando
+supersedes con el id de la vieja. Guardar proactivamente sin este repaso acumula memorias falsas, y
+una memoria falsa cuesta más que la que nunca se guardó.
 
-BITÁCORA (type=journal): registra el avance del desarrollo por hito (fecha + qué + por qué). Es un log APPEND-ONLY exento del filtro de trivialidad (aunque sea cronológico/efímero, SÍ se guarda). Es scope=project: pasa SIEMPRE el project explícito (el "Proyecto actual" de arriba), o el guardado falla con "proyecto ambiguo". Mientras el tema está en vuelo, la entrada va con resolution=open (es el "estado actual", editable con mem_update); cuando el tema se cierra, pásala a resolution=resolved. Si una decisión de la bitácora restringe el trabajo futuro, guárdala ADEMÁS como type=decision (regla vigente). TRAZABILIDAD (hilos de varias fases): al pasar a una fase nueva, tras cerrar la anterior y abrir la nueva, enlázalas con mem_link(from_id=<entrada nueva>, to_id=<entrada anterior>) para encadenar el hilo. Para reconstruir "cómo llegamos aquí / qué se hizo antes", usa mem_thread(id) sobre el estado actual: recorre la cadena y devuelve las fases en orden.
+### Qué hacer con el contexto de abajo
+- "Bitácora — estado actual" es dónde nos quedamos: ofrécele al usuario retomarlo. Ahí solo van
+  títulos; pide el cuerpo con mem_get <id> y el hilo completo con mem_thread <id>.
+- Si hay avisos en "Salud de memoria", coméntaselos al usuario.
+- Las memorias relevantes a cada petición se inyectan SOLAS por similitud con lo que el usuario pide;
+  no llames a mem_context para eso. mem_search es para ir más allá de lo inyectado.
 
-### BUSCA EN LA MEMORIA cuando (solo cuando de verdad ayude — no en peticiones triviales):
-Al arrancar solo se inyecta la CONTINUIDAD mínima (bitácora "estado actual" en títulos + salud de
-memoria). Las memorias RELEVANTES a tu tarea se inyectan AUTOMÁTICAMENTE con cada mensaje del usuario
-(por similitud con lo que pide), así que NO necesitas mem_context para eso. Usa las tools para ir más allá:
-- mem_get <id> para el CUERPO de una entrada de la bitácora "estado actual" (arriba solo va el título).
-- mem_search para un recall MÁS PROFUNDO o ESPECÍFICO: el usuario pide recordar algo ("recuerda",
-  "qué hicimos", o el equivalente en su idioma), o vas a tocar algo que quizá ya se hizo y lo inyectado no basta.
-
-### ACTÚA SOBRE EL CONTEXTO DE ABAJO:
-"Bitácora — estado actual" es dónde nos quedamos: ofrécele al usuario retomarlo; pide el cuerpo con
-mem_get <id> si lo necesitas. Si hay avisos en "Salud de memoria" (normativas sin verificar /
-demasiadas / conflictos), coméntaselos al usuario.
-
-La sesión se cierra sola (hook determinista); no necesitas llamar a ninguna tool al terminar. Guarda
-lo que valga la pena con ` + "`mem_save`" + ` en el momento en que ocurre, no al final.`
+El REGISTRO de la sesión se cierra solo (hook determinista): no hay ninguna tool de "cerrar sesión"
+que llamar. Eso no te exime del repaso de arriba, que es sobre el contenido, no sobre el registro.`
 
 // firstMessageContext es el additionalContext que el hook UserPromptSubmit inyecta SOLO en el
 // primer mensaje de la sesión. Recordatorio CONDICIONAL (no una orden incondicional): el contexto
