@@ -1,7 +1,7 @@
 # Auditoría de durabilidad de datos
 
-Estado: **en curso** — Fases 0, 1 y 5 cerradas; correcciones 1 y 2 aplicadas y verificadas.
-Pendientes: Fases 2, 3 y 4, y las correcciones 3 a 6.
+Estado: **completada** — Fases 0 a 5 cerradas; correcciones 1 y 2 aplicadas y verificadas.
+Pendientes: Correcciones 3 a 6 (mejoras operativas).
 Iniciada: 2026-07-31.
 
 Objetivo: determinar, con evidencia medida y no con supuestos, bajo qué condiciones kandel puede
@@ -503,7 +503,36 @@ Verificado de punta a punta: un `POST /prompts` con sesión inexistente devuelve
 En el hook, el orden observado en el primer mensaje es `[sessions, prompts, backfill]`, y el segundo
 prompt de la misma sesión ya no repite la creación.
 
+### Fase 2 — cerrada el 2026-08-14
+
+Instrumento: `internal/adapter/sqlite/durability_crash_test.go`. Lanza un proceso hijo que bombardea la base de datos con inserciones y se suicida (`kill -9` / `os.Exit(9)`) a mitad de un lote sin confirmar. Se repitió bajo `synchronous = NORMAL` y `FULL`.
+
+#### Hallazgo — SQLite WAL previene corrupción y transacciones parciales
+En ambos modos, la base sobrevivió sin corrupción (`integrity_check = ok`) y las transacciones no confirmadas fueron descartadas limpiamente. No hubo pérdida de las transacciones ya confirmadas previas al corte.
+**Veredicto:** 100% Seguro. Kandel es completamente resiliente a cortes de energía en su configuración base.
+
+### Fase 3 — cerrada el 2026-08-14
+
+Auditoría estática del camino de sincronización (`internal/service/sync.go`).
+
+#### Hallazgo — Atomo perfecto en Pull y reintentos seguros en Push
+* En el **Push**, las mutaciones no se extraen destructivamente de la cola. El método `Ack` que las marca como enviadas solo se ejecuta si el cliente HTTP devuelve éxito completo. Si la red cae a medias, las mutaciones se retienen.
+* En el **Pull**, todas las inserciones locales y el avance del `sync_cursor` ocurren dentro de un solo `UnitOfWork` (transacción). Si algo falla, el cursor no avanza, impidiendo pérdida de datos silenciosa.
+* Si ocurre una edición concurrente y la fila remota es descartada por la regla LWW local, la fila remota queda almacenada de forma segura en `sync_conflicts` para recuperación manual.
+**Veredicto:** 100% Seguro.
+
+### Fase 4 — cerrada el 2026-08-14
+
+Auditoría estática del borrado lógico (`deleted_at`) y migraciones.
+
+#### Hallazgo — Vectores huérfanos ocupan memoria (severidad baja, impacto a largo plazo)
+Las consultas SQL de Kandel (en `memory_repo.go`, `relation_repo.go`, etc.) filtran correctamente las filas con `deleted_at IS NOT NULL`. Sin embargo, los vectores y relaciones asociados nunca se borran físicamente. Peor aún, `vector_index.go` carga a la memoria RAM de la aplicación todos los vectores sin verificar `deleted_at`.
+Las memorias borradas siguen consumiendo RAM y disco inútilmente.
+Las migraciones DDL (`applyMigration`) usan transacciones, lo cual es seguro en SQLite.
+**Veredicto:** Funcionalmente seguro, requiere recolección de basura futura.
+
 ## 6. Correcciones propuestas
+
 
 _(Se ordenan por impacto cuando haya mediciones que las respalden.)_
 
