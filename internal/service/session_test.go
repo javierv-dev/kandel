@@ -34,6 +34,33 @@ func TestSessionStart(t *testing.T) {
 	}
 }
 
+// Regresión: los hooks reaseguran la sesión en cada prompt; un segundo Start con el mismo id
+// daba HTTP 500 por UNIQUE. Debe ser idempotente y no encolar ni reabrir nada.
+func TestSessionStartIdempotent(t *testing.T) {
+	svc, sessions, sync := newSessionFixture()
+	ctx := context.Background()
+	if _, err := svc.Start(ctx, StartInput{ID: "s1", Project: "proj", Directory: "/d"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := svc.End(ctx, "s1"); err != nil {
+		t.Fatalf("End: %v", err)
+	}
+	enqueuedBefore := len(sync.enqueued)
+	s, err := svc.Start(ctx, StartInput{ID: "s1", Project: "proj", Directory: "/d"})
+	if err != nil {
+		t.Fatalf("segundo Start debe ser idempotente, dio: %v", err)
+	}
+	if s.ID != "s1" || len(sessions.items) != 1 {
+		t.Errorf("debe devolver la sesión existente, sesiones=%d id=%q", len(sessions.items), s.ID)
+	}
+	if sessions.items["s1"].IsOpen() {
+		t.Error("el segundo Start no debe reabrir una sesión cerrada")
+	}
+	if len(sync.enqueued) != enqueuedBefore {
+		t.Errorf("no debe encolar otra mutación, antes %d ahora %d", enqueuedBefore, len(sync.enqueued))
+	}
+}
+
 func TestSessionEnd(t *testing.T) {
 	svc, sessions, sync := newSessionFixture()
 	ctx := context.Background()

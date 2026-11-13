@@ -28,7 +28,9 @@ type StartInput struct {
 	Directory string
 }
 
-// Start abre una sesión nueva y encola su mutación, todo de forma atómica.
+// Start abre una sesión nueva y encola su mutación, todo de forma atómica. Es idempotente: si el
+// id ya existe (los hooks reaseguran la sesión en cada prompt), devuelve la existente sin tocarla,
+// sin reabrirla y sin encolar otra mutación.
 func (s *SessionService) Start(ctx context.Context, in StartInput) (domain.Session, error) {
 	session := domain.Session{
 		ID:        in.ID,
@@ -37,6 +39,14 @@ func (s *SessionService) Start(ctx context.Context, in StartInput) (domain.Sessi
 		StartedAt: s.clock.Now().UTC(),
 	}
 	err := s.uow.Do(ctx, func(ctx context.Context) error {
+		existing, err := s.sessions.Get(ctx, session.ID)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			session = *existing
+			return nil
+		}
 		if err := s.sessions.Create(ctx, session); err != nil {
 			return err
 		}
