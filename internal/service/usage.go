@@ -103,8 +103,11 @@ func (s *UsageService) RecordMentions(ctx context.Context, ids []int64, transcri
 
 // Stats devuelve las memorias más inyectadas con su título resuelto, de más a menos. Es la vista que
 // contesta "¿qué está sirviendo la memoria de verdad?".
-func (s *UsageService) Stats(ctx context.Context, limit int) ([]UsageStat, error) {
-	rows, err := s.usage.TopInjected(ctx, limit)
+//
+// Con total=false las cifras y el orden son los de DESDE la línea base de cada memoria (la última
+// edición o el último --rebase); con total=true, el acumulado de por vida.
+func (s *UsageService) Stats(ctx context.Context, limit int, total bool) ([]UsageStat, error) {
+	rows, err := s.usage.TopInjected(ctx, limit, total)
 	if err != nil {
 		return nil, err
 	}
@@ -119,10 +122,29 @@ func (s *UsageService) Stats(ctx context.Context, limit int) ([]UsageStat, error
 	return out, nil
 }
 
-// CountDormant cuenta las memorias que se inyectan lo bastante como para juzgarlas y nunca se
-// mencionan: las candidatas a poda.
+// CountDormant cuenta las memorias que, desde su línea base, se inyectan lo bastante como para
+// juzgarlas y no se mencionan: las candidatas a poda.
 func (s *UsageService) CountDormant(ctx context.Context) (int, error) {
 	return s.usage.CountDormant(ctx, dormantMinInjections)
+}
+
+// Rebase fija la línea base de las memorias dadas a sus contadores actuales: a partir de ahora se
+// mide solo lo que ocurra después. No toca los totales de por vida.
+func (s *UsageService) Rebase(ctx context.Context, ids []int64) error {
+	return s.usage.Rebase(ctx, ids, s.clock.Now())
+}
+
+// RebaseDormant fija la línea base de todas las memorias hoy dormidas y devuelve cuántas fueron.
+// Es el gesto natural tras una pasada de mantenimiento: "ya las revisé, mídelas desde aquí".
+func (s *UsageService) RebaseDormant(ctx context.Context) (int, error) {
+	ids, err := s.usage.DormantIDs(ctx, dormantMinInjections)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.usage.Rebase(ctx, ids, s.clock.Now()); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
 }
 
 // transcriptEntry es el subconjunto de una línea de la transcripción que hace falta para quedarse

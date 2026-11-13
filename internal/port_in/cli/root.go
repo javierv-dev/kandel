@@ -130,8 +130,10 @@ type MaintenanceUseCases interface {
 type UsageUseCases interface {
 	RecordInjected(ctx context.Context, ids []int64) error
 	RecordMentions(ctx context.Context, ids []int64, transcriptPath string) (service.MentionResult, error)
-	Stats(ctx context.Context, limit int) ([]service.UsageStat, error)
+	Stats(ctx context.Context, limit int, total bool) ([]service.UsageStat, error)
 	CountDormant(ctx context.Context) (int, error)
+	Rebase(ctx context.Context, ids []int64) error
+	RebaseDormant(ctx context.Context) (int, error)
 }
 
 // App agrupa los casos de uso ya construidos y los flujos de salida. El wiring real (qué

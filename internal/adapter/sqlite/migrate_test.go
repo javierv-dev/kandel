@@ -126,3 +126,54 @@ func TestApplyMigrationRollsBackOnError(t *testing.T) {
 		t.Fatalf("user_version avanzó pese al fallo: antes %d, después %d", before, after)
 	}
 }
+
+// TestMigrateV8PreservaLaTelemetriaExistente simula una base real en v7 (con contadores acumulados) y
+// verifica que al abrirla con el binario nuevo la v8 conserva los totales y deja la línea base en
+// "origen" (base 0, sin fecha): conducta idéntica a la anterior hasta que alguien la fije.
+func TestMigrateV8PreservaLaTelemetriaExistente(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v7.db")
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (1): %v", err)
+	}
+	id := addMemoryForUsage(t, db, "memoria con historia")
+	if err := NewUsageRepo(db).RecordInjected(ctx, []int64{id, id, id}, baseTime); err != nil {
+		t.Fatalf("RecordInjected: %v", err)
+	}
+	// Devuelve la base al esquema v7: sin las columnas de línea base y con user_version = 7.
+	for _, stmt := range []string{
+		`ALTER TABLE memory_usage DROP COLUMN base_injected`,
+		`ALTER TABLE memory_usage DROP COLUMN base_mentioned`,
+		`ALTER TABLE memory_usage DROP COLUMN baselined_at`,
+		`PRAGMA user_version = 7`,
+	} {
+		if _, err := db.sql.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("preparar base v7 (%s): %v", stmt, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	db2, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (2) debía migrar v7→v8: %v", err)
+	}
+	t.Cleanup(func() { db2.Close() })
+
+	if v, _ := db2.schemaVersion(ctx); v != latestVersion() {
+		t.Fatalf("user_version = %d, se esperaba %d", v, latestVersion())
+	}
+	got, err := NewUsageRepo(db2).Get(ctx, id)
+	if err != nil {
+		t.Fatalf("Get tras migrar: %v", err)
+	}
+	if got.InjectedCount != 3 || got.BaseInjected != 0 || got.BaselinedAt != nil {
+		t.Errorf("tras migrar: total=%d base=%d baselined=%v, se esperaba 3, 0 y nil", got.InjectedCount, got.BaseInjected, got.BaselinedAt)
+	}
+	if got.InjectedSince() != 3 {
+		t.Errorf("sin línea base el 'desde' debe coincidir con el total (3), fue %d", got.InjectedSince())
+	}
+}

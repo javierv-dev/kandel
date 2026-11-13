@@ -108,12 +108,18 @@ type UsageRepo interface {
 	// Get devuelve la telemetría de una memoria. Una memoria sin fila devuelve el cero (nunca
 	// inyectada), no un error: "sin registro" y "nunca inyectada" son lo mismo.
 	Get(ctx context.Context, memoryID int64) (domain.MemoryUsage, error)
-	// TopInjected lista la telemetría ordenada por inyecciones descendentes, solo de memorias vivas.
-	// Es la vista de "qué se está sirviendo de verdad" que consume el diagnóstico.
-	TopInjected(ctx context.Context, limit int) ([]domain.MemoryUsage, error)
-	// CountDormant cuenta las memorias vivas inyectadas al menos minInjections veces y nunca
-	// mencionadas: las candidatas a poda.
+	// TopInjected lista la telemetría de memorias vivas ordenada por inyecciones descendentes. Con
+	// total=false ordena por lo ocurrido desde la línea base de cada memoria; con total=true, por el
+	// acumulado de por vida.
+	TopInjected(ctx context.Context, limit int, total bool) ([]domain.MemoryUsage, error)
+	// CountDormant cuenta las memorias vivas inyectadas al menos minInjections veces desde su línea
+	// base y no mencionadas desde entonces: las candidatas a poda.
 	CountDormant(ctx context.Context, minInjections int) (int, error)
+	// DormantIDs devuelve los ids de esas mismas memorias dormidas (los que cuenta CountDormant).
+	DormantIDs(ctx context.Context, minInjections int) ([]int64, error)
+	// Rebase fija la línea base de cada id a sus contadores actuales (creando la fila si no existía,
+	// con base 0). No toca los totales. Es idempotente: repetirlo solo mueve el corte al instante `at`.
+	Rebase(ctx context.Context, ids []int64, at time.Time) error
 }
 
 // SessionRepo persiste y recupera sesiones.

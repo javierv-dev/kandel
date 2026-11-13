@@ -193,6 +193,51 @@ func TestUpdateAppliesPartialChanges(t *testing.T) {
 	}
 }
 
+// Editar el contenido o el título fija la línea base de la telemetría (así se mide la versión nueva);
+// editar solo metadatos que no cambian lo inyectado, o "editar" con el mismo texto, no la toca.
+func TestUpdateRebasaLaTelemetriaSoloSiCambiaLoInyectado(t *testing.T) {
+	obs, sync := newFakeObs(), &fakeSync{}
+	usage := &fakeUsageRepo{}
+	svc := NewMemoryService(obs, sync, passthroughUoW{}, fixedClock{now: clockNow}, newFakeEmbedder(), newFakeVectorIndex(),
+		WithUsageRebaser(usage))
+	ctx := context.Background()
+	res, _ := svc.Save(ctx, baseSaveInput())
+	id := res.Memory.ID
+
+	// Mismo texto: no cambia nada de lo que se inyecta.
+	same := res.Memory.Content
+	sameTitle := res.Memory.Title
+	if _, err := svc.Update(ctx, id, UpdateInput{Content: &same, Title: &sameTitle}); err != nil {
+		t.Fatalf("Update mismo texto: %v", err)
+	}
+	// Solo metadatos.
+	typ := domain.TypeDiscovery
+	if _, err := svc.Update(ctx, id, UpdateInput{Type: &typ}); err != nil {
+		t.Fatalf("Update tipo: %v", err)
+	}
+	if len(usage.rebased) != 0 {
+		t.Fatalf("no debía fijarse línea base sin cambio de texto, se fijó en %v", usage.rebased)
+	}
+
+	// Contenido distinto: sí.
+	newContent := "contenido reescrito"
+	if _, err := svc.Update(ctx, id, UpdateInput{Content: &newContent}); err != nil {
+		t.Fatalf("Update contenido: %v", err)
+	}
+	if len(usage.rebased) != 1 || usage.rebased[0] != id || !usage.rebasedAt.Equal(clockNow) {
+		t.Fatalf("tras editar el contenido debía fijarse la línea base de %d a %v, fue %v en %v", id, clockNow, usage.rebased, usage.rebasedAt)
+	}
+
+	// Título distinto: sí.
+	newTitle := "título reescrito"
+	if _, err := svc.Update(ctx, id, UpdateInput{Title: &newTitle}); err != nil {
+		t.Fatalf("Update título: %v", err)
+	}
+	if len(usage.rebased) != 2 {
+		t.Errorf("tras editar el título debía fijarse otra vez, rebased=%v", usage.rebased)
+	}
+}
+
 // TestUpdateReembedsOnContentChange cubre F2: al cambiar el contenido, Update recalcula el vector
 // (antes lo dejaba obsoleto → mem_search matcheaba el texto viejo).
 func TestUpdateReembedsOnContentChange(t *testing.T) {

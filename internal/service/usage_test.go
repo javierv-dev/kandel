@@ -16,6 +16,9 @@ import (
 type fakeUsageRepo struct {
 	injected  []int64
 	mentioned []int64
+	dormant   []int64   // lo que devuelve DormantIDs
+	rebased   []int64   // ids a los que se les fijó la línea base
+	rebasedAt time.Time // instante con el que se fijó
 }
 
 func (f *fakeUsageRepo) RecordInjected(_ context.Context, ids []int64, _ time.Time) error {
@@ -32,11 +35,47 @@ func (f *fakeUsageRepo) Get(_ context.Context, id int64) (domain.MemoryUsage, er
 	return domain.MemoryUsage{MemoryID: id}, nil
 }
 
-func (f *fakeUsageRepo) TopInjected(_ context.Context, _ int) ([]domain.MemoryUsage, error) {
+func (f *fakeUsageRepo) TopInjected(_ context.Context, _ int, _ bool) ([]domain.MemoryUsage, error) {
 	return nil, nil
 }
 
 func (f *fakeUsageRepo) CountDormant(_ context.Context, _ int) (int, error) { return 0, nil }
+
+func (f *fakeUsageRepo) DormantIDs(_ context.Context, _ int) ([]int64, error) {
+	return f.dormant, nil
+}
+
+func (f *fakeUsageRepo) Rebase(_ context.Context, ids []int64, at time.Time) error {
+	f.rebased = append(f.rebased, ids...)
+	f.rebasedAt = at
+	return nil
+}
+
+// Rebase de MemoryService y de UsageService comparten fake: el contrato es el mismo.
+var _ UsageRebaser = (*fakeUsageRepo)(nil)
+
+// RebaseDormant fija la línea base de TODAS las dormidas y de nada más, y cuenta cuántas fueron.
+func TestRebaseDormantFijaSoloLasDormidas(t *testing.T) {
+	svc, usage, _ := newUsageFixture(t, "irrelevante")
+	usage.dormant = []int64{213, 424}
+
+	n, err := svc.RebaseDormant(context.Background())
+	if err != nil {
+		t.Fatalf("RebaseDormant: %v", err)
+	}
+	if n != 2 || len(usage.rebased) != 2 || usage.rebased[0] != 213 || usage.rebased[1] != 424 {
+		t.Errorf("n=%d rebased=%v, se esperaba 2 y [213 424]", n, usage.rebased)
+	}
+}
+
+// Sin dormidas no hay nada que fijar: no es un error y no toca el repo.
+func TestRebaseDormantSinDormidas(t *testing.T) {
+	svc, usage, _ := newUsageFixture(t, "irrelevante")
+	n, err := svc.RebaseDormant(context.Background())
+	if err != nil || n != 0 || len(usage.rebased) != 0 {
+		t.Errorf("n=%d err=%v rebased=%v, se esperaba 0, nil y nada", n, err, usage.rebased)
+	}
+}
 
 // writeTranscript escribe una transcripción JSONL temporal y devuelve su ruta.
 func writeTranscript(t *testing.T, lines ...string) string {

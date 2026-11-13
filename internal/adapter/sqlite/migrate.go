@@ -229,6 +229,18 @@ CREATE TABLE IF NOT EXISTS memory_usage (
 CREATE INDEX IF NOT EXISTS idx_usage_injected ON memory_usage(injected_count DESC);
 `
 
+// schemaV8 añade la línea base de la telemetría de uso: una foto de los contadores en el momento en
+// que se editó la memoria (o en que se pidió a mano), para medir el efecto de un cambio sin perder el
+// histórico de por vida. Los totales no se tocan; lo ocurrido "desde" el corte es la diferencia.
+//
+// Additiva y local, igual que la v7: las filas existentes quedan con base 0 y sin fecha, lo que
+// significa "medir desde el origen" (conducta previa intacta).
+const schemaV8 = `
+ALTER TABLE memory_usage ADD COLUMN base_injected  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE memory_usage ADD COLUMN base_mentioned INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE memory_usage ADD COLUMN baselined_at   TEXT;
+`
+
 // migration es un paso de evolución del esquema, identificado por un número de versión
 // estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
 // de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
@@ -254,6 +266,7 @@ var migrations = []migration{
 	{version: 5, sql: schemaV5},
 	{version: 6, sql: schemaV6},
 	{version: 7, sql: schemaV7},
+	{version: 8, sql: schemaV8},
 }
 
 // migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base

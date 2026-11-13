@@ -99,7 +99,8 @@ func run(args []string) error {
 	memoryService := service.NewMemoryService(memoryRepo, syncRepo, uow, clk, embedder, vectorIndex,
 		service.WithWarnLogger(embeddingWarnLogger()),
 		service.WithTitleVectors(titleVectorIndex),
-		service.WithRelations(relationRepo))
+		service.WithRelations(relationRepo),
+		service.WithUsageRebaser(usageRepo))
 	sessionService := service.NewSessionService(sessionRepo, syncRepo, uow, clk)
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)

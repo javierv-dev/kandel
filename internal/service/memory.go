@@ -107,6 +107,7 @@ type MemoryService struct {
 	vectors      ports.VectorIndex
 	titleVectors ports.VectorIndex  // índice del vector del título; nil = deshabilitado (solo contenido)
 	relations    ports.RelationRepo // nil = el parámetro supersedes de Save no está disponible
+	usage        UsageRebaser       // nil = editar no fija la línea base de la telemetría de uso
 	dedupeWindow time.Duration
 	warnf        func(format string, args ...any)
 }
@@ -144,6 +145,23 @@ func WithRelations(relations ports.RelationRepo) MemoryOption {
 	return func(m *MemoryService) {
 		if relations != nil {
 			m.relations = relations
+		}
+	}
+}
+
+// UsageRebaser es lo único que MemoryService necesita de la telemetría de uso: fijar la línea base de
+// una memoria. Se declara aquí, acotada, para no acoplar el servicio de memorias a todo UsageRepo.
+type UsageRebaser interface {
+	Rebase(ctx context.Context, ids []int64, at time.Time) error
+}
+
+// WithUsageRebaser cablea la telemetría de uso para que editar el contenido o el título de una
+// memoria fije su línea base: así `kandel usage` mide la versión nueva y no la arrastra con la vieja.
+// Sin esta opción editar no toca la telemetría (conducta previa intacta). Un valor nil se ignora.
+func WithUsageRebaser(u UsageRebaser) MemoryOption {
+	return func(m *MemoryService) {
+		if u != nil {
+			m.usage = u
 		}
 	}
 }
@@ -493,11 +511,18 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		if in.Type != nil {
 			o.Type = *in.Type
 		}
+		// Solo cambiar lo que se INYECTA (contenido o título, y de verdad distinto) reinicia la
+		// medición de uso: tipo, alcance o resolución no alteran el texto ni su ranking por similitud.
+		injectedTextChanged := false
 		if in.Title != nil {
-			o.Title = strings.TrimSpace(*in.Title)
+			newTitle := strings.TrimSpace(*in.Title)
+			injectedTextChanged = injectedTextChanged || newTitle != o.Title
+			o.Title = newTitle
 		}
 		if in.Content != nil {
-			o.Content = strings.TrimSpace(*in.Content)
+			newContent := strings.TrimSpace(*in.Content)
+			injectedTextChanged = injectedTextChanged || newContent != o.Content
+			o.Content = newContent
 			o.NormalizedHash = hashContent(o.Content)
 		}
 		if in.Scope != nil {
@@ -537,6 +562,13 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 		if in.Title != nil {
 			if err := m.reindexTitleVectorTolerant(ctx, id, o.Title); err != nil {
 				return err
+			}
+		}
+		// La telemetría es best-effort: perder la línea base solo desafina una estadística, nunca
+		// debe impedir que la edición se guarde.
+		if injectedTextChanged && m.usage != nil {
+			if err := m.usage.Rebase(ctx, []int64{id}, now); err != nil {
+				m.warnf("memoria #%d actualizada: no se pudo fijar la línea base de uso: %v", id, err)
 			}
 		}
 		result = *updated
