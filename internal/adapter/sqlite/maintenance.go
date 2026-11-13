@@ -49,8 +49,8 @@ func (m Maintenance) Sweep(ctx context.Context) (int, error) {
 	}
 
 	// 2. Purgar sync_mutations que ya fueron confirmadas.
-	// Retenemos las no confirmadas (confirmed_at = 0).
-	res, err := m.db.sql.ExecContext(ctx, "DELETE FROM sync_mutations WHERE confirmed_at > 0")
+	// Retenemos las no confirmadas (acked_at IS NULL).
+	res, err := m.db.sql.ExecContext(ctx, "DELETE FROM sync_mutations WHERE acked_at IS NOT NULL")
 	if err != nil {
 		return 0, fmt.Errorf("sqlite: purga de sync_mutations falló: %w", err)
 	}

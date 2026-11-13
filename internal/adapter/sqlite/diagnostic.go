@@ -68,8 +68,15 @@ func (c DatabaseCheck) Run(ctx context.Context) []diagnostic.Finding {
 
 	// 3. Cola de sincronización (mutaciones pendientes)
 	var pending int
-	err = c.db.sql.QueryRowContext(ctx, `SELECT COUNT(*) FROM sync_mutations WHERE confirmed_at = 0`).Scan(&pending)
-	if err == nil && pending > 50 { // Si hay muchas pendientes, hay un problema en el demonio o conexión.
+	err = c.db.sql.QueryRowContext(ctx, `SELECT COUNT(*) FROM sync_mutations WHERE acked_at IS NULL`).Scan(&pending)
+	if err != nil {
+		findings = append(findings, diagnostic.Finding{
+			Check:    c.Name(),
+			Severity: diagnostic.SeverityError,
+			Message:  fmt.Sprintf("no se pudo contar las mutaciones pendientes: %v", err),
+		})
+		ok = false
+	} else if pending > 50 { // Si hay muchas pendientes, hay un problema en el demonio o conexión.
 		findings = append(findings, diagnostic.Finding{
 			Check:    c.Name(),
 			Severity: diagnostic.SeverityWarning,
