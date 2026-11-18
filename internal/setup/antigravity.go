@@ -76,7 +76,9 @@ Reglas:
   arreglo de bug (con su causa raíz), una convención, un descubrimiento no obvio, un patrón, o una
   preferencia/rechazo del usuario.
 - Si una memoria quedó obsoleta y conoces su id, usa **mem_update** en vez de crear otra.
-- Guarda en el momento en que ocurre lo que vale la pena recordar, no al terminar: la sesión se cierra sola.`
+- Guarda en el momento en que ocurre lo que vale la pena recordar, no al terminar: la sesión se cierra sola.
+- Para relevo, guarda el avance con mem_handoff_save usando el session_id actual. Al retomar, lista con
+  mem_handoff_get y vincula la versión elegida con mem_handoff_resume. Contrasta el reporte con Git y las pruebas.`
 
 func (a antigravity) Install(home, version string, out io.Writer) error {
 	_, mcpFile, rulesFile, hooksFile, skillFile := a.paths(home)
@@ -184,7 +186,7 @@ func (antigravity) installMCP(mcpFile string) error {
 	servers := mapAt(cfg, "mcpServers")
 	servers["kandel"] = map[string]any{
 		"command": "kandel",
-		"args":    []any{"mcp", "--tools=agent"},
+		"args":    []any{"mcp", "--tools=agent", "--source=antigravity"},
 	}
 	return saveJSONObject(mcpFile, cfg)
 }

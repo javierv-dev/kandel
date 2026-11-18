@@ -199,7 +199,7 @@ func (claudeCode) installMCP(mcpFile string) error {
 	// de verdad, sin sangrar ajustes de kandel en el archivo de Claude Code.
 	servers["kandel"] = map[string]any{
 		"command": "kandel",
-		"args":    []any{"mcp", "--tools=agent"},
+		"args":    []any{"mcp", "--tools=agent", "--source=claude-code"},
 	}
 	return saveJSONObject(mcpFile, cfg)
 }

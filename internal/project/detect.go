@@ -1,6 +1,9 @@
 package project
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,6 +98,38 @@ func gitRoot(dir string) (string, bool) {
 		}
 		current = parent
 	}
+}
+
+// Worktree identifica una copia local por su raíz física, no por el nombre del remoto.
+// En proyectos no Git se exige usar el mismo directorio raíz.
+func Worktree(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("se requiere un directorio de trabajo absoluto")
+	}
+	physical, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(physical)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("el workspace no es un directorio")
+	}
+	if root, ok := gitRoot(physical); ok {
+		physical = root
+	}
+	return LocalKey("worktree", physical), nil
+}
+
+// LocalKey devuelve una clave determinista y sin separadores ambiguos.
+func LocalKey(kind string, parts ...string) string {
+	h := sha256.New()
+	for _, part := range parts {
+		fmt.Fprintf(h, "%d:%s", len(part), part)
+	}
+	return kind + "-" + hex.EncodeToString(h.Sum(nil)[:16])
 }
 
 // Normalize aplica la forma canónica del nombre de proyecto: minúsculas, recortado y con

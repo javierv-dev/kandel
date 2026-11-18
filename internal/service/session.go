@@ -23,9 +23,11 @@ func NewSessionService(sessions ports.SessionRepo, sync ports.SyncRepo, uow port
 
 // StartInput son los datos para abrir una sesión.
 type StartInput struct {
-	ID        string
-	Project   string
-	Directory string
+	ID             string
+	Project        string
+	Directory      string
+	Application    string
+	ConversationID string
 }
 
 // Start abre una sesión nueva y encola su mutación, todo de forma atómica. Es idempotente: si el
@@ -33,10 +35,12 @@ type StartInput struct {
 // sin reabrirla y sin encolar otra mutación.
 func (s *SessionService) Start(ctx context.Context, in StartInput) (domain.Session, error) {
 	session := domain.Session{
-		ID:        in.ID,
-		Project:   normalizeProject(in.Project),
-		Directory: in.Directory,
-		StartedAt: s.clock.Now().UTC(),
+		ID:             in.ID,
+		Project:        normalizeProject(in.Project),
+		Directory:      in.Directory,
+		Application:    in.Application,
+		ConversationID: in.ConversationID,
+		StartedAt:      s.clock.Now().UTC(),
 	}
 	err := s.uow.Do(ctx, func(ctx context.Context) error {
 		existing, err := s.sessions.Get(ctx, session.ID)

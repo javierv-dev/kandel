@@ -143,7 +143,11 @@ func (c *client) postCrítico(ctx context.Context, path string, body any) (strin
 // postSession crea (o reactiva) una sesión. Escritura crítica: si no se crea, los prompts
 // posteriores cuelgan de un session_id inexistente.
 func (c *client) postSession(ctx context.Context, id, project, directory string) (string, error) {
-	return c.postCrítico(ctx, "/sessions", map[string]string{"id": id, "project": project, "directory": directory})
+	body := map[string]string{"id": id, "project": project, "directory": directory}
+	if app, external, ok := strings.Cut(id, ":"); ok && (app == "claude-code" || app == "antigravity") {
+		body["application"], body["conversation_id"] = app, external
+	}
+	return c.postCrítico(ctx, "/sessions", body)
 }
 
 // endSession marca una sesión como cerrada y, de paso, le entrega al daemon lo que hace falta para

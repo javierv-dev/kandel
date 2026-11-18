@@ -99,6 +99,10 @@ Formato para `mem_save`:
   reciente gana). Es una **red de seguridad automática**, no un sustituto: cuesta un juicio y conserva la
   vieja como histórico, así que `mem_update` sigue siendo el camino preferente cuando puedes usarlo.
 
+## RELEVO ENTRE SESIONES
+
+Para una tarea que deba sobrevivir a un corte, guarda un checkpoint breve con `mem_handoff_save` al completar cada hito, en vez de escribir también una bitácora equivalente. Usa el `session_id` actual, una clave de escritura nueva por versión y el ID de la versión anterior como `parent_id`. Incluye objetivo, cambios, pruebas, bloqueo y siguiente paso; no incluyas secretos. Al retomar, lista con `mem_handoff_get`, elige la tarea y llama a `mem_handoff_resume` con el ID exacto. Contrasta el relato con el repositorio y no atribuyas cambios sin evidencia.
+
 ## BITÁCORA (type=journal)
 
 La bitácora es la narrativa del desarrollo DENTRO de kandel: un log **append-only**, datado y buscable.

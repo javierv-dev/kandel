@@ -241,6 +241,24 @@ ALTER TABLE memory_usage ADD COLUMN base_mentioned INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE memory_usage ADD COLUMN baselined_at   TEXT;
 `
 
+const schemaV9 = `
+ALTER TABLE sessions ADD COLUMN application TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN conversation_id TEXT NOT NULL DEFAULT '';
+CREATE TABLE handoff_checkpoints (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL, parent_id TEXT,
+  worktree TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL,
+  session_id TEXT NOT NULL REFERENCES sessions(id), application TEXT NOT NULL,
+  created_at TEXT NOT NULL, FOREIGN KEY(parent_id) REFERENCES handoff_checkpoints(id)
+);
+CREATE INDEX handoff_worktree_tasks ON handoff_checkpoints(worktree, task_id);
+CREATE UNIQUE INDEX handoff_single_child ON handoff_checkpoints(parent_id) WHERE parent_id IS NOT NULL;
+CREATE TABLE handoff_resumptions (
+  checkpoint_id TEXT NOT NULL REFERENCES handoff_checkpoints(id),
+  session_id TEXT NOT NULL REFERENCES sessions(id),
+  PRIMARY KEY(checkpoint_id, session_id)
+);
+`
+
 // migration es un paso de evolución del esquema, identificado por un número de versión
 // estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
 // de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
@@ -267,6 +285,7 @@ var migrations = []migration{
 	{version: 6, sql: schemaV6},
 	{version: 7, sql: schemaV7},
 	{version: 8, sql: schemaV8},
+	{version: 9, sql: schemaV9},
 }
 
 // migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base

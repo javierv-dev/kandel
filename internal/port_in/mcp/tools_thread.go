@@ -89,12 +89,11 @@ func handleThread(svc Services) server.ToolHandlerFunc {
 		}
 		items := make([]map[string]any, 0, len(chain))
 		for _, m := range chain {
-			items = append(items, map[string]any{
-				"id":      m.ID,
-				"type":    string(m.Type),
-				"title":   m.Title,
-				"content": m.Content,
-			})
+			item := map[string]any{
+				"id": m.ID, "type": string(m.Type), "title": m.Title, "content": m.Content,
+			}
+			addProvenance(ctx, svc, item, m.SessionID)
+			items = append(items, item)
 		}
 		return jsonResult(map[string]any{"thread": items})
 	}

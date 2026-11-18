@@ -313,9 +313,11 @@ func handlePending(svc Services) http.HandlerFunc {
 
 // startSessionRequest es el cuerpo de POST /sessions.
 type startSessionRequest struct {
-	ID        string `json:"id"`
-	Project   string `json:"project"`
-	Directory string `json:"directory"`
+	ID             string `json:"id"`
+	Project        string `json:"project"`
+	Directory      string `json:"directory"`
+	Application    string `json:"application"`
+	ConversationID string `json:"conversation_id"`
 }
 
 // handleStartSession abre una sesión.
@@ -330,9 +332,11 @@ func handleStartSession(svc Services) http.HandlerFunc {
 			return
 		}
 		s, err := svc.Session.Start(r.Context(), service.StartInput{
-			ID:        body.ID,
-			Project:   body.Project,
-			Directory: body.Directory,
+			ID:             body.ID,
+			Project:        body.Project,
+			Directory:      body.Directory,
+			Application:    body.Application,
+			ConversationID: body.ConversationID,
 		})
 		if err != nil {
 			writeError(w, statusForError(err), err.Error())

@@ -119,6 +119,46 @@ func newTestRunner(t *testing.T, event string, d *stubDaemon) (*runner, *bytes.B
 	return r, out
 }
 
+func TestRunRegistersDistinctAgentSessions(t *testing.T) {
+	d := newStubDaemon(t)
+	u, err := url.Parse(d.srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KANDEL_PORT", u.Port())
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir())
+	t.Setenv("KANDEL_LOG_DIR", t.TempDir())
+	cwd := t.TempDir()
+	for _, tc := range []struct {
+		event, app string
+		input      any
+	}{
+		{"session-start", "claude-code", map[string]any{"session_id": "shared", "cwd": cwd}},
+		{"ag-pre-invocation", "antigravity", map[string]any{"conversationId": "shared", "workspacePaths": []string{cwd}}},
+	} {
+		raw, err := json.Marshal(tc.input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var output bytes.Buffer
+		if err := Run(context.Background(), tc.event, "dev", nil, bytes.NewReader(raw), &output); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), tc.app+":shared") {
+			t.Fatalf("metadatos: %s", &output)
+		}
+		d.mu.Lock()
+		var match bool
+		for _, r := range d.requests {
+			match = match || (r.path == "/sessions" && r.body["id"] == tc.app+":shared" && r.body["application"] == tc.app && r.body["conversation_id"] == "shared")
+		}
+		d.mu.Unlock()
+		if !match {
+			t.Fatalf("no se registró el origen %s", tc.app)
+		}
+	}
+}
+
 func TestSessionStartCreatesSessionAndInjectsContext(t *testing.T) {
 	d := newStubDaemon(t)
 	r, out := newTestRunner(t, "session-start", d)

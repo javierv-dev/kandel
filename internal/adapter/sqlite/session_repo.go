@@ -25,11 +25,11 @@ func NewSessionRepo(db *DB) *SessionRepo {
 // Create abre una sesión nueva con su instante de inicio ya fijado por el servicio. La columna
 // summary quedó muerta (se eliminó el resumen de sesión); se deja NULL sin nombrarla.
 func (r *SessionRepo) Create(ctx context.Context, s domain.Session) error {
-	const q = `INSERT INTO sessions (id, project, directory, started_at, ended_at)
-		VALUES (?, ?, ?, ?, ?)`
+	const q = `INSERT INTO sessions (id, project, directory, started_at, ended_at, application, conversation_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
 	_, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		s.ID, s.Project, s.Directory, formatTime(s.StartedAt),
-		endedAtValue(s),
+		endedAtValue(s), s.Application, s.ConversationID,
 	)
 	if err != nil {
 		return fmt.Errorf("sqlite: crear sesión: %w", err)
@@ -48,7 +48,7 @@ func (r *SessionRepo) End(ctx context.Context, id string) error {
 
 // Get recupera una sesión por id; (nil, nil) si no existe.
 func (r *SessionRepo) Get(ctx context.Context, id string) (*domain.Session, error) {
-	const q = `SELECT id, project, directory, started_at, ended_at
+	const q = `SELECT id, project, directory, started_at, ended_at, application, conversation_id
 		FROM sessions WHERE id = ?`
 	s, err := scanSession(execFromCtx(ctx, r.db).QueryRowContext(ctx, q, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -79,7 +79,7 @@ func scanSession(sc rowScanner) (domain.Session, error) {
 		started string
 		ended   sql.NullString
 	)
-	if err := sc.Scan(&s.ID, &s.Project, &s.Directory, &started, &ended); err != nil {
+	if err := sc.Scan(&s.ID, &s.Project, &s.Directory, &started, &ended, &s.Application, &s.ConversationID); err != nil {
 		return domain.Session{}, err
 	}
 	var err error

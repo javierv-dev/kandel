@@ -63,6 +63,7 @@ type ThreadPort interface {
 // Services agrupa los casos de uso que necesitan los handlers MCP. Es el equivalente al App de
 // la CLI: el wiring concreto vive en cmd/kandel/main.go.
 type Services struct {
+	Source    string
 	Memory    MemoryPort
 	Lifecycle LifecyclePort
 	Prompt    PromptPort
@@ -70,6 +71,10 @@ type Services struct {
 	Conflict  ConflictPort
 	Sync      SyncPort
 	Thread    ThreadPort
+	Handoff   *service.HandoffService
+	Sessions  interface {
+		Get(context.Context, string) (*domain.Session, error)
+	}
 }
 
 // serverInstructions le dice al cliente MCP cuándo usar las herramientas de kandel. La búsqueda
@@ -111,4 +116,5 @@ func registerTools(srv *server.MCPServer, svc Services, allowlist map[string]boo
 	registerConflictTools(srv, svc, allowlist)
 	registerSyncTools(srv, svc, allowlist)
 	registerThreadTools(srv, svc, allowlist)
+	registerHandoffTools(srv, svc, allowlist)
 }

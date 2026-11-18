@@ -140,6 +140,10 @@ type UsageUseCases interface {
 // adaptador concreto hay detrás de cada interfaz) vive en cmd/kandel/main.go; la CLI solo ve
 // las interfaces.
 type App struct {
+	SessionLookup interface {
+		Get(context.Context, string) (*domain.Session, error)
+	}
+	Handoff     *service.HandoffService
 	Memory      MemoryUseCases
 	Session     SessionUseCases
 	Lifecycle   LifecycleUseCases

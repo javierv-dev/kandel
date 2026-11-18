@@ -56,12 +56,17 @@ func Run(ctx context.Context, event, version string, updates ports.ReleaseChecke
 	// invocationNum) → se parsean aparte. El resto son los de Claude Code (payload común).
 	switch event {
 	case "ag-pre-invocation":
-		return r.agPreInvocation(parseAgInput(stdin))
+		in := parseAgInput(stdin)
+		in.ConversationID = sessionKey("antigravity", in.ConversationID)
+		return r.agPreInvocation(in)
 	case "ag-stop":
-		return r.agStop(parseAgInput(stdin))
+		in := parseAgInput(stdin)
+		in.ConversationID = sessionKey("antigravity", in.ConversationID)
+		return r.agStop(in)
 	}
 
 	payload := parsePayload(stdin)
+	payload.SessionID = sessionKey("claude-code", payload.SessionID)
 	switch event {
 	case "session-start":
 		return r.sessionStart(payload)
@@ -74,6 +79,13 @@ func Run(ctx context.Context, event, version string, updates ports.ReleaseChecke
 	default:
 		return fmt.Errorf("hook desconocido: %q", event)
 	}
+}
+
+func sessionKey(app, external string) string {
+	if external == "" {
+		return ""
+	}
+	return app + ":" + external
 }
 
 // defaultInstalledVersion resuelve la versión de los assets instalados del agente primario

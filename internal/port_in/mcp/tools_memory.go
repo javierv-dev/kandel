@@ -264,12 +264,12 @@ func handleSearch(svc Services) server.ToolHandlerFunc {
 		}
 		items := make([]map[string]any, 0, len(results))
 		for _, r := range results {
-			items = append(items, map[string]any{
-				"id":    r.Memory.ID,
-				"score": r.Score,
-				"type":  string(r.Memory.Type),
-				"title": r.Memory.Title,
-			})
+			item := map[string]any{
+				"id": r.Memory.ID, "score": r.Score,
+				"type": string(r.Memory.Type), "title": r.Memory.Title,
+			}
+			addProvenance(ctx, svc, item, r.Memory.SessionID)
+			items = append(items, item)
 		}
 		return jsonResult(map[string]any{"results": items})
 	}
@@ -300,11 +300,9 @@ func handleContext(svc Services) server.ToolHandlerFunc {
 		}
 		items := make([]map[string]any, 0, len(memories))
 		for _, m := range memories {
-			items = append(items, map[string]any{
-				"id":    m.ID,
-				"type":  string(m.Type),
-				"title": m.Title,
-			})
+			item := map[string]any{"id": m.ID, "type": string(m.Type), "title": m.Title}
+			addProvenance(ctx, svc, item, m.SessionID)
+			items = append(items, item)
 		}
 		return jsonResult(map[string]any{"memories": items})
 	}
@@ -324,14 +322,12 @@ func handleGet(svc Services) server.ToolHandlerFunc {
 		if m == nil {
 			return mcp.NewToolResultError(fmt.Sprintf("memoria #%d no encontrada", id)), nil
 		}
-		return jsonResult(map[string]any{
-			"id":      m.ID,
-			"type":    string(m.Type),
-			"scope":   string(m.Scope),
-			"project": m.Project,
-			"title":   m.Title,
-			"content": m.Content,
-		})
+		item := map[string]any{
+			"id": m.ID, "type": string(m.Type), "scope": string(m.Scope),
+			"project": m.Project, "title": m.Title, "content": m.Content,
+		}
+		addProvenance(ctx, svc, item, m.SessionID)
+		return jsonResult(item)
 	}
 }
 

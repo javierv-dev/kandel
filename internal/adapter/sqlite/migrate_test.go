@@ -142,8 +142,12 @@ func TestMigrateV8PreservaLaTelemetriaExistente(t *testing.T) {
 	if err := NewUsageRepo(db).RecordInjected(ctx, []int64{id, id, id}, baseTime); err != nil {
 		t.Fatalf("RecordInjected: %v", err)
 	}
-	// Devuelve la base al esquema v7: sin las columnas de línea base y con user_version = 7.
+	// Devuelve la base al esquema v7, retirando también los objetos introducidos después de v8.
 	for _, stmt := range []string{
+		`DROP TABLE handoff_resumptions`,
+		`DROP TABLE handoff_checkpoints`,
+		`ALTER TABLE sessions DROP COLUMN application`,
+		`ALTER TABLE sessions DROP COLUMN conversation_id`,
 		`ALTER TABLE memory_usage DROP COLUMN base_injected`,
 		`ALTER TABLE memory_usage DROP COLUMN base_mentioned`,
 		`ALTER TABLE memory_usage DROP COLUMN baselined_at`,

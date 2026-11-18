@@ -102,6 +102,7 @@ func run(args []string) error {
 		service.WithRelations(relationRepo),
 		service.WithUsageRebaser(usageRepo))
 	sessionService := service.NewSessionService(sessionRepo, syncRepo, uow, clk)
+	handoffService := service.NewHandoffService(sqlite.NewHandoffRepo(db), sessionRepo, uow, clk)
 	lifecycleService := service.NewLifecycleService(memoryRepo)
 	promptService := service.NewPromptService(promptRepo, syncRepo, uow, clk)
 	conflictService := service.NewConflictService(memoryRepo, vectorIndex, embedder, relationRepo, agentRunner, uow, clk,
@@ -137,28 +138,30 @@ func run(args []string) error {
 	)
 
 	app := &cli.App{
-		Memory:      memoryService,
-		Session:     sessionService,
-		Lifecycle:   lifecycleService,
-		Embedding:   embeddingService,
-		Prompt:      promptService,
-		Doctor:      doctor,
-		Conflict:    conflictService,
-		Sync:        syncService,
-		Context:     contextService,
-		Usage:       usageService,
-		Project:     projectMigrator,
-		Seed:        seedService,
-		Thread:      threadService,
-		Maintenance: sqlite.NewMaintenance(db),
-		In:          os.Stdin,
-		Out:         os.Stdout,
-		Err:         os.Stderr,
-		Version:     version,
-		Commit:      commit,
-		BuildDate:   buildDate,
-		Schema:      schemaVersion,
-		Update:      updateChecker,
+		Memory:        memoryService,
+		Session:       sessionService,
+		SessionLookup: sessionRepo,
+		Handoff:       handoffService,
+		Lifecycle:     lifecycleService,
+		Embedding:     embeddingService,
+		Prompt:        promptService,
+		Doctor:        doctor,
+		Conflict:      conflictService,
+		Sync:          syncService,
+		Context:       contextService,
+		Usage:         usageService,
+		Project:       projectMigrator,
+		Seed:          seedService,
+		Thread:        threadService,
+		Maintenance:   sqlite.NewMaintenance(db),
+		In:            os.Stdin,
+		Out:           os.Stdout,
+		Err:           os.Stderr,
+		Version:       version,
+		Commit:        commit,
+		BuildDate:     buildDate,
+		Schema:        schemaVersion,
+		Update:        updateChecker,
 		// OpenHub abre la base del hub bajo demanda (solo `serve --sync-hub`), separada de la del
 		// cliente: el hub es un almacén sin lógica de dominio.
 		OpenHub: func(ctx context.Context) (hub.Store, func() error, error) {
