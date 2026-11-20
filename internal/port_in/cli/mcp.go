@@ -23,7 +23,7 @@ func (mcpCmd) Run(_ context.Context, args []string, app *App) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(app.Err)
 	tools := fs.String("tools", "", "perfiles o herramientas a registrar (agent|admin|all|mem_save,...)")
-	source := fs.String("source", "", "aplicación de esta instalación MCP (claude-code|antigravity)")
+	source := fs.String("source", "", "aplicación de esta instalación MCP (claude-code|antigravity|pi)")
 	fs.Usage = func() {
 		fmt.Fprintln(app.Err, "uso: kandel mcp [--tools agent|admin|all|<lista>]")
 		fs.PrintDefaults()
@@ -32,8 +32,8 @@ func (mcpCmd) Run(_ context.Context, args []string, app *App) error {
 		return err
 	}
 
-	if *source != "" && *source != "claude-code" && *source != "antigravity" {
-		return fmt.Errorf("--source debe ser claude-code o antigravity")
+	if *source != "" && *source != "claude-code" && *source != "antigravity" && *source != "pi" {
+		return fmt.Errorf("--source debe ser claude-code, antigravity o pi")
 	}
 	svc := mcpadapter.Services{
 		Source:    *source,

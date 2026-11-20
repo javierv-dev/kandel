@@ -28,10 +28,11 @@ type AgentModels struct {
 // modelsByAgent es el registro ÚNICO de agentes con contrato de CLI implementado (prompt por stdin →
 // JSON por stdout) y sus modelos. De aquí se derivan la allowlist (SupportedAgents/IsSupported) y la
 // elección de modelo en FromEnv/Generator. **Añadir un agente = una entrada aquí + su case en
-// FromEnv/Generator con el contrato de CLI concreto** (§22.E). Hoy solo Claude Code; Antigravity/Gemini
-// entran cuando se implemente su parser (hoja de ruta §18).
+// FromEnv/Generator con el contrato de CLI concreto** (§22.E). Hoy Claude Code y Pi Agent;
+// Antigravity/Gemini entran cuando se implemente su parser (hoja de ruta §18).
 var modelsByAgent = map[string]AgentModels{
 	"claude": {Judge: "haiku", Seed: "sonnet"},
+	"pi":     {Judge: "gemini-3-8-flash", Seed: "gemini-4-hydrogen"},
 }
 
 // SupportedAgents devuelve los agentes con contrato de CLI implementado, ordenados. Lo usa
@@ -74,6 +75,9 @@ func FromEnv() ports.AgentRunner {
 	case "claude":
 		return New("claude", "-p", "--output-format", "json",
 			"--model", modelsByAgent["claude"].Judge, "--max-turns", "1")
+	case "pi":
+		return New("pi", "--print", "--no-session", "--no-tools", "--no-mcp", "--no-extensions",
+			"--model", modelsByAgent["pi"].Judge)
 	default:
 		// Agente nombrado pero sin contrato de CLI implementado todavía: no se lanza a ciegas.
 		return unsupported{agent: agent}
@@ -115,6 +119,12 @@ func Generator(agent, model string) ports.AgentGenerator {
 		// (El juez de conflictos no necesita esto: su tarea es clasificar y no invoca tools.)
 		return New("claude", "-p", "--output-format", "json", "--model", model,
 			"--max-turns", seedMaxTurns, "--allowedTools", "", "--append-system-prompt", seedSystemPrompt)
+	case "pi":
+		if strings.TrimSpace(model) == "" {
+			model = modelsByAgent["pi"].Seed
+		}
+		return New("pi", "--print", "--no-session", "--no-tools", "--no-mcp", "--no-extensions",
+			"--append-system-prompt", seedSystemPrompt, "--model", model)
 	default:
 		// Agente nombrado pero sin contrato de CLI implementado todavía: no se lanza a ciegas.
 		return unsupported{agent: a}

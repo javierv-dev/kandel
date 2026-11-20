@@ -90,4 +90,19 @@ func TestAgentUseValidatesInstalledAndSupported(t *testing.T) {
 	if got := config.Get(dir, config.SeedModel.File); got != "sonnet" {
 		t.Errorf("seed_model tras use claude = %q, se esperaba sonnet", got)
 	}
+
+	// Instalado y soportado (pi): éxito, y agent_cli + seed_model quedan alineados a pi.
+	if err := config.AddAgent(dir, "pi"); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := Dispatch(context.Background(), []string{"agent", "use", "pi"}, app); err != nil {
+		t.Fatalf("agent use pi: %v", err)
+	}
+	if got := config.Get(dir, config.AgentCLI.File); got != "pi" {
+		t.Errorf("agent_cli tras use pi = %q, se esperaba pi", got)
+	}
+	if got := config.Get(dir, config.SeedModel.File); got != "gemini-4-hydrogen" {
+		t.Errorf("seed_model tras use pi = %q, se esperaba gemini-4-hydrogen", got)
+	}
 }
