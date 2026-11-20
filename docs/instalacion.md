@@ -13,7 +13,7 @@ Esta guía cubre la instalación normal. Si vas a publicar versiones, ver
 | Requisito | Para qué | Obligatorio |
 |---|---|---|
 | [Ollama](https://ollama.com) con el modelo de embeddings | Vectorizar memorias (buscar y guardar) | Sí |
-| Un agente soportado (`claude-code`, `antigravity`) | La integración que consume la memoria | Sí |
+| Un agente soportado (`claude-code`, `antigravity`, `pi`) | La integración que consume la memoria | Sí |
 | Go 1.26+ | Solo si compilas desde el código fuente | No |
 
 Descarga el modelo de embeddings por defecto:
@@ -73,23 +73,25 @@ go test ./...      # todo verde
 
 ```bash
 kandel install claude-code
+# o también:
+kandel install antigravity
+kandel install pi
 ```
 
-Agentes soportados: `claude-code`, `antigravity`. La operación es **idempotente**: reinstalar no
+Agentes soportados: `claude-code`, `antigravity`, `pi`. La operación es **idempotente**: reinstalar no
 duplica nada. Puedes instalar varios agentes; el primero queda como agente activo (el que juzga y
-siembra memorias) y se cambia con `kandel agent use <nombre>`.
+siembra memorias, hoy soportado para `claude` y `pi`) y se cambia con `kandel agent use <nombre>`.
 
 Qué escribe en disco (ejemplo con `claude-code`, `~` = tu carpeta de usuario):
 
-| Artefacto | Ruta |
-|---|---|
-| Skill principal | `~/.claude/skills/kandel/SKILL.md` |
-| Skill de seed (`/kandel-seed`) | `~/.claude/skills/kandel-seed/SKILL.md` |
-| Scripts de hook | `~/.claude/kandel/scripts/` |
-| Servidor MCP | `~/.claude.json` → `mcpServers.kandel` |
-| Hooks de ciclo de vida | `~/.claude/settings.json` |
-| Marca de versión de los assets | `~/.claude/kandel/VERSION` |
-| Config de kandel | `~/.kandel/config` |
+| Artefacto | Ruta (`claude-code`) | Ruta (`pi`) |
+|---|---|---|
+| Skill principal | `~/.claude/skills/kandel/SKILL.md` | `~/.pi/agent/skills/kandel/SKILL.md` |
+| Skill de seed (`/kandel-seed`) | `~/.claude/skills/kandel-seed/SKILL.md` | `~/.pi/agent/skills/kandel-seed/SKILL.md` |
+| Hooks / Extensión de ciclo de vida | `~/.claude/kandel/scripts/` + `~/.claude/settings.json` | `~/.pi/agent/extensions/kandel.ts` |
+| Servidor MCP | `~/.claude.json` → `mcpServers.kandel` | `~/.pi/agent/mcp.json` → `mcpServers.kandel` |
+| Marca de versión de los assets | `~/.claude/kandel/VERSION` | `~/.pi/agent/kandel/VERSION` |
+| Config de kandel | `~/.kandel/config` | `~/.kandel/config` |
 
 > **Reinicia el agente después de instalar.** Mientras una sesión siga abierta, usa la versión
 > vieja del binario y de los hooks que ya tenía cargados en memoria.
