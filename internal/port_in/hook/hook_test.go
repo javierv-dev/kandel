@@ -135,6 +135,7 @@ func TestRunRegistersDistinctAgentSessions(t *testing.T) {
 	}{
 		{"session-start", "claude-code", map[string]any{"session_id": "shared", "cwd": cwd}},
 		{"ag-pre-invocation", "antigravity", map[string]any{"conversationId": "shared", "workspacePaths": []string{cwd}}},
+		{"pi-session-start", "pi", map[string]any{"session_id": "shared", "cwd": cwd}},
 	} {
 		raw, err := json.Marshal(tc.input)
 		if err != nil {
@@ -584,5 +585,52 @@ func TestProtocoloDeArranqueConservaLoImprescindible(t *testing.T) {
 		if !strings.Contains(protocolSessionStart, want) {
 			t.Errorf("el protocolo de arranque ya no menciona %q", want)
 		}
+	}
+}
+
+func TestPiSessionStartPromptCompactionAndStop(t *testing.T) {
+	d := newStubDaemon(t)
+	d.relevantIDs = []int64{42}
+	isolateTempDir(t)
+	cwd := t.TempDir()
+
+	// 1. piSessionStart crea sesión e inyecta protocolo de Pi + contexto + metadatos.
+	rStart, outStart := newTestRunner(t, "pi-session-start", d)
+	rStart.running = "v2.0.0"
+	rStart.installedVersion = func() (string, bool, error) { return "v1.0.0", true, nil }
+	if err := rStart.piSessionStart(payload{SessionID: "pi:sess-1", CWD: cwd}); err != nil {
+		t.Fatalf("piSessionStart: %v", err)
+	}
+	if s := outStart.String(); !strings.Contains(s, "kandel install pi") || !strings.Contains(s, "tool_search") || !strings.Contains(s, "session_id: pi:sess-1") || !strings.Contains(s, "CONTEXTO DE PRUEBA") {
+		t.Errorf("salida de piSessionStart incompleta:\n%s", s)
+	}
+
+	// 2. piPrompt guarda el prompt y devuelve JSON con additionalContext cuando hay memorias relevantes.
+	rPrompt, outPrompt := newTestRunner(t, "pi-prompt", d)
+	if err := rPrompt.piPrompt(payload{SessionID: "pi:sess-1", CWD: cwd, Prompt: "recordar arquitectura"}); err != nil {
+		t.Fatalf("piPrompt: %v", err)
+	}
+	reqPrompt := d.find(t, "POST", "/prompts")
+	if reqPrompt.body["session_id"] != "pi:sess-1" || reqPrompt.body["content"] != "recordar arquitectura" {
+		t.Errorf("cuerpo de /prompts en piPrompt incorrecto: %+v", reqPrompt.body)
+	}
+	var resp struct {
+		AdditionalContext string `json:"additionalContext"`
+	}
+	if err := json.Unmarshal(outPrompt.Bytes(), &resp); err != nil {
+		t.Fatalf("salida de piPrompt no es JSON válido: %v\n%s", err, outPrompt.String())
+	}
+	if !strings.Contains(resp.AdditionalContext, "MEMORIA RELEVANTE") {
+		t.Errorf("piPrompt no devolvió la memoria relevante: %+v", resp)
+	}
+
+	// 3. piStop cierra la sesión enviando transcript_path e ids inyectados.
+	rStop, _ := newTestRunner(t, "pi-stop", d)
+	if err := rStop.sessionStop(payload{SessionID: "pi:sess-1", TranscriptPath: "/tmp/pi-sess.jsonl"}); err != nil {
+		t.Fatalf("piStop: %v", err)
+	}
+	reqStop := d.find(t, "POST", "/sessions/pi:sess-1/end")
+	if reqStop.body["transcript_path"] != "/tmp/pi-sess.jsonl" {
+		t.Errorf("piStop no envió transcript_path: %+v", reqStop.body)
 	}
 }

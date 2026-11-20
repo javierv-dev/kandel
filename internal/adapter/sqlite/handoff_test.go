@@ -26,7 +26,7 @@ func TestHandoffInterruptedBetweenCheckpoints(t *testing.T) {
 		return sessions, service.NewHandoffService(NewHandoffRepo(db), sessions, NewUnitOfWork(db), clock.System{})
 	}
 	sessions, h := bind(db)
-	for _, app := range []string{"claude-code", "antigravity"} {
+	for _, app := range []string{"claude-code", "antigravity", "pi"} {
 		if err := sessions.Create(ctx, domain.Session{ID: app + ":same", ConversationID: "same", Application: app, Directory: dir, Project: "api", StartedAt: baseTime}); err != nil {
 			t.Fatal(err)
 		}
@@ -69,6 +69,13 @@ func TestHandoffInterruptedBetweenCheckpoints(t *testing.T) {
 	next, err := h.Save(ctx, service.HandoffInput{SessionID: "antigravity:same", RequestID: "second", ParentID: first.ID, Title: in.Title, Content: "Repetí el test y corregí el montaje"})
 	if err != nil || next.TaskID != first.TaskID || next.Application != "antigravity" {
 		t.Fatalf("advance: %+v, %v", next, err)
+	}
+	if resumedInPi, err := h.Resume(ctx, "pi:same", next.ID); err != nil || resumedInPi.Application != "antigravity" {
+		t.Fatalf("resume in pi: %+v, %v", resumedInPi, err)
+	}
+	third, err := h.Save(ctx, service.HandoffInput{SessionID: "pi:same", RequestID: "third", ParentID: next.ID, Title: in.Title, Content: "Continuado en Pi Agent con pruebas en verde"})
+	if err != nil || third.TaskID != first.TaskID || third.Application != "pi" {
+		t.Fatalf("advance in pi: %+v, %v", third, err)
 	}
 	if _, err := h.Save(ctx, service.HandoffInput{SessionID: in.SessionID, RequestID: "stale", ParentID: first.ID, Title: in.Title, Content: "Concurrent change"}); err == nil {
 		t.Fatal("stale parent accepted")

@@ -87,6 +87,10 @@ func (r *runner) injectMetadata(project, sessionID string) {
 // de versión ni jerga assets/binario). Espeja diagnostic.InstalledAssetsCheck, pero proactivo en
 // cada arranque de sesión.
 func (r *runner) assetMismatchBanner() string {
+	return r.assetMismatchBannerFor("claude-code")
+}
+
+func (r *runner) assetMismatchBannerFor(agent string) string {
 	if r.installedVersion == nil {
 		return ""
 	}
@@ -94,13 +98,17 @@ func (r *runner) assetMismatchBanner() string {
 	if err != nil || !present || installed == r.running {
 		return ""
 	}
-	return "⚠️ kandel desactualizado — reinstala con `kandel install claude-code` y reinicia el agente.\n\n"
+	return fmt.Sprintf("⚠️ kandel desactualizado — reinstala con `kandel install %s` y reinicia el agente.\n\n", agent)
 }
 
 // updateBanner devuelve un aviso para el agente si hay una versión de kandel más nueva publicada
 // (§21 Eje 6). Devuelve "" si no hay checker, no se pudo determinar (offline/desactivado) o ya está
 // al día. Mensaje general y no técnico, coherente con el banner de desalineación.
 func (r *runner) updateBanner() string {
+	return r.updateBannerFor("claude-code")
+}
+
+func (r *runner) updateBannerFor(agent string) string {
 	if r.updates == nil {
 		return ""
 	}
@@ -108,7 +116,7 @@ func (r *runner) updateBanner() string {
 	if !newer {
 		return ""
 	}
-	return fmt.Sprintf("⚠️ Hay una versión nueva de kandel (%s) — descárgala y reinstala con `kandel install claude-code`.\n\n", latest)
+	return fmt.Sprintf("⚠️ Hay una versión nueva de kandel (%s) — descárgala y reinstala con `kandel install %s`.\n\n", latest, agent)
 }
 
 // postCompaction maneja el hook tras una compactación: asegura el daemon y la sesión, e inyecta un

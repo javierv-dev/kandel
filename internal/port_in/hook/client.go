@@ -144,7 +144,7 @@ func (c *client) postCrítico(ctx context.Context, path string, body any) (strin
 // posteriores cuelgan de un session_id inexistente.
 func (c *client) postSession(ctx context.Context, id, project, directory string) (string, error) {
 	body := map[string]string{"id": id, "project": project, "directory": directory}
-	if app, external, ok := strings.Cut(id, ":"); ok && (app == "claude-code" || app == "antigravity") {
+	if app, external, ok := strings.Cut(id, ":"); ok && (app == "claude-code" || app == "antigravity" || app == "pi") {
 		body["application"], body["conversation_id"] = app, external
 	}
 	return c.postCrítico(ctx, "/sessions", body)

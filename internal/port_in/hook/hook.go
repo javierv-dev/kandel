@@ -63,6 +63,23 @@ func Run(ctx context.Context, event, version string, updates ports.ReleaseChecke
 		in := parseAgInput(stdin)
 		in.ConversationID = sessionKey("antigravity", in.ConversationID)
 		return r.agStop(in)
+	case "pi-session-start":
+		payload := parsePayload(stdin)
+		payload.SessionID = sessionKey("pi", payload.SessionID)
+		r.installedVersion = func() (string, bool, error) { return installedVersionFor("pi") }
+		return r.piSessionStart(payload)
+	case "pi-post-compaction":
+		payload := parsePayload(stdin)
+		payload.SessionID = sessionKey("pi", payload.SessionID)
+		return r.postCompaction(payload)
+	case "pi-prompt":
+		payload := parsePayload(stdin)
+		payload.SessionID = sessionKey("pi", payload.SessionID)
+		return r.piPrompt(payload)
+	case "pi-stop":
+		payload := parsePayload(stdin)
+		payload.SessionID = sessionKey("pi", payload.SessionID)
+		return r.sessionStop(payload)
 	}
 
 	payload := parsePayload(stdin)
@@ -91,9 +108,14 @@ func sessionKey(app, external string) string {
 // defaultInstalledVersion resuelve la versión de los assets instalados del agente primario
 // (claude-code) a partir del home del usuario. Es el valor por defecto de runner.installedVersion.
 func defaultInstalledVersion() (string, bool, error) {
+	return installedVersionFor("claude-code")
+}
+
+// installedVersionFor resuelve la versión de los assets instalados del agente indicado.
+func installedVersionFor(agent string) (string, bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", false, err
 	}
-	return setup.InstalledVersion("claude-code", home)
+	return setup.InstalledVersion(agent, home)
 }
