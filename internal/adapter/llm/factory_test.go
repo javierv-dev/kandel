@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -74,8 +75,10 @@ func TestFromEnvAndGeneratorPi(t *testing.T) {
 	if r.name != "pi" {
 		t.Errorf("Runner.name = %q, se esperaba pi", r.name)
 	}
-	if len(r.args) == 0 || r.args[len(r.args)-1] != "gemini-3-8-flash" {
-		t.Errorf("Runner.args = %v, se esperaba modelo judge gemini-3-8-flash", r.args)
+	for _, wantArg := range []string{"--print", "--no-session", "--no-tools", "--no-mcp", "--no-extensions", "--model", "gemini-3-8-flash"} {
+		if !slices.Contains(r.args, wantArg) {
+			t.Errorf("Runner.args = %v, falta %q", r.args, wantArg)
+		}
 	}
 
 	g, ok := Generator("pi", "").(*Runner)

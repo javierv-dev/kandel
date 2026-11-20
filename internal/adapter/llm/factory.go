@@ -62,6 +62,7 @@ func SeedModelFor(agent string) string {
 // archivo ~/.kandel/config > vacío). Resolverlo por config es lo que permite al daemon `serve`
 // (arrancado por los hooks, sin heredar la env del entry MCP) ver el agente configurado:
 //   - "claude"            → CLI de Claude (claude -p --output-format json --model haiku --max-turns 1)
+//   - "pi"                → CLI de Pi (pi --print --no-session --no-tools --no-mcp --no-extensions --model gemini-3-8-flash)
 //   - vacío               → un runner noop que falla en Judge (no hay agente configurado)
 //   - cualquier otro valor → un runner que falla con un aviso claro (agente no soportado todavía)
 //
@@ -100,6 +101,7 @@ const seedSystemPrompt = "Eres un componente NO INTERACTIVO de la herramienta ka
 // instalador sabe qué CLI de agente corresponde (claude, gemini, …) y el seed razona mejor con un
 // modelo más capaz. Reglas:
 //   - "claude"             → claude -p (headless), sin tools, devuelve el JSON de candidatos
+//   - "pi"                 → pi --print (headless), sin tools/sesión/mcp/extensiones, devuelve el JSON de candidatos
 //   - vacío                → un Noop cuyo Generate falla con ErrCLINotInstalled (no hay agente)
 //   - cualquier otro valor → un generador que falla con un aviso claro (agente no soportado todavía)
 func Generator(agent, model string) ports.AgentGenerator {
