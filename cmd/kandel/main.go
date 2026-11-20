@@ -28,8 +28,8 @@ import (
 	"github.com/javierv-dev/kandel/internal/setup"
 )
 
-// installedAssetsProbe consulta la versión de los assets instalados del agente primario
-// (claude-code) para el chequeo de desalineación (§21 Eje 3). Cumple diagnostic.InstalledAssetsProbe.
+// installedAssetsProbe consulta la versión de los assets instalados de cualquier agente instalado
+// (claude-code, pi, antigravity) para el chequeo de desalineación (§21 Eje 3). Cumple diagnostic.InstalledAssetsProbe.
 type installedAssetsProbe struct{}
 
 func (installedAssetsProbe) InstalledVersion() (string, bool, error) {
@@ -37,8 +37,22 @@ func (installedAssetsProbe) InstalledVersion() (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	return setup.InstalledVersion("claude-code", home)
+	for _, name := range []string{"claude-code", "pi", "antigravity"} {
+		v, present, err := setup.InstalledVersion(name, home)
+		if err != nil {
+			return "", false, err
+		}
+		if present && v != thisVersion() {
+			return v, true, nil
+		}
+		if present {
+			return v, true, nil
+		}
+	}
+	return "", false, nil
 }
+
+func thisVersion() string { return version }
 
 // version, commit y buildDate se inyectan en tiempo de compilación con
 // -ldflags "-X main.version=... -X main.commit=... -X main.buildDate=..." (§21 Eje 5).
