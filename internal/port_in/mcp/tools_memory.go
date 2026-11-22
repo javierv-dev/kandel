@@ -62,7 +62,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("content", mcp.Required(), mcp.Description("Contenido, idealmente con formato **What**/**Why**/**Where**/**Learned**")),
 				mcp.WithString("type", mcp.Description(saveTypeDescription)),
 				mcp.WithString("scope", mcp.Description("Alcance: global solo si aplica a TODOS los proyectos; si no, project (def.).")),
-				mcp.WithString("project", mcp.Description(`Proyecto de la memoria. Obligatorio para scope=project (si falta, error); en scope=global se ignora (la global se desancla del proyecto). Usa el "Proyecto actual" inyectado.`)),
+				mcp.WithString("project", mcp.Description(`Proyecto(s) de la memoria. Obligatorio para scope=project (si falta, error); admite varios proyectos acoplados separados por coma (p. ej. "yaku-web,yaku-servidor") cuando la memoria aplica a ambos sin ser global. En scope=global se ignora (la global se desancla del proyecto). Usa el "Proyecto actual" inyectado.`)),
 				mcp.WithString("session_id", mcp.Description("Id de sesión a asociar")),
 				mcp.WithString("tool", mcp.Description("Herramienta que originó la memoria (procedencia), p. ej. kandel-seed")),
 				mcp.WithString("resolution", mcp.Description("Estado de pendiente: open (pendiente) o resolved; vacío = normal. Marca open si el usuario deja algo sin resolver.")),
@@ -125,6 +125,7 @@ func registerMemoryTools(srv *server.MCPServer, svc Services, allowlist map[stri
 				mcp.WithString("title", mcp.Description("Nuevo título")),
 				mcp.WithString("content", mcp.Description("Nuevo contenido")),
 				mcp.WithString("type", mcp.Description("Nuevo tipo")),
+				mcp.WithString("project", mcp.Description(`Nuevo proyecto o lista de proyectos acoplados separados por coma (p. ej. "yaku-web,yaku-servidor")`)),
 				mcp.WithString("scope", mcp.Description("Nuevo alcance")),
 				mcp.WithString("resolution", mcp.Description("Estado de pendiente: open (pendiente) o resolved; vacío = normal")),
 			),
@@ -353,6 +354,11 @@ func handleUpdate(svc Services) server.ToolHandlerFunc {
 		if _, ok := req.GetArguments()["type"]; ok {
 			v := domain.MemoryType(argString(req, "type"))
 			in.Type = &v
+			got = true
+		}
+		if _, ok := req.GetArguments()["project"]; ok {
+			v := argString(req, "project")
+			in.Project = &v
 			got = true
 		}
 		if _, ok := req.GetArguments()["scope"]; ok {

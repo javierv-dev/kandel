@@ -7,6 +7,7 @@ import (
 
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
+	"github.com/javierv-dev/kandel/internal/project"
 )
 
 // candidatePoolFactor amplía el número de vecinos pedidos al índice respecto al límite final,
@@ -482,13 +483,18 @@ func memoryQualityLess(a, b domain.Memory) bool {
 	return a.CreatedAt.Before(b.CreatedAt)
 }
 
-// comparable indica si dos normativas son comparables: mismo proyecto, o alguna es global (una
-// preferencia global aplica en todos los proyectos). Evita cruzar decisiones de proyectos distintos.
+// comparable indica si dos normativas son comparables: comparten al menos un proyecto, o alguna es
+// global (una preferencia global aplica en todos los proyectos). Evita cruzar decisiones de
+// proyectos disjuntos, pero sí compara memorias compartidas entre proyectos acoplados
+// (p. ej. "yaku-servidor,yaku-web" contra "yaku-web").
 func comparable(a, b domain.Memory) bool {
 	if a.Scope == domain.ScopeGlobal || b.Scope == domain.ScopeGlobal {
 		return true
 	}
-	return a.Project == b.Project
+	if a.Project == b.Project {
+		return true
+	}
+	return project.OverlapProjects(a.Project, b.Project)
 }
 
 // loadPair carga las dos memorias por id, devolviendo ErrNotFound si falta alguna.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
+	"github.com/javierv-dev/kandel/internal/project"
 )
 
 // MemoryRepo implementa ports.MemoryRepo sobre SQLite. Es persistencia pura: no
@@ -129,15 +130,21 @@ const supersededClause = ` AND NOT EXISTS (
 		  AND r.relation IN ('supersedes', 'duplicate')
 		  AND r.judgment_status = 'judged')`
 
+// projectMatchSQL evalúa si una columna TEXT con uno o varios proyectos separados por coma
+// (p. ej. "yaku-servidor,yaku-web") contiene el proyecto buscado como elemento exacto.
+func projectMatchSQL(column string) string {
+	return `',' || ifnull(` + column + `, '') || ',' LIKE '%,' || ? || ',%'`
+}
+
 // projectScopeClause acota una consulta a un proyecto INCLUYENDO siempre las memorias globales
-// (scope = 'global'), que por definición cruzan todos los proyectos: una preferencia del usuario
-// debe acompañar a cualquier proyecto, no quedar oculta por el filtro de proyecto. Un proyecto
-// vacío no filtra (todas). Espeja la misma regla que relation_repo (project = ? OR scope = 'global').
+// (scope = 'global'), que por definición cruzan todos los proyectos, y las memorias compartidas
+// entre varios proyectos acoplados que incluyan a project. Un proyecto vacío no filtra (todas).
+// Espeja la misma regla que relation_repo.
 func projectScopeClause(project string) (string, []any) {
 	if project == "" {
 		return "", nil
 	}
-	return ` AND (project = ? OR scope = 'global')`, []any{project}
+	return ` AND (` + projectMatchSQL("project") + ` OR scope = 'global')`, []any{project}
 }
 
 // Recent lista memorias por recencia (camino de navegación del usuario y base de las bandejas de la
@@ -316,16 +323,58 @@ func (r *MemoryRepo) SetConflictChecked(ctx context.Context, id int64) error {
 	return nil
 }
 
-// UpdateProject renombra el proyecto de todas las memorias vivas que lo tengan; devuelve cuántas
-// filas cambió. Lo usa la migración de proyecto (renombrado por cambio de remoto git).
+// UpdateProject renombra el proyecto de todas las memorias vivas que lo tengan (ya sea como único
+// proyecto o dentro de una lista de proyectos acoplados separados por coma); devuelve cuántas filas
+// cambió. Lo usa la migración de proyecto (renombrado por cambio de remoto git).
 func (r *MemoryRepo) UpdateProject(ctx context.Context, oldProject, newProject string) (int64, error) {
-	res, err := execFromCtx(ctx, r.db).ExecContext(ctx,
-		`UPDATE memories SET project = ? WHERE project = ? AND deleted_at IS NULL`, newProject, oldProject)
+	exec := execFromCtx(ctx, r.db)
+	rows, err := exec.QueryContext(ctx,
+		`SELECT id, ifnull(project, '') FROM memories WHERE deleted_at IS NULL AND `+projectMatchSQL("project"),
+		oldProject,
+	)
 	if err != nil {
-		return 0, fmt.Errorf("sqlite: renombrar proyecto en memorias: %w", err)
+		return 0, fmt.Errorf("sqlite: buscar memorias para renombrar proyecto: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	return n, nil
+	type row struct {
+		id      int64
+		project string
+	}
+	var matches []row
+	for rows.Next() {
+		var m row
+		if err := rows.Scan(&m.id, &m.project); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("sqlite: leer memoria para renombrar proyecto: %w", err)
+		}
+		matches = append(matches, m)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	var updated int64
+	for _, m := range matches {
+		parts := project.NormalizeList(m.project)
+		for i, p := range parts {
+			if p == oldProject {
+				parts[i] = newProject
+			}
+		}
+		replaced := project.NormalizeProjects(strings.Join(parts, ","))
+		res, err := exec.ExecContext(ctx,
+			`UPDATE memories SET project = ? WHERE id = ? AND deleted_at IS NULL`,
+			replaced, m.id,
+		)
+		if err != nil {
+			return updated, fmt.Errorf("sqlite: renombrar proyecto en memorias: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		updated += n
+	}
+	return updated, nil
 }
 
 // ─── helpers internos ────────────────────────────────────────────────────────
@@ -376,22 +425,27 @@ func normalizeLimit(limit int) int {
 	return limit
 }
 
-// Projects devuelve la lista de nombres de proyectos únicos de las memorias vivas, ordenada alfabéticamente.
+// Projects devuelve la lista de nombres de proyectos únicos de las memorias vivas, ordenada
+// alfabéticamente. Si una memoria pertenece a varios proyectos acoplados ("yaku-servidor,yaku-web"),
+// desglosa cada proyecto individualmente.
 func (r *MemoryRepo) Projects(ctx context.Context) ([]string, error) {
-	const q = `SELECT DISTINCT project FROM memories WHERE deleted_at IS NULL AND project != '' ORDER BY project ASC`
+	const q = `SELECT DISTINCT project FROM memories WHERE deleted_at IS NULL AND ifnull(project, '') != '' ORDER BY project ASC`
 	rows, err := execFromCtx(ctx, r.db).QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: projects: %w", err)
 	}
 	defer rows.Close()
 
-	var projects []string
+	var raw []string
 	for rows.Next() {
 		var p string
 		if err := rows.Scan(&p); err != nil {
 			return nil, err
 		}
-		projects = append(projects, p)
+		raw = append(raw, p)
 	}
-	return projects, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return project.NormalizeList(strings.Join(raw, ",")), nil
 }

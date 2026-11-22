@@ -707,3 +707,68 @@ func TestSaveSinSupersedesNoCreaRelacion(t *testing.T) {
 		t.Errorf("sin supersedes no debía crearse ninguna relación, hay %d", len(rels.items))
 	}
 }
+
+func TestSaveMultiProjectCanonicalNormalizationAndDedupe(t *testing.T) {
+	svc, obs, _ := newMemoryFixture()
+	ctx := context.Background()
+
+	in := baseSaveInput()
+	in.Project = " Yaku-Web , yaku-servidor , yaku-web "
+	res1, err := svc.Save(ctx, in)
+	if err != nil {
+		t.Fatalf("Save 1: %v", err)
+	}
+	if res1.Memory.Project != "yaku-servidor,yaku-web" {
+		t.Errorf("project canónico = %q, se esperaba yaku-servidor,yaku-web", res1.Memory.Project)
+	}
+
+	// El segundo guardado llega con el orden invertido: debe colapsar al mismo string canónico y
+	// disparar el dedupe exacto dentro de la ventana.
+	in2 := baseSaveInput()
+	in2.Project = "yaku-servidor, yaku-web"
+	res2, err := svc.Save(ctx, in2)
+	if err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+	if res2.Outcome != SaveDuplicate {
+		t.Errorf("el segundo guardado con orden inverso debe ser duplicate, fue %v", res2.Outcome)
+	}
+	if len(obs.items) != 1 {
+		t.Errorf("debe existir 1 sola memoria, hay %d", len(obs.items))
+	}
+}
+
+func TestUpdateProjectCoupledAndScopeValidation(t *testing.T) {
+	svc, _, _ := newMemoryFixture()
+	ctx := context.Background()
+
+	res, err := svc.Save(ctx, baseSaveInput())
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	coupled := "yaku-web, yaku-servidor"
+	updated, err := svc.Update(ctx, res.Memory.ID, UpdateInput{Project: &coupled})
+	if err != nil {
+		t.Fatalf("Update coupled project: %v", err)
+	}
+	if updated.Project != "yaku-servidor,yaku-web" {
+		t.Errorf("Project tras Update = %q, se esperaba yaku-servidor,yaku-web", updated.Project)
+	}
+
+	// Vaciar el proyecto mientras sigue en scope=project debe fallar con ErrAmbiguousProject.
+	empty := " , "
+	if _, err := svc.Update(ctx, res.Memory.ID, UpdateInput{Project: &empty}); err != domain.ErrAmbiguousProject {
+		t.Errorf("Update con project vacío en scope=project debe dar ErrAmbiguousProject, fue %v", err)
+	}
+
+	// Pasar a scope=global desancla el proyecto.
+	glob := domain.ScopeGlobal
+	updatedGlob, err := svc.Update(ctx, res.Memory.ID, UpdateInput{Scope: &glob})
+	if err != nil {
+		t.Fatalf("Update a global: %v", err)
+	}
+	if updatedGlob.Project != "" {
+		t.Errorf("al pasar a scope=global el proyecto debe limpiarse, quedó %q", updatedGlob.Project)
+	}
+}

@@ -763,3 +763,91 @@ func TestSearchExcludeSessionID(t *testing.T) {
 		t.Fatalf("sin ExcludeSessionID esperaba 2, obtuve %d", len(todas))
 	}
 }
+
+func TestMultiProjectCoupledQueriesAndRename(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	shared := sampleMemory()
+	shared.SyncID = "mem-shared"
+	shared.Project = "yaku-servidor,yaku-web"
+	shared.Content = "trabajar en master"
+	shared.Resolution = domain.ResolutionOpen
+	sharedID, err := repo.Add(ctx, shared)
+	if err != nil {
+		t.Fatalf("Add shared: %v", err)
+	}
+
+	onlyWeb := sampleMemory()
+	onlyWeb.SyncID = "mem-web"
+	onlyWeb.Project = "yaku-web"
+	onlyWeb.Content = "solo web"
+	if _, err := repo.Add(ctx, onlyWeb); err != nil {
+		t.Fatalf("Add onlyWeb: %v", err)
+	}
+
+	// Recent filtrando por cualquiera de los dos proyectos acoplados recupera la compartida.
+	for _, p := range []string{"yaku-web", "yaku-servidor"} {
+		got, err := repo.Recent(ctx, ports.RecentQuery{Project: p, Limit: 10})
+		if err != nil {
+			t.Fatalf("Recent(%s): %v", p, err)
+		}
+		found := false
+		for _, m := range got {
+			if m.ID == sharedID {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("Recent(%s) debía incluir la memoria compartida %d, devolvió %+v", p, sharedID, got)
+		}
+	}
+
+	// Un proyecto prefijo ("yaku") o ajeno ("kandel") NO debe recuperar la memoria compartida.
+	for _, p := range []string{"yaku", "kandel"} {
+		got, err := repo.Recent(ctx, ports.RecentQuery{Project: p, Limit: 10})
+		if err != nil {
+			t.Fatalf("Recent(%s): %v", p, err)
+		}
+		if len(got) != 0 {
+			t.Errorf("Recent(%s) no debía devolver memorias de yaku-web/yaku-servidor, devolvió %+v", p, got)
+		}
+	}
+
+	// Search y PendingResolution también encuentran la memoria compartida desde ambos proyectos.
+	neighbors := []ports.Neighbor{{MemoryID: sharedID, Score: 0.91}}
+	for _, p := range []string{"yaku-web", "yaku-servidor"} {
+		res, err := repo.Search(ctx, ports.SearchQuery{Project: p, Limit: 10}, neighbors)
+		if err != nil || len(res) != 1 {
+			t.Errorf("Search(%s) debía devolver la memoria compartida, dio %+v (err=%v)", p, res, err)
+		}
+		pend, err := repo.PendingResolution(ctx, p, 10)
+		if err != nil || len(pend) != 1 {
+			t.Errorf("PendingResolution(%s) debía devolver la memoria compartida, dio %+v (err=%v)", p, pend, err)
+		}
+	}
+
+	// Projects() desglosa la cadena CSV en proyectos individuales ordenados y sin duplicar.
+	projs, err := repo.Projects(ctx)
+	if err != nil {
+		t.Fatalf("Projects: %v", err)
+	}
+	if len(projs) != 2 || projs[0] != "yaku-servidor" || projs[1] != "yaku-web" {
+		t.Errorf("Projects() debía desglosar [yaku-servidor yaku-web], devolvió %v", projs)
+	}
+
+	// UpdateProject renombra un proyecto tanto en memorias simples como dentro de listas acopladas.
+	n, err := repo.UpdateProject(ctx, "yaku-web", "yaku-frontend")
+	if err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("UpdateProject debía actualizar 2 filas (shared y onlyWeb), actualizó %d", n)
+	}
+	gotShared, _ := repo.Get(ctx, sharedID)
+	if gotShared.Project != "yaku-frontend,yaku-servidor" {
+		t.Errorf("shared.Project tras renombrar = %q, se esperaba yaku-frontend,yaku-servidor", gotShared.Project)
+	}
+}

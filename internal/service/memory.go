@@ -60,6 +60,7 @@ type UpdateInput struct {
 	Type       *domain.MemoryType
 	Title      *string
 	Content    *string
+	Project    *string
 	Scope      *domain.Scope
 	Resolution *domain.Resolution
 }
@@ -525,8 +526,17 @@ func (m *MemoryService) Update(ctx context.Context, id int64, in UpdateInput) (d
 			o.Content = newContent
 			o.NormalizedHash = hashContent(o.Content)
 		}
+		if in.Project != nil {
+			o.Project = normalizeProject(*in.Project)
+		}
 		if in.Scope != nil {
 			o.Scope = *in.Scope
+		}
+		if o.Scope == domain.ScopeGlobal {
+			o.Project = ""
+		}
+		if o.Scope == domain.ScopeProject && o.Project == "" {
+			return domain.ErrAmbiguousProject
 		}
 		if in.Resolution != nil {
 			o.Resolution = *in.Resolution

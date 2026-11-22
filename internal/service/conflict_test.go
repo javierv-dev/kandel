@@ -561,3 +561,17 @@ func TestComparePairIdempotent(t *testing.T) {
 		t.Fatalf("comparar el par dos veces debe mantener UNA relación, hay %d", len(rels.items))
 	}
 }
+
+func TestComparableCoupledProjects(t *testing.T) {
+	shared := domain.Memory{Scope: domain.ScopeProject, Project: "yaku-servidor,yaku-web"}
+	web := domain.Memory{Scope: domain.ScopeProject, Project: "yaku-web"}
+	srv := domain.Memory{Scope: domain.ScopeProject, Project: "yaku-servidor"}
+	other := domain.Memory{Scope: domain.ScopeProject, Project: "kandel"}
+
+	if !comparable(shared, web) || !comparable(shared, srv) {
+		t.Error("una memoria compartida entre proyectos acoplados debe ser comparable con cada proyecto miembro")
+	}
+	if comparable(shared, other) || comparable(web, srv) {
+		t.Error("proyectos disjuntos no deben ser comparables entre sí")
+	}
+}

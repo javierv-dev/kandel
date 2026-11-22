@@ -117,6 +117,7 @@ type updateMemoryRequest struct {
 	Type       *string `json:"type"`
 	Title      *string `json:"title"`
 	Content    *string `json:"content"`
+	Project    *string `json:"project"`
 	Scope      *string `json:"scope"`
 	Resolution *string `json:"resolution"`
 }
@@ -142,6 +143,9 @@ func handleUpdateMemory(svc Services) http.HandlerFunc {
 		if body.Type != nil {
 			t := domain.MemoryType(*body.Type)
 			in.Type = &t
+		}
+		if body.Project != nil {
+			in.Project = body.Project
 		}
 		if body.Scope != nil {
 			s, err := domain.ParseScope(*body.Scope)

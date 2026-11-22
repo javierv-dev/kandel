@@ -233,6 +233,21 @@ func TestCountOpenConflicts(t *testing.T) {
 	if n, _ := rel.CountOpenConflicts(ctx, "proj"); n != 0 {
 		t.Errorf("con una memoria borrada el conflicto no debe contarse, dio %d", n)
 	}
+
+	// Un conflicto que involucra una memoria compartida ("yaku-servidor,yaku-web") se cuenta en ambos proyectos acoplados.
+	add("mem-y1", "yaku-servidor,yaku-web", domain.ScopeProject)
+	add("mem-y2", "yaku-web", domain.ScopeProject)
+	if _, err := rel.Insert(ctx, judgedRelation("rel-y", "mem-y1", "mem-y2", domain.RelationConflictsWith)); err != nil {
+		t.Fatalf("Insert rel-y: %v", err)
+	}
+	for _, p := range []string{"yaku-web", "yaku-servidor"} {
+		if n, _ := rel.CountOpenConflicts(ctx, p); n != 1 {
+			t.Errorf("CountOpenConflicts(%s) debe contar el conflicto compartido (1), dio %d", p, n)
+		}
+	}
+	if n, _ := rel.CountOpenConflicts(ctx, "yaku"); n != 0 {
+		t.Errorf("CountOpenConflicts(yaku) no debe coincidir por prefijo, dio %d", n)
+	}
 }
 
 // idOf resuelve el id local de una memoria por su sync_id (helper de test).

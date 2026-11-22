@@ -19,11 +19,12 @@ const defaultSyncTarget = "remote"
 // sourceLocal identifica que la mutación se originó en esta máquina.
 const sourceLocal = "local"
 
-// normalizeProject aplica la normalización canónica del nombre de proyecto. Delega en la regla
-// única de kandel (internal/project): minúsculas, sin espacios sobrantes y guiones/guiones bajos
-// consecutivos colapsados. Una cadena vacía se mantiene vacía (sin proyecto).
+// normalizeProject aplica la normalización canónica del nombre de proyecto (o lista de proyectos
+// acoplados separados por coma). Delega en la regla única de kandel (internal/project): minúsculas,
+// sin espacios sobrantes, guiones/guiones bajos consecutivos colapsados, deduplicados y ordenados
+// alfabéticamente cuando son varios. Una cadena vacía se mantiene vacía (sin proyecto).
 func normalizeProject(name string) string {
-	return project.Normalize(name)
+	return project.NormalizeProjects(name)
 }
 
 // hashContent calcula la huella del contenido normalizado (minúsculas, espacios colapsados a uno).

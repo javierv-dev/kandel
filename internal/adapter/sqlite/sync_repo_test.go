@@ -193,6 +193,20 @@ func TestSyncConflicts(t *testing.T) {
 	if n, _ := repo.CountConflicts(ctx, ""); n != 1 {
 		t.Errorf("tras borrar debe quedar 1, hay %d", n)
 	}
+
+	// Un conflicto en una memoria de proyectos acoplados se cuenta y se lista en cualquiera de los dos.
+	repo.RecordConflict(ctx, domain.SyncConflict{
+		SyncID: "m-coupled", Project: "yaku-servidor,yaku-web", IncomingOp: domain.SyncOpUpsert,
+		Incoming: []byte(`{}`), IncomingAt: baseTime,
+	})
+	for _, p := range []string{"yaku-web", "yaku-servidor"} {
+		if n, _ := repo.CountConflicts(ctx, p); n != 1 {
+			t.Errorf("CountConflicts(%s) debía dar 1, dio %d", p, n)
+		}
+		if l, _ := repo.ListConflicts(ctx, p); len(l) != 1 || l[0].SyncID != "m-coupled" {
+			t.Errorf("ListConflicts(%s) debía traer m-coupled, trajo %+v", p, l)
+		}
+	}
 }
 
 func TestSyncLease(t *testing.T) {

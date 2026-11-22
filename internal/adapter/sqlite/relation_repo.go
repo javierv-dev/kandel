@@ -114,13 +114,14 @@ func (r *RelationRepo) FindJudgedPair(ctx context.Context, a, b string) (*domain
 }
 
 // CountOpenConflicts cuenta los conflictos reales sin resolver del proyecto: relaciones conflicts_with
-// juzgadas cuyas dos memorias siguen vivas y donde al menos un lado pertenece al proyecto o es global.
+// juzgadas cuyas dos memorias siguen vivas y donde al menos un lado pertenece al proyecto (como único
+// o dentro de proyectos acoplados) o es global.
 func (r *RelationRepo) CountOpenConflicts(ctx context.Context, project string) (int, error) {
-	const q = `SELECT COUNT(*) FROM memory_relations r
+	q := `SELECT COUNT(*) FROM memory_relations r
 		JOIN memories s ON s.sync_id = r.source_id AND s.deleted_at IS NULL
 		JOIN memories t ON t.sync_id = r.target_id AND t.deleted_at IS NULL
 		WHERE r.relation = 'conflicts_with' AND r.judgment_status = 'judged'
-		  AND (s.project = ? OR t.project = ? OR s.scope = 'global' OR t.scope = 'global')`
+		  AND (` + projectMatchSQL("s.project") + ` OR ` + projectMatchSQL("t.project") + ` OR s.scope = 'global' OR t.scope = 'global')`
 	var n int
 	if err := execFromCtx(ctx, r.db).QueryRowContext(ctx, q, project, project).Scan(&n); err != nil {
 		return 0, fmt.Errorf("sqlite: contar conflictos abiertos: %w", err)

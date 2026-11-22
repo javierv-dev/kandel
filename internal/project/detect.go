@@ -145,3 +145,78 @@ func Normalize(name string) string {
 	}
 	return n
 }
+
+// NormalizeList parte una cadena de proyectos separados por coma, normaliza cada elemento,
+// descarta vacíos, deduplica y devuelve la lista ordenada alfabéticamente. Una entrada vacía
+// (o solo comas/espacios) devuelve nil.
+func NormalizeList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]struct{}, len(parts))
+	var out []string
+	for _, p := range parts {
+		n := Normalize(p)
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	if len(out) > 1 {
+		for i := 0; i < len(out)-1; i++ {
+			for j := i + 1; j < len(out); j++ {
+				if out[j] < out[i] {
+					out[i], out[j] = out[j], out[i]
+				}
+			}
+		}
+	}
+	return out
+}
+
+// NormalizeProjects devuelve la representación canónica CSV de uno o varios proyectos
+// (normalizados, deduplicados y ordenados alfabéticamente, separados por coma sin espacios).
+// Por ejemplo: "Yaku-Web, yaku-servidor, yaku-web" -> "yaku-servidor,yaku-web".
+func NormalizeProjects(raw string) string {
+	list := NormalizeList(raw)
+	if len(list) == 0 {
+		return ""
+	}
+	return strings.Join(list, ",")
+}
+
+// ContainsProject indica si target (normalizado) forma parte de la lista CSV de proyectos.
+func ContainsProject(csvProjects, target string) bool {
+	t := Normalize(target)
+	if t == "" {
+		return false
+	}
+	for _, p := range NormalizeList(csvProjects) {
+		if p == t {
+			return true
+		}
+	}
+	return false
+}
+
+// OverlapProjects indica si dos listas CSV de proyectos comparten al menos un proyecto.
+func OverlapProjects(csvA, csvB string) bool {
+	listA := NormalizeList(csvA)
+	listB := NormalizeList(csvB)
+	if len(listA) == 0 || len(listB) == 0 {
+		return false
+	}
+	for _, a := range listA {
+		for _, b := range listB {
+			if a == b {
+				return true
+			}
+		}
+	}
+	return false
+}

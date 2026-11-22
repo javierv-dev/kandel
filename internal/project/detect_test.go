@@ -73,3 +73,29 @@ func TestNormalizeCollapsesSeparators(t *testing.T) {
 		t.Errorf("Normalize = %q, se esperaba my-cool_repo", got)
 	}
 }
+
+func TestNormalizeProjectsMulti(t *testing.T) {
+	got := NormalizeProjects(" Yaku-Web , yaku-servidor , yaku-web , , ")
+	if got != "yaku-servidor,yaku-web" {
+		t.Errorf("NormalizeProjects = %q, se esperaba yaku-servidor,yaku-web", got)
+	}
+	if empty := NormalizeProjects(" , , "); empty != "" {
+		t.Errorf("NormalizeProjects vacío = %q, se esperaba vacío", empty)
+	}
+}
+
+func TestContainsAndOverlapProjects(t *testing.T) {
+	csv := "yaku-servidor,yaku-web"
+	if !ContainsProject(csv, "Yaku-Web") || !ContainsProject(csv, "yaku-servidor") {
+		t.Errorf("ContainsProject debía encontrar ambos en %q", csv)
+	}
+	if ContainsProject(csv, "yaku") || ContainsProject(csv, "kandel") || ContainsProject(csv, "") {
+		t.Errorf("ContainsProject no debe coincidir por prefijo ni proyecto ajeno en %q", csv)
+	}
+	if !OverlapProjects("yaku-web", "yaku-servidor,yaku-web") {
+		t.Error("OverlapProjects debía detectar intersección")
+	}
+	if OverlapProjects("yaku-web,yaku-servidor", "kandel,borrador") {
+		t.Error("OverlapProjects no debe detectar intersección entre conjuntos disjuntos")
+	}
+}

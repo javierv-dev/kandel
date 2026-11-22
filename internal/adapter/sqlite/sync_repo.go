@@ -136,7 +136,7 @@ func (r *SyncRepo) ListConflicts(ctx context.Context, project string) ([]domain.
 	q := `SELECT sync_id, project, op, payload, incoming_at, detected_at FROM sync_conflicts`
 	var args []any
 	if project != "" {
-		q += ` WHERE project = ?`
+		q += ` WHERE ` + projectMatchSQL("project")
 		args = append(args, project)
 	}
 	q += ` ORDER BY detected_at ASC`
@@ -182,7 +182,7 @@ func (r *SyncRepo) CountConflicts(ctx context.Context, project string) (int, err
 	q := `SELECT COUNT(*) FROM sync_conflicts`
 	var args []any
 	if project != "" {
-		q += ` WHERE project = ?`
+		q += ` WHERE ` + projectMatchSQL("project")
 		args = append(args, project)
 	}
 	var n int

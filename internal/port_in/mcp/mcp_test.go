@@ -207,6 +207,23 @@ func TestHandleRestore(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateTranslatesProject(t *testing.T) {
+	mem := &fakeMemory{}
+	svc := Services{Memory: mem}
+	res, err := handleUpdate(svc)(context.Background(), callWith(map[string]any{
+		"id": float64(786), "project": "yaku-web,yaku-servidor",
+	}))
+	if err != nil {
+		t.Fatalf("handleUpdate error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("handleUpdate devolvió error de tool: %v", res)
+	}
+	if mem.lastUpdate.Project == nil || *mem.lastUpdate.Project != "yaku-web,yaku-servidor" {
+		t.Errorf("project en mem_update mal traducido: %+v", mem.lastUpdate.Project)
+	}
+}
+
 func TestHandleSavePrompt(t *testing.T) {
 	pr := &fakePrompt{}
 	svc := Services{Prompt: pr}
@@ -526,6 +543,7 @@ func textOf(t *testing.T, res *mcp.CallToolResult) string {
 type fakeMemory struct {
 	lastSave   service.SaveInput
 	lastSearch ports.SearchQuery
+	lastUpdate service.UpdateInput
 	saveResult service.SaveResult
 	saveCount  int
 	getResult  *domain.Memory
@@ -546,7 +564,8 @@ func (f *fakeMemory) Search(_ context.Context, q ports.SearchQuery) ([]domain.Se
 	f.lastSearch = q
 	return nil, nil
 }
-func (f *fakeMemory) Update(_ context.Context, id int64, _ service.UpdateInput) (domain.Memory, error) {
+func (f *fakeMemory) Update(_ context.Context, id int64, in service.UpdateInput) (domain.Memory, error) {
+	f.lastUpdate = in
 	return domain.Memory{ID: id}, nil
 }
 func (f *fakeMemory) Delete(_ context.Context, id int64) error {

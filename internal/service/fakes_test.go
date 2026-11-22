@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/javierv-dev/kandel/internal/domain"
 	"github.com/javierv-dev/kandel/internal/ports"
+	"github.com/javierv-dev/kandel/internal/project"
 )
 
 // fixedClock es un reloj inmóvil para tests deterministas.
@@ -131,7 +133,7 @@ func (f *fakeObs) Recent(_ context.Context, q ports.RecentQuery) ([]domain.Memor
 		if o.IsDeleted() {
 			continue
 		}
-		if q.Project != "" && o.Project != q.Project {
+		if q.Project != "" && o.Scope != domain.ScopeGlobal && !project.ContainsProject(o.Project, q.Project) {
 			continue
 		}
 		if q.Scope != "" && o.Scope != q.Scope {
@@ -173,7 +175,7 @@ func (f *fakeObs) Search(_ context.Context, q ports.SearchQuery, neighbors []por
 		if !ok || o.IsDeleted() {
 			continue
 		}
-		if q.Project != "" && o.Project != q.Project {
+		if q.Project != "" && o.Scope != domain.ScopeGlobal && !project.ContainsProject(o.Project, q.Project) {
 			continue
 		}
 		if q.Scope != "" && o.Scope != q.Scope {
@@ -204,10 +206,10 @@ func (f *fakeObs) FindByHash(_ context.Context, project string, scope domain.Sco
 	return best, nil
 }
 
-func (f *fakeObs) PendingResolution(_ context.Context, project string, limit int) ([]domain.Memory, error) {
+func (f *fakeObs) PendingResolution(_ context.Context, proj string, limit int) ([]domain.Memory, error) {
 	var out []domain.Memory
 	for _, o := range f.items {
-		if o.IsDeleted() || (project != "" && o.Project != project) {
+		if o.IsDeleted() || (proj != "" && o.Scope != domain.ScopeGlobal && !project.ContainsProject(o.Project, proj)) {
 			continue
 		}
 		// La bitácora abierta no es un pendiente por resolver: se excluye (igual que el repo real).
@@ -262,10 +264,16 @@ func (f *fakeObs) SetConflictChecked(_ context.Context, id int64) error {
 func (f *fakeObs) UpdateProject(_ context.Context, oldProject, newProject string) (int64, error) {
 	var n int64
 	for id, o := range f.items {
-		if o.IsDeleted() || o.Project != oldProject {
+		if o.IsDeleted() || !project.ContainsProject(o.Project, oldProject) {
 			continue
 		}
-		o.Project = newProject
+		parts := project.NormalizeList(o.Project)
+		for i, p := range parts {
+			if p == oldProject {
+				parts[i] = newProject
+			}
+		}
+		o.Project = project.NormalizeProjects(strings.Join(parts, ","))
 		f.items[id] = o
 		n++
 	}
@@ -273,20 +281,14 @@ func (f *fakeObs) UpdateProject(_ context.Context, oldProject, newProject string
 }
 
 func (f *fakeObs) Projects(_ context.Context) ([]string, error) {
-	seen := map[string]struct{}{}
-	var projects []string
+	var raw []string
 	for _, o := range f.items {
 		if o.IsDeleted() || o.Project == "" {
 			continue
 		}
-		if _, ok := seen[o.Project]; ok {
-			continue
-		}
-		seen[o.Project] = struct{}{}
-		projects = append(projects, o.Project)
+		raw = append(raw, o.Project)
 	}
-	sort.Strings(projects)
-	return projects, nil
+	return project.NormalizeList(strings.Join(raw, ",")), nil
 }
 
 // fakePrompts es un PromptRepo en memoria.
