@@ -169,6 +169,7 @@ func firstNonEmpty(values ...string) string {
 // Traduce el "ejecutable no encontrado" a ErrCLINotInstalled.
 func defaultRunCLI(ctx context.Context, name string, args []string, stdin string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	hideWindow(cmd)
 	cmd.Stdin = strings.NewReader(stdin)
 	out, err := cmd.Output()
 	if err != nil {
