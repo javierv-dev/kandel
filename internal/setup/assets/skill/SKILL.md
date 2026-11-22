@@ -23,8 +23,8 @@ Tools principales:
 - `mem_get`, `mem_update`
 - `mem_save_prompt`
 
-**Plan B**: si las tools no están disponibles inesperadamente, ejecuta `kandel install claude-code`
-otra vez y reinicia Claude Code. Repara la config del MCP, los hooks y la skill.
+**Plan B**: si las tools no están disponibles inesperadamente, ejecuta `kandel install <agente>`
+otra vez y reinicia el agente. Repara la config del MCP, los hooks y la skill.
 
 Tools adicionales (diferidas — cárgalas con ToolSearch solo cuando las necesites):
 - `mem_pending`, `mem_current_project`
