@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -38,9 +39,9 @@ func WithHTTPClient(c *http.Client) Option {
 	return func(cl *Client) { cl.client = c }
 }
 
-// NewClient crea el cliente contra el host dado (p. ej. http://localhost:8766). host vacío deja un
-// cliente que fallará al llamar: la configuración decide si el sync está habilitado, no este
-// constructor.
+// NewClient crea el cliente contra el host dado (p. ej. http://localhost:8766 o
+// https://hub.ejemplo.com). host vacío deja un cliente que fallará al llamar: la configuración decide
+// si el sync está habilitado, no este constructor.
 func NewClient(host string, opts ...Option) *Client {
 	c := &Client{
 		host:   strings.TrimRight(strings.TrimSpace(host), "/"),
@@ -50,6 +51,43 @@ func NewClient(host string, opts ...Option) *Client {
 		opt(c)
 	}
 	return c
+}
+
+// ValidateHubURL verifica que la URL del hub use transporte cifrado (https://) para hosts remotos.
+// Solo se permite http:// sin TLS en direcciones loopback (localhost, 127.0.0.1, ::1) para evitar
+// exponer el sync_token en texto plano por la red.
+func ValidateHubURL(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return fmt.Errorf("httpsync: url del hub vacía")
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("httpsync: url del hub inválida %q: %w", raw, err)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("httpsync: url del hub sin host %q", raw)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if isLoopbackHost(host) {
+			return nil
+		}
+		return fmt.Errorf("httpsync: transporte inseguro %q: usa https:// para hosts remotos (http:// solo se permite en localhost/127.0.0.1/::1)", raw)
+	default:
+		return fmt.Errorf("httpsync: esquema inválido en %q: usa https:// (o http:// en localhost)", raw)
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // wireChange es la representación de red de ports.Change. El payload viaja como JSON embebido
@@ -74,8 +112,12 @@ type pullResponse struct {
 }
 
 // Push envía las filas cambiadas al hub. Un lote vacío no viaja (no-op): el servicio ya filtra por la
-// cola, pero lo defendemos aquí para no gastar un viaje de red.
+// cola, pero lo defendemos aquí para no gastar un viaje de red. Valida antes el transporte para no
+// exponer nunca el token por HTTP sin cifrar fuera de loopback.
 func (c *Client) Push(ctx context.Context, ns, target string, changes []ports.Change) error {
+	if err := ValidateHubURL(c.host); err != nil {
+		return err
+	}
 	if len(changes) == 0 {
 		return nil
 	}
@@ -113,8 +155,12 @@ func (c *Client) Push(ctx context.Context, ns, target string, changes []ports.Ch
 	return nil
 }
 
-// Pull pide al hub las filas con server_seq > cursor y devuelve el nuevo cursor.
+// Pull pide al hub las filas con server_seq > cursor y devuelve el nuevo cursor. Valida antes el
+// transporte para no exponer nunca el token por HTTP sin cifrar fuera de loopback.
 func (c *Client) Pull(ctx context.Context, ns, target string, cursor int64) ([]ports.Change, int64, error) {
+	if err := ValidateHubURL(c.host); err != nil {
+		return nil, 0, err
+	}
 	endpoint := c.changesURL(ns, target) + "?since=" + strconv.FormatInt(cursor, 10)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {

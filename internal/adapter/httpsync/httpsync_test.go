@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,5 +178,62 @@ func TestPathEscapesTarget(t *testing.T) {
 	}
 	if gotPath != "/memory/a%2Fb%20token/changes" {
 		t.Errorf("el target no se escapó en la ruta: %s", gotPath)
+	}
+}
+
+func TestValidateHubURL(t *testing.T) {
+	valid := []string{
+		"https://hub.ejemplo.com",
+		"https://hub.ejemplo.com:8766",
+		"http://localhost:8766",
+		"http://LOCALHOST:8766",
+		"http://127.0.0.1:8766",
+		"http://[::1]:8766",
+	}
+	for _, u := range valid {
+		if err := ValidateHubURL(u); err != nil {
+			t.Errorf("ValidateHubURL(%q) debía ser válida, devolvió: %v", u, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"   ",
+		"http://midominio.com:8766",
+		"http://192.168.1.50:8766",
+		"http://10.0.0.5:8766",
+		"ftp://hub.ejemplo.com:8766",
+		"hub.ejemplo.com:8766",
+	}
+	for _, u := range invalid {
+		if err := ValidateHubURL(u); err == nil {
+			t.Errorf("ValidateHubURL(%q) debía rechazarse", u)
+		}
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestPushPullRejectInsecureRemoteHTTP(t *testing.T) {
+	called := false
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			called = true
+			return nil, context.Canceled
+		}),
+	}
+	cl := NewClient("http://midominio.com:8766", WithHTTPClient(httpClient))
+	changes := []ports.Change{{Key: "abc", Op: domain.SyncOpUpsert, Payload: []byte(`{"title":"hola"}`)}}
+
+	if err := cl.Push(context.Background(), "memory", "secreto", changes); err == nil || !strings.Contains(err.Error(), "https://") {
+		t.Errorf("Push con http:// remoto debía fallar exigiendo https://, fue: %v", err)
+	}
+	if _, _, err := cl.Pull(context.Background(), "memory", "secreto", 0); err == nil || !strings.Contains(err.Error(), "https://") {
+		t.Errorf("Pull con http:// remoto debía fallar exigiendo https://, fue: %v", err)
+	}
+	if called {
+		t.Fatal("ninguna petición HTTP debe salir si la URL remota no usa https://")
 	}
 }

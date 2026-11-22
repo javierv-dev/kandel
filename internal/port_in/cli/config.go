@@ -53,6 +53,11 @@ func (configCmd) Run(_ context.Context, args []string, app *App) error {
 		if !ok {
 			return fmt.Errorf("clave desconocida: %s (usa `kandel config list` para verlas)", args[1])
 		}
+		if k.File == config.SyncURL.File && args[2] != "" {
+			if err := config.ValidateSyncURL(args[2]); err != nil {
+				return err
+			}
+		}
 		dir, err := config.DefaultDir()
 		if err != nil {
 			return err

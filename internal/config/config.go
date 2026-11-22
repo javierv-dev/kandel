@@ -15,6 +15,8 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -77,7 +79,7 @@ var (
 		Doc: "puerto del daemon HTTP"}
 	// SyncURL es la URL del hub de sincronización (change-feed). Vacío = sync deshabilitado.
 	SyncURL = Key{File: "sync_url", Env: "KANDEL_SYNC_URL", Default: "",
-		Doc: "URL del hub de sincronización (p. ej. http://localhost:8766); vacío = sync deshabilitado"}
+		Doc: "URL del hub de sincronización (https://... en remoto; http:// solo localhost/127.0.0.1); vacío = sync deshabilitado"}
 	// SyncToken es el token de auth y namespace del usuario en el hub. Es a la vez identidad y secreto:
 	// debe ser aleatorio y de alta entropía (usa `kandel config gen-token`), no escrito a mano. Vacío =
 	// sync deshabilitado.
@@ -243,6 +245,38 @@ func truthy(v string) bool {
 // dónde sincronizar (ni manual ni automático).
 func SyncConfigured() bool {
 	return Resolve(SyncURL) != "" && Resolve(SyncToken) != ""
+}
+
+// ValidateSyncURL verifica que la URL del hub de sincronización use HTTPS en hosts remotos.
+// Solo se permite HTTP plano en direcciones loopback (localhost, 127.0.0.1, ::1) para evitar
+// filtrar el sync_token en texto plano.
+func ValidateSyncURL(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return fmt.Errorf("url de sync vacía")
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("url de sync inválida %q: %w", raw, err)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("url de sync sin host %q", raw)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if strings.EqualFold(host, "localhost") {
+			return nil
+		}
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			return nil
+		}
+		return fmt.Errorf("sync_url insegura %q: usa https:// para hosts remotos (http:// solo se permite en localhost/127.0.0.1/::1)", raw)
+	default:
+		return fmt.Errorf("esquema inválido en sync_url %q: usa https:// (o http:// en localhost)", raw)
+	}
 }
 
 // AutoSyncEnabled indica si los disparadores automáticos de sync están activos: sync_auto en verdadero

@@ -265,3 +265,26 @@ func TestProjectMismatchHidden(t *testing.T) {
 		t.Error("project_mismatch_warn=off debe ocultar para todos los proyectos")
 	}
 }
+
+func TestValidateSyncURL(t *testing.T) {
+	for _, okURL := range []string{
+		"https://hub.ejemplo.com:8766",
+		"http://localhost:8766",
+		"http://127.0.0.1:8766",
+		"http://[::1]:8766",
+	} {
+		if err := ValidateSyncURL(okURL); err != nil {
+			t.Errorf("ValidateSyncURL(%q) debía pasar: %v", okURL, err)
+		}
+	}
+	for _, badURL := range []string{
+		"",
+		"http://midominio.com:8766",
+		"http://192.168.1.20:8766",
+		"ftp://hub.ejemplo.com",
+	} {
+		if err := ValidateSyncURL(badURL); err == nil {
+			t.Errorf("ValidateSyncURL(%q) debía fallar", badURL)
+		}
+	}
+}
