@@ -51,7 +51,7 @@ kandel install claude-code
 kandel doctor
 ```
 
-Agentes soportados: **claude-code**, **antigravity** y **pi**. Guía completa en
+Agentes soportados: **claude-code**, **antigravity**, **pi** y **opencode**. Guía completa en
 [docs/instalacion.md](docs/instalacion.md).
 
 ¿Repo que ya lleva meses en marcha? `kandel seed` recorre el historial y el código, propone las
