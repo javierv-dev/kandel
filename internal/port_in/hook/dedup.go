@@ -11,11 +11,7 @@ import (
 // memoria ya inyectados por relevancia en la sesión, para no repetirlos en turnos siguientes (dedup
 // por sesión, Capa 2). Mismo patrón y directorio que firstMessage. Si no hay session_id usa el PID.
 func injectedIDsPath(sessionID string) string {
-	key := sessionID
-	if key == "" {
-		key = strconv.Itoa(os.Getpid())
-	}
-	return filepath.Join(os.TempDir(), "kandel-claude-"+key+"-injected-ids")
+	return filepath.Join(os.TempDir(), "kandel-claude-"+safeTempKey(sessionID)+"-injected-ids")
 }
 
 // loadInjectedIDs lee los ids ya inyectados en la sesión. Devuelve nil si no hay archivo o falla la
