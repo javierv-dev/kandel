@@ -719,3 +719,76 @@ func TestSessionStartProjectMismatchBannerAndSuppression(t *testing.T) {
 		t.Errorf("no debe haber aviso cuando la carpeta raíz coincide con el remoto git:\n%s", out4.String())
 	}
 }
+
+func TestSystemAlertsBannerOnJudgeFailure(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("KANDEL_DATA_DIR", dataDir)
+	t.Setenv("KANDEL_CONFLICT_MAX_ATTEMPTS", "3")
+
+	d := newStubDaemon(t)
+	cwd := t.TempDir()
+
+	// Sin alertas -> sin banner.
+	r0, out0 := newTestRunner(t, "session-start", d)
+	if err := r0.sessionStart(payload{SessionID: "s-a0", CWD: cwd}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out0.String(), "Evento del sistema (juez de conflictos de kandel)") {
+		t.Fatalf("no debe mostrar banner sin alertas:\n%s", out0.String())
+	}
+
+	// Registrar 3 fallos consecutivos (límite alcanzado -> Paused=true).
+	for i := 0; i < 3; i++ {
+		config.RecordJudgeFailure(dataDir, "claude", "haiku", fmt.Errorf(`llm: la CLI "claude" terminó con código 1: {"api_error":"usage_limit_reached","result":"You've hit your weekly limit"}`))
+	}
+	paused, alert := config.IsJudgePaused(dataDir, "claude", "haiku")
+	if !paused || alert.Failures != 3 || !strings.Contains(alert.LastError, "You've hit your weekly limit") {
+		t.Fatalf("alerta mal registrada: paused=%v alert=%+v", paused, alert)
+	}
+
+	// Debe inyectar el banner en Claude Code, Pi y Antigravity.
+	r1, out1 := newTestRunner(t, "session-start", d)
+	if err := r1.sessionStart(payload{SessionID: "s-a1", CWD: cwd}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out1.String(), "Evento del sistema (juez de conflictos de kandel)") ||
+		!strings.Contains(out1.String(), "PAUSÓ en segundo plano") ||
+		!strings.Contains(out1.String(), "You've hit your weekly limit") {
+		t.Fatalf("debe mostrar banner con el fallo del juez en Claude Code:\n%s", out1.String())
+	}
+
+	rPi, outPi := newTestRunner(t, "pi-session-start", d)
+	if err := rPi.piSessionStart(payload{SessionID: "pi:s-a1", CWD: cwd}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(outPi.String(), "Evento del sistema (juez de conflictos de kandel)") {
+		t.Fatalf("debe mostrar banner en Pi Agent:\n%s", outPi.String())
+	}
+
+	rAg, outAg := newTestRunner(t, "ag-pre-invocation", d)
+	if err := rAg.agPreInvocation(agInput{ConversationID: "ag:s-a1", WorkspacePaths: []string{cwd}, InvocationNum: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(outAg.String(), "Evento del sistema (juez de conflictos de kandel)") {
+		t.Fatalf("debe mostrar banner en Antigravity:\n%s", outAg.String())
+	}
+
+	// Dar de baja (dismiss) oculta el banner pero mantiene el juez pausado para ese agente/modelo.
+	if err := config.DismissAlert(dataDir, "", false); err != nil {
+		t.Fatal(err)
+	}
+	r2, out2 := newTestRunner(t, "session-start", d)
+	if err := r2.sessionStart(payload{SessionID: "s-a2", CWD: cwd}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out2.String(), "Evento del sistema (juez de conflictos de kandel)") {
+		t.Fatalf("no debe mostrar banner tras dismiss:\n%s", out2.String())
+	}
+	if pausedAfterDismiss, _ := config.IsJudgePaused(dataDir, "claude", "haiku"); !pausedAfterDismiss {
+		t.Fatal("tras dismiss sin reset el juez debe seguir pausado para no volver a fallar en bucle")
+	}
+	// Pero si cambia a otro agente o modelo, ya no está pausado.
+	if pausedPi, _ := config.IsJudgePaused(dataDir, "pi", "gemini-3-8-flash"); pausedPi {
+		t.Fatal("un agente/modelo distinto no debe estar pausado")
+	}
+}

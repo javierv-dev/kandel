@@ -68,6 +68,7 @@ func TestModelRegistry(t *testing.T) {
 
 func TestFromEnvAndGeneratorPi(t *testing.T) {
 	t.Setenv("KANDEL_AGENT_CLI", "pi")
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir()) // aísla del ~/.kandel/config real
 	r, ok := FromEnv().(*Runner)
 	if !ok {
 		t.Fatalf("FromEnv con pi debe devolver *Runner, obtuvo %T", FromEnv())

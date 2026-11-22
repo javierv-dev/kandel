@@ -18,12 +18,14 @@ func (r *runner) sessionStart(p payload) error {
 
 	ctxText, _ := r.prepareStartup(project, p)
 
-	// Inyecta los banners (desalineación / versión nueva / discrepancia de nombre de proyecto, si
-	// aplican) + el protocolo + los metadatos internos (project/session_id) + el contexto (vacío si el
-	// daemon estaba caído). El protocolo se imprime siempre, aunque no haya backend.
+	// Inyecta los banners (desalineación / versión nueva / discrepancia de nombre de proyecto / fallos
+	// del juez o eventos del sistema, si aplican) + el protocolo + los metadatos internos
+	// (project/session_id) + el contexto (vacío si el daemon estaba caído). El protocolo se imprime
+	// siempre, aunque no haya backend.
 	fmt.Fprint(r.out, r.assetMismatchBanner())
 	fmt.Fprint(r.out, r.updateBanner())
 	fmt.Fprint(r.out, r.projectMismatchBanner(project, dirName))
+	fmt.Fprint(r.out, r.systemAlertsBanner())
 	fmt.Fprint(r.out, protocolSessionStart)
 	r.injectMetadata(project, p.SessionID)
 	if ctxText != "" {
@@ -127,6 +129,37 @@ func (r *runner) projectMismatchBanner(project, dirName string) string {
 	return fmt.Sprintf("⚠️ Discrepancia en el nombre del proyecto: la carpeta raíz se llama %q pero el remoto git resuelve a %q (se usará %q). "+
 		"Coméntaselo al usuario. Si el usuario pide ocultar este aviso, ejecuta `kandel config set project_mismatch_warn %s` (o `off` para ocultarlo en todos los proyectos).\n\n",
 		dirName, project, project, project)
+}
+
+// systemAlertsBanner devuelve un aviso para el agente principal cuando hay eventos o fallos en
+// segundo plano registrados en ~/.kandel/alerts.json (por ejemplo, el juez LLM de detección de
+// conflictos fallando por límite de uso o error de CLI). Instruye al agente a avisar al usuario y
+// preguntarle a qué agente/modelo cambiar o si desea ocultar el aviso.
+func (r *runner) systemAlertsBanner() string {
+	alerts := config.ActiveAlerts("")
+	if len(alerts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, a := range alerts {
+		if a.Kind == config.AlertKindJudgeFailure {
+			state := fmt.Sprintf("falló %d/%d veces consecutivas", a.Failures, a.MaxAttempts)
+			if a.Paused {
+				state = fmt.Sprintf("alcanzó el límite de %d/%d intentos fallidos y se PAUSÓ en segundo plano", a.Failures, a.MaxAttempts)
+			}
+			motivo := a.LastError
+			if motivo == "" {
+				motivo = "error desconocido al invocar la CLI del agente"
+			}
+			fmt.Fprintf(&b, "⚠️ Evento del sistema (juez de conflictos de kandel): el juez activo (%s, modelo %q) %s. Último motivo: %s. "+
+				"Coméntaselo al usuario y pregúntale qué desea hacer: "+
+				"(1) cambiar el agente o modelo específico del juez con `kandel agent use <claude|pi> [--model <modelo>]` (lo cual limpia este evento y reanuda la verificación), "+
+				"(2) ocultar/dar de baja este aviso sin cambiar de juez con `kandel alerts dismiss`, o "+
+				"(3) reintentar con el mismo juez ejecutando `kandel alerts clear`.\n\n",
+				a.Agent, a.Model, state, motivo)
+		}
+	}
+	return b.String()
 }
 
 // postCompaction maneja el hook tras una compactación: asegura el daemon y la sesión, e inyecta un

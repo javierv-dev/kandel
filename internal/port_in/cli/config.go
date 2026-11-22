@@ -60,6 +60,9 @@ func (configCmd) Run(_ context.Context, args []string, app *App) error {
 		if err := config.Save(dir, map[string]string{k.File: args[2]}); err != nil {
 			return err
 		}
+		if k.File == config.AgentCLI.File || k.File == config.JudgeModel.File {
+			_ = config.ClearJudgeAlert(dir)
+		}
 		fmt.Fprintf(app.Out, "%s = %s\n", k.File, args[2])
 		return nil
 	case "gen-token":

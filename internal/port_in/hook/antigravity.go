@@ -76,6 +76,7 @@ func (r *runner) agPreInvocation(in agInput) error {
 
 	var b strings.Builder
 	b.WriteString(r.projectMismatchBanner(project, dirName))
+	b.WriteString(r.systemAlertsBanner())
 	b.WriteString(agStartHeader)
 	if meta := (agentMetadata{project: project, sessionID: sessionID}).render(); meta != "" {
 		b.WriteString("\n\n")

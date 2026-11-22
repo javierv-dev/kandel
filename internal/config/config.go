@@ -43,6 +43,9 @@ var (
 	// configurado (el juez cae a Noop, ver internal/adapter/llm).
 	AgentCLI = Key{File: "agent_cli", Env: "KANDEL_AGENT_CLI", Default: "",
 		Doc: "agente activo que juzga conflictos y siembra (p. ej. claude, pi)"}
+	// JudgeModel es el modelo que usa el juez de conflictos; vacío deja que el adaptador elija el suyo.
+	JudgeModel = Key{File: "judge_model", Env: "KANDEL_JUDGE_MODEL", Default: "",
+		Doc: "modelo del juez de conflictos; vacío = default del adaptador (haiku en claude, gemini-3-8-flash en pi)"}
 	// SeedModel es el modelo que usa el seed por defecto; vacío deja que el adaptador elija el suyo.
 	SeedModel = Key{File: "seed_model", Env: "KANDEL_SEED_MODEL", Default: "",
 		Doc: "modelo del seed (generación); vacío = default del adaptador"}
@@ -147,12 +150,16 @@ var (
 	// proyectos/carpetas separados por comas donde el usuario pidió ocultar el aviso. Vacío = mostrar siempre.
 	ProjectMismatchWarn = Key{File: "project_mismatch_warn", Env: "KANDEL_PROJECT_MISMATCH_WARN", Default: "",
 		Doc: "aviso de discrepancia de nombre de proyecto (carpeta vs git remote); vacío = mostrar siempre, 'off' = ocultar todos, o lista de proyectos separados por comas a silenciar"}
+	// ConflictMaxAttempts es el máximo de fallos consecutivos del juez LLM antes de pausar los
+	// reintentos automáticos en segundo plano y registrar un aviso para el agente principal.
+	ConflictMaxAttempts = Key{File: "conflict_max_attempts", Env: "KANDEL_CONFLICT_MAX_ATTEMPTS", Default: "",
+		Doc: "máximo de fallos consecutivos del juez antes de pausar reintentos y avisar al agente; vacío = default (5)"}
 )
 
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
-	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedNumCtx, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
-	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, RelevanceThreshold, RelevanceLimit, ContextJournalOpen, BackfillInterval, UpdateCheck, MaintenanceInterval, InstalledAgents, ProjectMismatchWarn,
+	AgentCLI, JudgeModel, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedNumCtx, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
+	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, ConflictMaxAttempts, NormativeThreshold, RelevanceThreshold, RelevanceLimit, ContextJournalOpen, BackfillInterval, UpdateCheck, MaintenanceInterval, InstalledAgents, ProjectMismatchWarn,
 }
 
 // configFileName es el nombre del archivo dentro del directorio de datos.

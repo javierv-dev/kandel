@@ -52,17 +52,41 @@ func IsSupported(agent string) bool {
 	return ok
 }
 
+// ErrJudgePaused indica que el juez LLM alcanzó el límite de intentos consecutivos fallidos y se
+// pausó en segundo plano para no seguir ejecutando llamadas inútiles hasta que se cambie el
+// agente/modelo o se reinicien las alertas.
+var ErrJudgePaused = errors.New("llm: juez pausado tras alcanzar el límite de intentos fallidos")
+
 // SeedModelFor devuelve el modelo de seed por defecto de un agente ("" si no está en el registro). Lo
 // usa `kandel agent use` para dejar el seed_model coherente con el agente activo al cambiarlo.
 func SeedModelFor(agent string) string {
 	return modelsByAgent[strings.TrimSpace(agent)].Seed
 }
 
+// JudgeModelFor devuelve el modelo de juez por defecto de un agente ("" si no está en el registro).
+func JudgeModelFor(agent string) string {
+	return modelsByAgent[strings.TrimSpace(agent)].Judge
+}
+
+// EffectiveJudgeTarget devuelve el (agente, modelo) efectivo del juez según la configuración actual.
+func EffectiveJudgeTarget() (agent, model string) {
+	agent = strings.TrimSpace(config.Resolve(config.AgentCLI))
+	if !IsSupported(agent) {
+		return agent, ""
+	}
+	model = strings.TrimSpace(config.Resolve(config.JudgeModel))
+	if model == "" {
+		model = modelsByAgent[agent].Judge
+	}
+	return agent, model
+}
+
 // FromEnv elige el juez LLM según el agente activo, resuelto por config (env KANDEL_AGENT_CLI >
-// archivo ~/.kandel/config > vacío). Resolverlo por config es lo que permite al daemon `serve`
-// (arrancado por los hooks, sin heredar la env del entry MCP) ver el agente configurado:
-//   - "claude"            → CLI de Claude (claude -p --output-format json --model haiku --max-turns 1)
-//   - "pi"                → CLI de Pi (pi --print --no-session --no-tools --no-mcp --no-extensions --model gemini-3-8-flash)
+// archivo ~/.kandel/config > vacío), respetando además judge_model si se fijó explícitamente.
+// Resolverlo por config es lo que permite al daemon `serve` (arrancado por los hooks, sin heredar
+// la env del entry MCP) ver el agente configurado:
+//   - "claude"            → CLI de Claude (claude -p --output-format json --model <judge_model|haiku> --max-turns 1)
+//   - "pi"                → CLI de Pi (pi --print --no-session --no-tools --no-mcp --no-extensions --model <judge_model|gemini-3-8-flash>)
 //   - vacío               → un runner noop que falla en Judge (no hay agente configurado)
 //   - cualquier otro valor → un runner que falla con un aviso claro (agente no soportado todavía)
 //
@@ -70,19 +94,52 @@ func SeedModelFor(agent string) string {
 // detección de candidatos (que no usa el juez) y el registro de veredictos del agente
 // (mem_judge) funcionan aunque no haya CLI de agente; solo mem_compare fallaría, con mensaje claro.
 func FromEnv() ports.AgentRunner {
-	switch agent := strings.TrimSpace(config.Resolve(config.AgentCLI)); agent {
+	agent, model := EffectiveJudgeTarget()
+	switch agent {
 	case "":
 		return Noop{}
 	case "claude":
 		return New("claude", "-p", "--output-format", "json",
-			"--model", modelsByAgent["claude"].Judge, "--max-turns", "1")
+			"--model", model, "--max-turns", "1")
 	case "pi":
 		return New("pi", "--print", "--no-session", "--no-tools", "--no-mcp", "--no-extensions",
-			"--model", modelsByAgent["pi"].Judge)
+			"--model", model)
 	default:
 		// Agente nombrado pero sin contrato de CLI implementado todavía: no se lanza a ciegas.
 		return unsupported{agent: agent}
 	}
+}
+
+// LiveFromEnv devuelve un AgentRunner que resuelve el agente/modelo en cada llamada a Judge (para
+// que el daemon en ejecución tome al vuelo un cambio de `kandel agent use` sin requerir reinicio)
+// y aplica el límite de intentos consecutivos (config.ConflictMaxAttempts, por defecto 5),
+// registrando el fallo en ~/.kandel/alerts.json para que el agente principal reciba el aviso al
+// abrir sesión y limpiando la alerta automáticamente cuando el juez vuelve a responder bien.
+func LiveFromEnv() ports.AgentRunner {
+	return liveRunner{}
+}
+
+type liveRunner struct{}
+
+func (liveRunner) Judge(ctx context.Context, prompt string) (domain.Verdict, error) {
+	agent, model := EffectiveJudgeTarget()
+	if agent != "" && IsSupported(agent) {
+		if paused, alert := config.IsJudgePaused("", agent, model); paused {
+			return domain.Verdict{}, fmt.Errorf("%w (%s/%s, %d/%d fallos: %s)",
+				ErrJudgePaused, agent, model, alert.Failures, alert.MaxAttempts, alert.LastError)
+		}
+	}
+	v, err := FromEnv().Judge(ctx, prompt)
+	if err != nil {
+		if agent != "" && IsSupported(agent) {
+			config.RecordJudgeFailure("", agent, model, err)
+		}
+		return domain.Verdict{}, err
+	}
+	if agent != "" {
+		_ = config.ClearJudgeAlert("")
+	}
+	return v, nil
 }
 
 // seedMaxTurns deja margen para que, si el modelo intenta una tool (queda denegada por la allowlist

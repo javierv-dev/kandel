@@ -51,6 +51,7 @@ func (r *runner) piSessionStart(p payload) error {
 	fmt.Fprint(r.out, r.assetMismatchBannerFor("pi"))
 	fmt.Fprint(r.out, r.updateBannerFor("pi"))
 	fmt.Fprint(r.out, r.projectMismatchBanner(project, dirName))
+	fmt.Fprint(r.out, r.systemAlertsBanner())
 	fmt.Fprint(r.out, protocolPiSessionStart)
 	r.injectMetadata(project, p.SessionID)
 	if ctxText != "" {

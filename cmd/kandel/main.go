@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -100,7 +101,7 @@ func run(args []string) error {
 	vectorIndex := sqlite.NewVectorIndex(db)
 	titleVectorIndex := sqlite.NewTitleVectorIndex(db)
 	uow := sqlite.NewUnitOfWork(db)
-	agentRunner := llm.FromEnv()
+	agentRunner := llm.LiveFromEnv()
 	embedder := embedding.NewOllama(
 		config.Resolve(config.OllamaHost),
 		config.Resolve(config.EmbedModel),
@@ -219,6 +220,8 @@ func detectionSweep(c *service.ConflictService) func(context.Context) {
 	return func(ctx context.Context) {
 		n, err := c.SweepDetection(ctx)
 		switch {
+		case errors.Is(err, llm.ErrJudgePaused):
+			// Juez pausado tras alcanzar el límite de intentos: ya quedó registrado en alerts.json.
 		case err != nil:
 			log.Printf("detección de conflictos: error tras %d normativa(s): %v", n, err)
 		case n > 0:

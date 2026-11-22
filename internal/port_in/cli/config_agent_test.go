@@ -105,4 +105,20 @@ func TestAgentUseValidatesInstalledAndSupported(t *testing.T) {
 	if got := config.Get(dir, config.SeedModel.File); got != "gemini-4-hydrogen" {
 		t.Errorf("seed_model tras use pi = %q, se esperaba gemini-4-hydrogen", got)
 	}
+	if got := config.Get(dir, config.JudgeModel.File); got != "gemini-3-8-flash" {
+		t.Errorf("judge_model tras use pi = %q, se esperaba gemini-3-8-flash", got)
+	}
+
+	// Con --model específico para el juez y limpieza automática de alerta de juez.
+	config.RecordJudgeFailure(dir, "claude", "haiku", context.DeadlineExceeded)
+	out.Reset()
+	if err := Dispatch(context.Background(), []string{"agent", "use", "pi", "--model", "claude-sonnet-4-6"}, app); err != nil {
+		t.Fatalf("agent use pi --model: %v", err)
+	}
+	if got := config.Get(dir, config.JudgeModel.File); got != "claude-sonnet-4-6" {
+		t.Errorf("judge_model tras use pi --model = %q, se esperaba claude-sonnet-4-6", got)
+	}
+	if alerts := config.ActiveAlerts(dir); len(alerts) != 0 {
+		t.Errorf("agent use debe limpiar alertas previas del juez, quedaron: %+v", alerts)
+	}
 }
