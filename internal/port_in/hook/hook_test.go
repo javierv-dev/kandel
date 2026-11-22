@@ -139,6 +139,7 @@ func TestRunRegistersDistinctAgentSessions(t *testing.T) {
 		{"session-start", "claude-code", map[string]any{"session_id": "shared", "cwd": cwd}},
 		{"ag-pre-invocation", "antigravity", map[string]any{"conversationId": "shared", "workspacePaths": []string{cwd}}},
 		{"pi-session-start", "pi", map[string]any{"session_id": "shared", "cwd": cwd}},
+		{"oc-session-start", "opencode", map[string]any{"session_id": "shared", "cwd": cwd}},
 	} {
 		raw, err := json.Marshal(tc.input)
 		if err != nil {
@@ -638,6 +639,75 @@ func TestPiSessionStartPromptCompactionAndStop(t *testing.T) {
 	}
 }
 
+func TestOpenCodeSessionStartPromptCompactionAndStop(t *testing.T) {
+	d := newStubDaemon(t)
+	d.relevantIDs = []int64{42}
+	isolateTempDir(t)
+	tmpDir := os.TempDir()
+	cwd := t.TempDir()
+
+	// 1. ocSessionStart crea sesión e inyecta protocolo de OpenCode (sin ToolSearch) + contexto + metadatos.
+	rStart, outStart := newTestRunner(t, "oc-session-start", d)
+	rStart.running = "v2.0.0"
+	rStart.installedVersion = func() (string, bool, error) { return "v1.0.0", true, nil }
+	if err := rStart.ocSessionStart(payload{SessionID: "opencode:sess-1", CWD: cwd}); err != nil {
+		t.Fatalf("ocSessionStart: %v", err)
+	}
+	s := outStart.String()
+	for _, want := range []string{"kandel install opencode", "mem_handoff_save", "session_id: opencode:sess-1", "CONTEXTO DE PRUEBA"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("salida de ocSessionStart no contiene %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "ToolSearch") || strings.Contains(s, "tool_search") {
+		t.Errorf("ocSessionStart no debe mencionar ToolSearch/tool_search:\n%s", s)
+	}
+
+	// 2. ocPrompt guarda el prompt, usa archivos temporales planos (sin ':') y devuelve additionalContext.
+	rPrompt, outPrompt := newTestRunner(t, "oc-prompt", d)
+	if err := rPrompt.ocPrompt(payload{SessionID: "opencode:sess-1", CWD: cwd, Prompt: "recordar arquitectura"}); err != nil {
+		t.Fatalf("ocPrompt: %v", err)
+	}
+	reqPrompt := d.find(t, "POST", "/prompts")
+	if reqPrompt.body["session_id"] != "opencode:sess-1" || reqPrompt.body["content"] != "recordar arquitectura" {
+		t.Errorf("cuerpo de /prompts en ocPrompt incorrecto: %+v", reqPrompt.body)
+	}
+	var resp struct {
+		AdditionalContext string `json:"additionalContext"`
+	}
+	if err := json.Unmarshal(outPrompt.Bytes(), &resp); err != nil {
+		t.Fatalf("salida de ocPrompt no es JSON válido: %v\n%s", err, outPrompt.String())
+	}
+	if !strings.Contains(resp.AdditionalContext, "MEMORIA RELEVANTE") {
+		t.Errorf("ocPrompt no devolvió la memoria relevante: %+v", resp)
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "kandel-claude-opencode_sess-1-tools-loaded")); err != nil {
+		t.Errorf("debió crear marcador temporal sanitizado sin ':': %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "kandel-claude-opencode_sess-1-injected-ids")); err != nil {
+		t.Errorf("debió crear dedup temporal sanitizado sin ':': %v", err)
+	}
+
+	// 3. postCompaction marca compactación con nombre seguro y reinicia dedup.
+	rComp, outComp := newTestRunner(t, "oc-post-compaction", d)
+	if err := rComp.postCompaction(payload{SessionID: "opencode:sess-1", CWD: cwd}); err != nil {
+		t.Fatalf("postCompaction: %v", err)
+	}
+	if !strings.Contains(outComp.String(), "CONTEXTO DE PRUEBA") {
+		t.Errorf("postCompaction debe reinyectar el contexto:\n%s", outComp.String())
+	}
+	if !wasCompacted("opencode:sess-1") {
+		t.Errorf("wasCompacted debe ser true tras postCompaction")
+	}
+
+	// 4. oc-stop cierra la sesión enviando ids inyectados.
+	rStop, _ := newTestRunner(t, "oc-stop", d)
+	if err := rStop.sessionStop(payload{SessionID: "opencode:sess-1"}); err != nil {
+		t.Fatalf("ocStop: %v", err)
+	}
+	d.find(t, "POST", "/sessions/opencode:sess-1/end")
+}
+
 func TestSessionStartProjectMismatchBannerAndSuppression(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git no disponible")
@@ -678,13 +748,20 @@ func TestSessionStartProjectMismatchBannerAndSuppression(t *testing.T) {
 		t.Errorf("faltó el aviso de discrepancia esperado:\n%s", s1)
 	}
 
-	// 2. En una nueva conversación vuelve a mostrarse siempre por defecto.
+	// 2. En una nueva conversación vuelve a mostrarse siempre por defecto (Pi y OpenCode).
 	r2, out2 := newTestRunner(t, "pi-session-start", d)
 	if err := r2.piSessionStart(payload{SessionID: "pi:sess-mis-2", CWD: repoDir}); err != nil {
 		t.Fatalf("piSessionStart: %v", err)
 	}
 	if !strings.Contains(out2.String(), "Discrepancia en el nombre del proyecto") {
 		t.Errorf("el aviso debe mostrarse en cada nueva sesión por defecto:\n%s", out2.String())
+	}
+	r2Oc, out2Oc := newTestRunner(t, "oc-session-start", d)
+	if err := r2Oc.ocSessionStart(payload{SessionID: "opencode:sess-mis-2", CWD: repoDir}); err != nil {
+		t.Fatalf("ocSessionStart: %v", err)
+	}
+	if !strings.Contains(out2Oc.String(), "Discrepancia en el nombre del proyecto") {
+		t.Errorf("el aviso debe mostrarse en OpenCode por defecto:\n%s", out2Oc.String())
 	}
 
 	// 3. Cuando el usuario pide ocultar el aviso para ese proyecto, deja de mostrarse.
@@ -771,6 +848,14 @@ func TestSystemAlertsBannerOnJudgeFailure(t *testing.T) {
 	}
 	if !strings.Contains(outAg.String(), "Evento del sistema (juez de conflictos de kandel)") {
 		t.Fatalf("debe mostrar banner en Antigravity:\n%s", outAg.String())
+	}
+
+	rOc, outOc := newTestRunner(t, "oc-session-start", d)
+	if err := rOc.ocSessionStart(payload{SessionID: "opencode:s-a1", CWD: cwd}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(outOc.String(), "Evento del sistema (juez de conflictos de kandel)") {
+		t.Fatalf("debe mostrar banner en OpenCode:\n%s", outOc.String())
 	}
 
 	// Dar de baja (dismiss) oculta el banner pero mantiene el juez pausado para ese agente/modelo.

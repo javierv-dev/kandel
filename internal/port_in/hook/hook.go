@@ -80,6 +80,23 @@ func Run(ctx context.Context, event, version string, updates ports.ReleaseChecke
 		payload := parsePayload(stdin)
 		payload.SessionID = sessionKey("pi", payload.SessionID)
 		return r.sessionStop(payload)
+	case "oc-session-start":
+		payload := parsePayload(stdin)
+		payload.SessionID = sessionKey("opencode", payload.SessionID)
+		r.installedVersion = func() (string, bool, error) { return installedVersionFor("opencode") }
+		return r.ocSessionStart(payload)
+	case "oc-post-compaction":
+		payload := parsePayload(stdin)
+		payload.SessionID = sessionKey("opencode", payload.SessionID)
+		return r.postCompaction(payload)
+	case "oc-prompt":
+		payload := parsePayload(stdin)
+		payload.SessionID = sessionKey("opencode", payload.SessionID)
+		return r.ocPrompt(payload)
+	case "oc-stop":
+		payload := parsePayload(stdin)
+		payload.SessionID = sessionKey("opencode", payload.SessionID)
+		return r.sessionStop(payload)
 	}
 
 	payload := parsePayload(stdin)

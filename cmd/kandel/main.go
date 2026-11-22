@@ -30,7 +30,7 @@ import (
 )
 
 // installedAssetsProbe consulta la versión de los assets instalados de cualquier agente instalado
-// (claude-code, pi, antigravity) para el chequeo de desalineación (§21 Eje 3). Cumple diagnostic.InstalledAssetsProbe.
+// para el chequeo de desalineación (§21 Eje 3). Cumple diagnostic.InstalledAssetsProbe.
 type installedAssetsProbe struct{}
 
 func (installedAssetsProbe) InstalledVersion() (string, bool, error) {
@@ -38,7 +38,11 @@ func (installedAssetsProbe) InstalledVersion() (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	for _, name := range []string{"claude-code", "pi", "antigravity"} {
+	var (
+		firstPresent string
+		hasPresent   bool
+	)
+	for _, name := range setup.Names() {
 		v, present, err := setup.InstalledVersion(name, home)
 		if err != nil {
 			return "", false, err
@@ -46,9 +50,13 @@ func (installedAssetsProbe) InstalledVersion() (string, bool, error) {
 		if present && v != thisVersion() {
 			return v, true, nil
 		}
-		if present {
-			return v, true, nil
+		if present && !hasPresent {
+			firstPresent = v
+			hasPresent = true
 		}
+	}
+	if hasPresent {
+		return firstPresent, true, nil
 	}
 	return "", false, nil
 }
