@@ -3,18 +3,13 @@ package hook
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 )
 
 // compactedPath resuelve el archivo marcador —clave por session_id— que registra que la sesión ha
 // pasado por una compactación. Mismo patrón y directorio que firstMessage y el registro de ids
 // inyectados. Sin session_id usa el PID.
 func compactedPath(sessionID string) string {
-	key := sessionID
-	if key == "" {
-		key = strconv.Itoa(os.Getpid())
-	}
-	return filepath.Join(os.TempDir(), "kandel-claude-"+key+"-compacted")
+	return filepath.Join(os.TempDir(), "kandel-claude-"+safeTempKey(sessionID)+"-compacted")
 }
 
 // markCompacted deja constancia de que la sesión se compactó. Best-effort: si la escritura falla, lo

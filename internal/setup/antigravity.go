@@ -102,7 +102,7 @@ func (a antigravity) Install(home, version string, out io.Writer) error {
 	fmt.Fprintf(out, "✓ servidor MCP 'kandel' registrado en %s\n", mcpFile)
 
 	// 2. Protocolo de memoria como regla global always-on en ~/.gemini/GEMINI.md.
-	if err := mergeRulesBlock(rulesFile); err != nil {
+	if err := mergeRulesBlock(rulesFile, antigravityRulesBlock); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "✓ protocolo de memoria añadido a %s\n", rulesFile)
@@ -241,13 +241,14 @@ func uninstallAgHooks(hooksFile string) error {
 // mergeRulesBlock añade (o refresca) el bloque de kandel en un archivo de reglas markdown, sin pisar el
 // contenido ajeno. Es idempotente: primero quita cualquier bloque de kandel previo (por sus marcadores)
 // y luego anexa el actual al final, separado por una línea en blanco. Crea el archivo si no existe.
-func mergeRulesBlock(rulesFile string) error {
+// rulesBlock es el contenido específico del agente (p. ej. antigravityRulesBlock, opencodeRulesBlock).
+func mergeRulesBlock(rulesFile, rulesBlock string) error {
 	existing, err := readTextIfExists(rulesFile)
 	if err != nil {
 		return err
 	}
 	body := strings.TrimRight(stripBlock(existing), "\n")
-	block := kandelRulesStart + "\n" + antigravityRulesBlock + "\n" + kandelRulesEnd + "\n"
+	block := kandelRulesStart + "\n" + rulesBlock + "\n" + kandelRulesEnd + "\n"
 	var merged string
 	if body == "" {
 		merged = block

@@ -121,4 +121,33 @@ func TestAgentUseValidatesInstalledAndSupported(t *testing.T) {
 	if alerts := config.ActiveAlerts(dir); len(alerts) != 0 {
 		t.Errorf("agent use debe limpiar alertas previas del juez, quedaron: %+v", alerts)
 	}
+
+	// Instalado y soportado (opencode): éxito, y agent_cli + modelos quedan alineados a opencode.
+	if err := config.AddAgent(dir, "opencode"); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := Dispatch(context.Background(), []string{"agent", "use", "opencode"}, app); err != nil {
+		t.Fatalf("agent use opencode: %v", err)
+	}
+	if got := config.Get(dir, config.AgentCLI.File); got != "opencode" {
+		t.Errorf("agent_cli tras use opencode = %q, se esperaba opencode", got)
+	}
+	if got := config.Get(dir, config.SeedModel.File); got != "opencode/deepseek-v4.1-flash-free#high" {
+		t.Errorf("seed_model tras use opencode = %q", got)
+	}
+	if got := config.Get(dir, config.JudgeModel.File); got != "opencode/deepseek-v4.1-flash-free#high" {
+		t.Errorf("judge_model tras use opencode = %q", got)
+	}
+}
+
+func TestValidateMCPSource(t *testing.T) {
+	for _, valid := range []string{"", "claude-code", "antigravity", "pi", "opencode"} {
+		if err := validateMCPSource(valid); err != nil {
+			t.Errorf("validateMCPSource(%q) devolvió error inesperado: %v", valid, err)
+		}
+	}
+	if err := validateMCPSource("desconocido"); err == nil {
+		t.Error("validateMCPSource de agente inválido debe fallar")
+	}
 }
