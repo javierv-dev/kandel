@@ -8,9 +8,9 @@ import (
 )
 
 // TestFromEnvUnsupportedAgent verifica que un agente nombrado pero sin contrato de CLI implementado
-// (p. ej. opencode) NO se lanza a ciegas: FromEnv devuelve un runner que falla con ErrAgentUnsupported.
+// (p. ej. gemini) NO se lanza a ciegas: FromEnv devuelve un runner que falla con ErrAgentUnsupported.
 func TestFromEnvUnsupportedAgent(t *testing.T) {
-	t.Setenv("KANDEL_AGENT_CLI", "opencode")
+	t.Setenv("KANDEL_AGENT_CLI", "gemini")
 	r := FromEnv()
 	_, err := r.Judge(context.Background(), "prompt")
 	if !errors.Is(err, ErrAgentUnsupported) {
@@ -33,7 +33,7 @@ func TestFromEnvEmptyAgent(t *testing.T) {
 // TestGeneratorUnsupportedAgent verifica el mismo aviso en el camino del seed: un agente no
 // soportado devuelve un generador que falla con ErrAgentUnsupported en vez de ejecutar un comando.
 func TestGeneratorUnsupportedAgent(t *testing.T) {
-	g := Generator("opencode", "")
+	g := Generator("gemini", "")
 	_, err := g.Generate(context.Background(), "prompt")
 	if !errors.Is(err, ErrAgentUnsupported) {
 		t.Fatalf("se esperaba ErrAgentUnsupported, se obtuvo: %v", err)
@@ -41,13 +41,12 @@ func TestGeneratorUnsupportedAgent(t *testing.T) {
 }
 
 // TestModelRegistry verifica que la allowlist y los modelos se derivan del registro único
-// modelsByAgent: claude y pi están soportados; un agente ausente no lo está y su seed es "".
+// modelsByAgent: claude, opencode y pi están soportados; un agente ausente no lo está y su seed es "".
 func TestModelRegistry(t *testing.T) {
-	if !IsSupported("claude") {
-		t.Error("claude debe estar soportado (está en modelsByAgent)")
-	}
-	if !IsSupported("pi") {
-		t.Error("pi debe estar soportado (está en modelsByAgent)")
+	for _, agent := range []string{"claude", "opencode", "pi"} {
+		if !IsSupported(agent) {
+			t.Errorf("%s debe estar soportado (está en modelsByAgent)", agent)
+		}
 	}
 	if IsSupported("gemini") {
 		t.Error("gemini aún no debe estar soportado")
@@ -55,14 +54,51 @@ func TestModelRegistry(t *testing.T) {
 	if got := SeedModelFor("claude"); got != "sonnet" {
 		t.Errorf("SeedModelFor(claude) = %q, se esperaba sonnet", got)
 	}
+	if got := SeedModelFor("opencode"); got != "opencode/deepseek-v4.1-flash-free#high" {
+		t.Errorf("SeedModelFor(opencode) = %q, se esperaba opencode/deepseek-v4.1-flash-free#high", got)
+	}
 	if got := SeedModelFor("pi"); got != "gemini-4-hydrogen" {
 		t.Errorf("SeedModelFor(pi) = %q, se esperaba gemini-4-hydrogen", got)
 	}
 	if got := SeedModelFor("gemini"); got != "" {
 		t.Errorf("SeedModelFor de agente ausente = %q, se esperaba vacío", got)
 	}
-	if sup := SupportedAgents(); len(sup) != 2 || sup[0] != "claude" || sup[1] != "pi" {
-		t.Errorf("SupportedAgents = %v, se esperaba [claude pi]", sup)
+	if sup := SupportedAgents(); len(sup) != 3 || sup[0] != "claude" || sup[1] != "opencode" || sup[2] != "pi" {
+		t.Errorf("SupportedAgents = %v, se esperaba [claude opencode pi]", sup)
+	}
+}
+
+// TestFromEnvAndGeneratorOpenCode verifica que el agente opencode usa su runner propio y el modelo
+// por defecto (proveedor opencode, DeepSeek V4.1 Flash Free, variante high).
+func TestFromEnvAndGeneratorOpenCode(t *testing.T) {
+	t.Setenv("KANDEL_AGENT_CLI", "opencode")
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir()) // aísla del ~/.kandel/config real
+
+	r, ok := FromEnv().(*openCodeRunner)
+	if !ok {
+		t.Fatalf("FromEnv con opencode debe devolver *openCodeRunner, obtuvo %T", FromEnv())
+	}
+	const wantModel = "opencode/deepseek-v4.1-flash-free#high"
+	if r.model != wantModel {
+		t.Errorf("modelo del juez = %q, se esperaba %q", r.model, wantModel)
+	}
+	for _, wantArg := range []string{"run", "--archived", "--format", "json", "--model", wantModel} {
+		if !slices.Contains(r.args(), wantArg) {
+			t.Errorf("args = %v, falta %q", r.args(), wantArg)
+		}
+	}
+
+	g, ok := Generator("opencode", "").(*openCodeRunner)
+	if !ok {
+		t.Fatalf("Generator(opencode) debe devolver *openCodeRunner, obtuvo %T", Generator("opencode", ""))
+	}
+	if g.model != wantModel {
+		t.Errorf("modelo del seed = %q, se esperaba %q", g.model, wantModel)
+	}
+
+	custom, ok := Generator("opencode", "otro/proveedor#low").(*openCodeRunner)
+	if !ok || custom.model != "otro/proveedor#low" {
+		t.Errorf("Generator(opencode, custom) = %+v, se esperaba respetar el modelo explícito", custom)
 	}
 }
 

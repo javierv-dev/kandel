@@ -13,8 +13,9 @@ import (
 )
 
 // ErrAgentUnsupported indica que KANDEL_AGENT_CLI nombra un agente cuyo contrato de CLI kandel aún
-// no implementa (p. ej. opencode, de la familia de plugins TS; ver §18 del plan). Se avisa con un
-// mensaje claro en vez de lanzar a ciegas un comando que no cumple el contrato stdin→JSON.
+// no implementa (p. ej. Cursor o un agente de la familia de plugins sin CLI headless; ver §18 del
+// plan). Se avisa con un mensaje claro en vez de lanzar a ciegas un comando que no cumple el
+// contrato stdin→texto/JSON.
 var ErrAgentUnsupported = errors.New("llm: agente no soportado todavía")
 
 // AgentModels describe los modelos que usa un agente: Judge es el modelo BARATO del juez de conflictos
@@ -26,13 +27,17 @@ type AgentModels struct {
 }
 
 // modelsByAgent es el registro ÚNICO de agentes con contrato de CLI implementado (prompt por stdin →
-// JSON por stdout) y sus modelos. De aquí se derivan la allowlist (SupportedAgents/IsSupported) y la
+// texto/JSON por stdout) y sus modelos. De aquí se derivan la allowlist (SupportedAgents/IsSupported) y la
 // elección de modelo en FromEnv/Generator. **Añadir un agente = una entrada aquí + su case en
-// FromEnv/Generator con el contrato de CLI concreto** (§22.E). Hoy Claude Code y Pi Agent;
+// FromEnv/Generator con el contrato de CLI concreto** (§22.E). Hoy Claude Code, Pi Agent y OpenCode;
 // Antigravity/Gemini entran cuando se implemente su parser (hoja de ruta §18).
+//
+// El modelo de OpenCode usa el formato de su CLI: `provider/model#variant` (aquí, el proveedor
+// `opencode` con DeepSeek V4.1 Flash Free y la variante de razonamiento `high`).
 var modelsByAgent = map[string]AgentModels{
-	"claude": {Judge: "haiku", Seed: "sonnet"},
-	"pi":     {Judge: "gemini-3-8-flash", Seed: "gemini-4-hydrogen"},
+	"claude":   {Judge: "haiku", Seed: "sonnet"},
+	"opencode": {Judge: "opencode/deepseek-v4.1-flash-free#high", Seed: "opencode/deepseek-v4.1-flash-free#high"},
+	"pi":       {Judge: "gemini-3-8-flash", Seed: "gemini-4-hydrogen"},
 }
 
 // SupportedAgents devuelve los agentes con contrato de CLI implementado, ordenados. Lo usa
@@ -86,6 +91,7 @@ func EffectiveJudgeTarget() (agent, model string) {
 // Resolverlo por config es lo que permite al daemon `serve` (arrancado por los hooks, sin heredar
 // la env del entry MCP) ver el agente configurado:
 //   - "claude"            → CLI de Claude (claude -p --output-format json --model <judge_model|haiku> --max-turns 1)
+//   - "opencode"          → CLI de OpenCode (opencode run --archived --format json --model <judge_model|opencode/deepseek-v4.1-flash-free#high>)
 //   - "pi"                → CLI de Pi (pi --print --no-session --no-tools --no-mcp --no-extensions --model <judge_model|gemini-3-8-flash>)
 //   - vacío               → un runner noop que falla en Judge (no hay agente configurado)
 //   - cualquier otro valor → un runner que falla con un aviso claro (agente no soportado todavía)
@@ -101,6 +107,8 @@ func FromEnv() ports.AgentRunner {
 	case "claude":
 		return New("claude", "-p", "--output-format", "json",
 			"--model", model, "--max-turns", "1")
+	case "opencode":
+		return newOpenCode(model)
 	case "pi":
 		return New("pi", "--print", "--no-session", "--no-tools", "--no-mcp", "--no-extensions",
 			"--model", model)
@@ -158,6 +166,7 @@ const seedSystemPrompt = "Eres un componente NO INTERACTIVO de la herramienta ka
 // instalador sabe qué CLI de agente corresponde (claude, gemini, …) y el seed razona mejor con un
 // modelo más capaz. Reglas:
 //   - "claude"             → claude -p (headless), sin tools, devuelve el JSON de candidatos
+//   - "opencode"           → opencode run (headless), devuelve el texto del asistente (JSON de candidatos)
 //   - "pi"                 → pi --print (headless), sin tools/sesión/mcp/extensiones, devuelve el JSON de candidatos
 //   - vacío                → un Noop cuyo Generate falla con ErrCLINotInstalled (no hay agente)
 //   - cualquier otro valor → un generador que falla con un aviso claro (agente no soportado todavía)
@@ -178,6 +187,11 @@ func Generator(agent, model string) ports.AgentGenerator {
 		// (El juez de conflictos no necesita esto: su tarea es clasificar y no invoca tools.)
 		return New("claude", "-p", "--output-format", "json", "--model", model,
 			"--max-turns", seedMaxTurns, "--allowedTools", "", "--append-system-prompt", seedSystemPrompt)
+	case "opencode":
+		if strings.TrimSpace(model) == "" {
+			model = modelsByAgent["opencode"].Seed
+		}
+		return newOpenCode(model)
 	case "pi":
 		if strings.TrimSpace(model) == "" {
 			model = modelsByAgent["pi"].Seed
@@ -211,7 +225,7 @@ func (Noop) Generate(context.Context, string) (string, error) {
 }
 
 // unsupported es un AgentRunner/AgentGenerator para un agente nombrado pero aún no soportado (su
-// CLI no cumple el contrato stdin→JSON; p. ej. opencode, familia B). En vez de ejecutar un comando
+// CLI no cumple el contrato stdin→texto/JSON; p. ej. Cursor o gemini). En vez de ejecutar un comando
 // arbitrario a ciegas, falla con un aviso claro que nombra el agente y lista los soportados.
 type unsupported struct{ agent string }
 

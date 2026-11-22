@@ -42,10 +42,10 @@ var (
 	// AgentCLI es el agente activo que juzga conflictos y siembra (uno solo). Vacío = sin agente
 	// configurado (el juez cae a Noop, ver internal/adapter/llm).
 	AgentCLI = Key{File: "agent_cli", Env: "KANDEL_AGENT_CLI", Default: "",
-		Doc: "agente activo que juzga conflictos y siembra (p. ej. claude, pi)"}
+		Doc: "agente activo que juzga conflictos y siembra (p. ej. claude, opencode, pi)"}
 	// JudgeModel es el modelo que usa el juez de conflictos; vacío deja que el adaptador elija el suyo.
 	JudgeModel = Key{File: "judge_model", Env: "KANDEL_JUDGE_MODEL", Default: "",
-		Doc: "modelo del juez de conflictos; vacío = default del adaptador (haiku en claude, gemini-3-8-flash en pi)"}
+		Doc: "modelo del juez de conflictos; vacío = default del adaptador (haiku en claude, opencode/deepseek-v4.1-flash-free#high en opencode, gemini-3-8-flash en pi)"}
 	// SeedModel es el modelo que usa el seed por defecto; vacío deja que el adaptador elija el suyo.
 	SeedModel = Key{File: "seed_model", Env: "KANDEL_SEED_MODEL", Default: "",
 		Doc: "modelo del seed (generación); vacío = default del adaptador"}

@@ -153,7 +153,7 @@ func (r *runner) systemAlertsBanner() string {
 			}
 			fmt.Fprintf(&b, "⚠️ Evento del sistema (juez de conflictos de kandel): el juez activo (%s, modelo %q) %s. Último motivo: %s. "+
 				"Coméntaselo al usuario y pregúntale qué desea hacer: "+
-				"(1) cambiar el agente o modelo específico del juez con `kandel agent use <claude|pi> [--model <modelo>]` (lo cual limpia este evento y reanuda la verificación), "+
+				"(1) cambiar el agente o modelo específico del juez con `kandel agent use <claude|opencode|pi> [--model <modelo>]` (lo cual limpia este evento y reanuda la verificación), "+
 				"(2) ocultar/dar de baja este aviso sin cambiar de juez con `kandel alerts dismiss`, o "+
 				"(3) reintentar con el mismo juez ejecutando `kandel alerts clear`.\n\n",
 				a.Agent, a.Model, state, motivo)
