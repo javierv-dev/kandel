@@ -1,7 +1,8 @@
 # Reporte de Auditoría: Seguridad y Sincronización
 
-**Fecha:** 2026-08-14
-**Estado:** Finalizado con 2 hallazgos críticos
+**Fecha:** 2026-08-14  
+**Actualización (remediación):** 2026-11-21  
+**Estado:** Finalizado — 2 hallazgos críticos **remediados** (2026-11-21)
 
 Este documento recoge los resultados de la auditoría de seguridad sobre el protocolo de sincronización y los mecanismos de protección de datos distribuidos en Kandel.
 
@@ -37,3 +38,19 @@ Este documento recoge los resultados de la auditoría de seguridad sobre el prot
 
 ---
 **Conclusión:** La criptografía básica está bien implementada, pero existen dos riesgos severos de pérdida de datos y fuga de tokens que deben parchearse antes de un despliegue en producción con sincronización remota.
+
+---
+
+## 5. Estado de remediación (2026-11-21)
+
+Ambos hallazgos críticos quedaron cerrados:
+
+1. **Pérdida de Datos por LWW + Schema Drift (🟢 Remediado):**
+   - `domain.Memory.UnknownFields` (`map[string]string`) preserva claves JSON desconocidas recibidas desde versiones más nuevas de Kandel sin contaminar el dominio con etiquetas `json`/`db`.
+   - `internal/service/sync_codec.go` (`unmarshalMemoryPayload` / `marshalMemoryPayload`) extrae claves desconocidas en `Pull` / `ResolveConflict` y las reinyecta en `Push` / `MemoryService.enqueue` sin pisar los campos conocidos.
+   - `internal/adapter/sqlite/migrate.go` (`schemaV10`) añade la columna `unknown_fields` en `memories`, persistida y recuperada en `MemoryRepo` / `scanner.go`.
+   - `PullResult.SchemaDrift` reporta el número de memorias con deriva de esquema en `kandel sync` y `mem_sync`.
+
+2. **Transporte Inseguro / Fuga del Sync Token (🟢 Remediado):**
+   - `httpsync.ValidateHubURL` y `httpsync.Client.Push`/`Pull` rechazan cualquier URL que no sea `https://`, permitiendo `http://` únicamente en loopback (`localhost`, `127.0.0.1`, `::1`), antes de construir o enviar la petición con `Authorization: Bearer`.
+   - `config.ValidateSyncURL` aplica la misma validación al configurar `kandel config set sync_url ...`, al correr `kandel sync` y al ejecutar `mem_sync`.
