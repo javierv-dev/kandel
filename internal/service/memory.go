@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -637,7 +636,7 @@ func (m *MemoryService) enqueueUpsert(ctx context.Context, o domain.Memory) erro
 
 // enqueue construye y encola la mutación de sync de una memoria.
 func (m *MemoryService) enqueue(ctx context.Context, o domain.Memory, op domain.SyncOp) error {
-	payload, err := json.Marshal(o)
+	payload, err := marshalMemoryPayload(o)
 	if err != nil {
 		return err
 	}

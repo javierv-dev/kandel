@@ -389,6 +389,52 @@ func TestSyncUnconfiguredFailsClearly(t *testing.T) {
 	}
 }
 
+func TestConfigSetRejectsInsecureSyncURL(t *testing.T) {
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir())
+	app, _, _, _, _ := newTestApp()
+
+	if err := Dispatch(context.Background(), []string{"config", "set", "sync_url", "http://midominio.com:8766"}, app); err == nil {
+		t.Fatal("config set sync_url con http:// remoto debe fallar")
+	}
+	if err := Dispatch(context.Background(), []string{"config", "set", "sync_url", "https://midominio.com:8766"}, app); err != nil {
+		t.Fatalf("config set sync_url con https:// debía pasar: %v", err)
+	}
+	if err := Dispatch(context.Background(), []string{"config", "set", "sync_url", "http://localhost:8766"}, app); err != nil {
+		t.Fatalf("config set sync_url con localhost debía pasar: %v", err)
+	}
+}
+
+func TestSyncRejectsInsecureRemoteURL(t *testing.T) {
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir())
+	t.Setenv("KANDEL_SYNC_URL", "http://midominio.com:8766")
+	t.Setenv("KANDEL_SYNC_TOKEN", "tok")
+	app, _, _, _, _ := newTestApp()
+	sync := &fakeSync{}
+	app.Sync = sync
+
+	err := Dispatch(context.Background(), []string{"sync"}, app)
+	if err == nil || !strings.Contains(err.Error(), "https://") {
+		t.Fatalf("sync con http:// remoto debe fallar exigiendo https://, fue: %v", err)
+	}
+	if sync.pushed || sync.pulled {
+		t.Error("no debe ejecutar push/pull con sync_url insegura")
+	}
+}
+
+func TestSyncReportsSchemaDrift(t *testing.T) {
+	t.Setenv("KANDEL_SYNC_URL", "https://hub.ejemplo.com")
+	t.Setenv("KANDEL_SYNC_TOKEN", "tok")
+	app, _, _, out, _ := newTestApp()
+	app.Sync = &fakeSync{pullResult: service.PullResult{Applied: 2, SchemaDrift: 1}}
+
+	if err := Dispatch(context.Background(), []string{"sync", "--pull"}, app); err != nil {
+		t.Fatalf("sync --pull: %v", err)
+	}
+	if !strings.Contains(out.String(), "versión más nueva") {
+		t.Errorf("sync --pull con schemaDrift debe avisar al usuario: %q", out.String())
+	}
+}
+
 // writeSeedRepo crea un directorio temporal con algo de documentación para que el recolector de
 // fuentes del seed no devuelva vacío.
 func writeSeedRepo(t *testing.T) string {

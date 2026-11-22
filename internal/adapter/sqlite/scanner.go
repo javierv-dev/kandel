@@ -1,7 +1,9 @@
 package sqlite
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -67,7 +69,8 @@ type rowScanner interface {
 const memoryColumns = `id, ifnull(sync_id, ''), ifnull(session_id, ''), type, title, content,
 	ifnull(tool_name, ''), ifnull(project, ''), scope,
 	ifnull(normalized_hash, ''), revision_count, duplicate_count,
-	created_at, updated_at, last_seen_at, ifnull(resolution, ''), conflict_checked, deleted_at`
+	created_at, updated_at, last_seen_at, ifnull(resolution, ''), conflict_checked, deleted_at,
+	ifnull(unknown_fields, '')`
 
 // scanMemory escanea una fila al modelo de dominio. Centraliza la conversión de tipos
 // (TEXT→time.Time, INTEGER→bool, columnas anulables) en un único sitio.
@@ -80,12 +83,14 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 		conflictChecked         int
 		createdAt, updatedAt    string
 		lastSeen, deletedAt     sql.NullString
+		unknownFieldsRaw        string
 	)
 	if err := sc.Scan(
 		&o.ID, &o.SyncID, &o.SessionID, &typ, &o.Title, &o.Content,
 		&toolName, &project, &scope, &hash,
 		&o.RevisionCount, &o.DuplicateCount,
 		&createdAt, &updatedAt, &lastSeen, &resolution, &conflictChecked, &deletedAt,
+		&unknownFieldsRaw,
 	); err != nil {
 		return domain.Memory{}, err
 	}
@@ -117,7 +122,60 @@ func scanMemory(sc rowScanner) (domain.Memory, error) {
 		}
 		o.DeletedAt = &t
 	}
+	if unknownFieldsRaw != "" {
+		o.UnknownFields, err = decodeUnknownFields(unknownFieldsRaw)
+		if err != nil {
+			return domain.Memory{}, err
+		}
+	}
 	return o, nil
+}
+
+// encodeUnknownFields serializa los campos desconocidos en un JSON compacto para SQLite; devuelve ""
+// cuando el mapa está vacío.
+func encodeUnknownFields(fields map[string]string) (string, error) {
+	if len(fields) == 0 {
+		return "", nil
+	}
+	obj := make(map[string]json.RawMessage, len(fields))
+	for k, v := range fields {
+		if !json.Valid([]byte(v)) {
+			continue
+		}
+		obj[k] = json.RawMessage(v)
+	}
+	if len(obj) == 0 {
+		return "", nil
+	}
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+// decodeUnknownFields reconstruye el mapa de campos desconocidos desde la columna JSON de SQLite.
+func decodeUnknownFields(raw string) (map[string]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		return nil, err
+	}
+	if len(obj) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(obj))
+	for k, v := range obj {
+		var buf bytes.Buffer
+		if err := json.Compact(&buf, v); err != nil {
+			out[k] = strings.TrimSpace(string(v))
+			continue
+		}
+		out[k] = buf.String()
+	}
+	return out, nil
 }
 
 // scanMemories escanea todas las filas de un *sql.Rows a memorias de dominio.

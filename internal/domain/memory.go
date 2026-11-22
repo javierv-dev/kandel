@@ -113,6 +113,11 @@ type Memory struct {
 	UpdatedAt  time.Time
 	LastSeenAt time.Time
 	DeletedAt  *time.Time // soft delete; nil = viva
+
+	// UnknownFields preserva claves JSON desconocidas recibidas por sync desde versiones más nuevas
+	// de Kandel, para reenviarlas intactas si esta máquina modifica y vuelve a subir la memoria
+	// (evita pérdida silenciosa de campos por LWW + schema drift). Cada valor es JSON compacto válido.
+	UnknownFields map[string]string
 }
 
 // IsPending indica si la memoria es un pendiente sin resolver (resolution=open). Lo consume

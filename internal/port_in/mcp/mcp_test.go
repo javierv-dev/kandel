@@ -516,6 +516,33 @@ func mustJSONMem(m domain.Memory) []byte {
 	return b
 }
 
+func TestHandleSyncRejectsInsecureRemoteURL(t *testing.T) {
+	t.Setenv("KANDEL_DATA_DIR", t.TempDir())
+	t.Setenv("KANDEL_SYNC_URL", "http://midominio.com:8766")
+	t.Setenv("KANDEL_SYNC_TOKEN", "tok")
+	sy := &fakeSync{}
+	res, _ := handleSync(Services{Sync: sy})(context.Background(), callWith(nil))
+	if !res.IsError {
+		t.Fatal("mem_sync con http:// remoto debe devolver error de tool")
+	}
+	if sy.pushed || sy.pulled {
+		t.Error("no debe invocar Push ni Pull con sync_url insegura")
+	}
+}
+
+func TestHandleSyncReportsSchemaDrift(t *testing.T) {
+	syncConfigured(t)
+	sy := &fakeSync{pullResult: service.PullResult{Applied: 1, SchemaDrift: 2}}
+	res, err := handleSync(Services{Sync: sy})(context.Background(), callWith(nil))
+	if err != nil || res.IsError {
+		t.Fatalf("handleSync error: %v (%s)", err, textOf(t, res))
+	}
+	got := textOf(t, res)
+	if !strings.Contains(got, `"schema_drift":2`) || !strings.Contains(got, "schema_drift_note") {
+		t.Errorf("mem_sync debe reportar schema_drift y nota informativa: %s", got)
+	}
+}
+
 // ─── utilidades de test ────────────────────────────────────────────────────────
 
 // callWith construye una CallToolRequest con los argumentos dados.

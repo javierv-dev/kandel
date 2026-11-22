@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 
 	"github.com/javierv-dev/kandel/internal/domain"
@@ -129,7 +128,7 @@ func (s *SyncService) pushBatch(ctx context.Context, pending []domain.SyncMutati
 			})
 			continue
 		}
-		payload, err := json.Marshal(cur)
+		payload, err := marshalMemoryPayload(*cur)
 		if err != nil {
 			return 0, err
 		}
@@ -153,9 +152,10 @@ func (s *SyncService) pushBatch(ctx context.Context, pending []domain.SyncMutati
 
 // PullResult resume un Pull.
 type PullResult struct {
-	Applied   int   // número de filas aplicadas localmente
-	Conflicts int   // filas NO aplicadas por edición concurrente (quedan en la bandeja de conflictos)
-	NewCursor int64 // cursor tras el Pull
+	Applied     int   // número de filas aplicadas localmente
+	Conflicts   int   // filas NO aplicadas por edición concurrente (quedan en la bandeja de conflictos)
+	SchemaDrift int   // memorias aplicadas que traían campos desconocidos de una versión más nueva (se preservan)
+	NewCursor   int64 // cursor tras el Pull
 }
 
 // Pull pide al hub las filas con server_seq mayor al cursor local y las aplica de forma idempotente
@@ -205,12 +205,15 @@ func (s *SyncService) Pull(ctx context.Context) (PullResult, error) {
 				}
 				// Eco o fila vieja: cae a applyChange, que la salta por LWW (no-op).
 			}
-			applied, err := s.applyChange(ctx, ch, false)
+			applied, drift, err := s.applyChange(ctx, ch, false)
 			if err != nil {
 				return err
 			}
 			if applied {
 				result.Applied++
+				if drift {
+					result.SchemaDrift++
+				}
 			}
 		}
 		return s.sync.SetCursor(ctx, s.queueTarget, newCursor)
@@ -262,8 +265,8 @@ func (s *SyncService) wouldOverwrite(ctx context.Context, ch ports.Change) (bool
 	if ch.Op == domain.SyncOpDelete {
 		return existing.UpdatedAt.Before(ch.UpdatedAt), nil
 	}
-	var incoming domain.Memory
-	if err := json.Unmarshal(ch.Payload, &incoming); err != nil {
+	incoming, err := unmarshalMemoryPayload(ch.Payload)
+	if err != nil {
 		return false, err
 	}
 	return incoming.UpdatedAt.After(existing.UpdatedAt), nil
@@ -307,7 +310,7 @@ func (s *SyncService) ResolveConflict(ctx context.Context, syncID string, takeRe
 	}
 	return s.uow.Do(ctx, func(ctx context.Context) error {
 		if takeRemote {
-			if _, err := s.applyChange(ctx, ports.Change{
+			if _, _, err := s.applyChange(ctx, ports.Change{
 				Key: c.SyncID, Op: c.IncomingOp, Payload: c.Incoming, UpdatedAt: c.IncomingAt, Project: c.Project,
 			}, true); err != nil {
 				return err
@@ -317,35 +320,37 @@ func (s *SyncService) ResolveConflict(ctx context.Context, syncID string, takeRe
 	})
 }
 
-// applyChange aplica una fila entrante al estado local con guard LWW. Devuelve true si aplicó algo.
-// Solo trata memorias (las demás clases se ignoran sin error). El apply esquiva MemoryService.Save a
-// propósito (import atómico, sin embeber ni juzgar en el camino): el backfill recalcula el vector y el
-// barrido de conflictos corre después. Por eso, para tipos normativo/factual, fuerza
-// ConflictChecked=false al importar, así el barrido del destino re-evalúa la memoria importada contra
-// las suyas (fix §6.4 del plan).
+// applyChange aplica una fila entrante al estado local con guard LWW. Devuelve applied=true si
+// aplicó algo y schemaDrift=true si traía campos desconocidos de una versión más nueva (que se
+// preservan en UnknownFields). Solo trata memorias (las demás clases se ignoran sin error). El
+// apply esquiva MemoryService.Save a propósito (import atómico, sin embeber ni juzgar en el camino):
+// el backfill recalcula el vector y el barrido de conflictos corre después. Por eso, para tipos
+// normativo/factual, fuerza ConflictChecked=false al importar, así el barrido del destino re-evalúa
+// la memoria importada contra las suyas (fix §6.4 del plan).
 //
 // force omite el guard LWW: lo usa la resolución de conflictos "tomar la remota", donde el usuario
 // decide aplicar la fila remota aunque su updated_at sea más viejo.
-func (s *SyncService) applyChange(ctx context.Context, ch ports.Change, force bool) (bool, error) {
+func (s *SyncService) applyChange(ctx context.Context, ch ports.Change, force bool) (applied bool, schemaDrift bool, err error) {
 	existing, err := s.memories.GetBySyncID(ctx, ch.Key)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 
 	if ch.Op == domain.SyncOpDelete {
 		if existing == nil {
-			return false, nil // ya no está: idempotente
+			return false, false, nil // ya no está: idempotente
 		}
 		if !force && !existing.UpdatedAt.Before(ch.UpdatedAt) {
-			return false, nil // guard LWW: lo local es igual o más nuevo → no se borra
+			return false, false, nil // guard LWW: lo local es igual o más nuevo → no se borra
 		}
-		return true, s.memories.SoftDelete(ctx, existing.ID)
+		return true, false, s.memories.SoftDelete(ctx, existing.ID)
 	}
 
-	var incoming domain.Memory
-	if err := json.Unmarshal(ch.Payload, &incoming); err != nil {
-		return false, err
+	incoming, err := unmarshalMemoryPayload(ch.Payload)
+	if err != nil {
+		return false, false, err
 	}
+	drift := len(incoming.UnknownFields) > 0
 	incoming.SyncID = ch.Key
 	// La sesión es contexto LOCAL de la máquina de origen: su id no existe en el destino y viola la FK
 	// memories.session_id → sessions.id al importar. No tiene significado cross-máquina, así que se
@@ -355,16 +360,16 @@ func (s *SyncService) applyChange(ctx context.Context, ch ports.Change, force bo
 
 	if existing != nil {
 		if !force && !incoming.UpdatedAt.After(existing.UpdatedAt) {
-			return false, nil // guard LWW: lo local es igual o más nuevo → no se pisa
+			return false, false, nil // guard LWW: lo local es igual o más nuevo → no se pisa
 		}
 		incoming.ID = existing.ID // conserva el id local; el resto se reemplaza con el entrante
 		_, err := s.memories.Update(ctx, existing.ID, incoming)
-		return true, err
+		return true, drift, err
 	}
 	// Memoria nueva: el id lo asigna el repo local (el del payload es de la máquina origen).
 	incoming.ID = 0
 	_, err = s.memories.Add(ctx, incoming)
-	return true, err
+	return true, drift, err
 }
 
 // forceRecheck marca la memoria importada como no-verificada para que el barrido de conflictos del

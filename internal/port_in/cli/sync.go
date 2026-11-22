@@ -50,7 +50,7 @@ func (syncCmd) Run(ctx context.Context, args []string, app *App) error {
 	doPush := both || *onlyPush
 	doPull := both || *onlyPull
 
-	var pushed, pulled, conflicts int
+	var pushed, pulled, conflicts, schemaDrift int
 	if doPush {
 		res, err := app.Sync.Push(ctx)
 		if err != nil {
@@ -65,6 +65,7 @@ func (syncCmd) Run(ctx context.Context, args []string, app *App) error {
 		}
 		pulled = res.Applied
 		conflicts = res.Conflicts
+		schemaDrift = res.SchemaDrift
 	}
 
 	switch {
@@ -78,6 +79,9 @@ func (syncCmd) Run(ctx context.Context, args []string, app *App) error {
 	if conflicts > 0 {
 		fmt.Fprintf(app.Out, "⚠️ %d edición(es) concurrente(s): se editó aquí y en otra máquina a la vez (NO se pisó nada). "+
 			"Revisa con `kandel sync conflicts`\n", conflicts)
+	}
+	if schemaDrift > 0 {
+		fmt.Fprintf(app.Out, "⚠️ %d memoria(s) traen campos de una versión más nueva de kandel (se preservan intactos; considera actualizar este binario)\n", schemaDrift)
 	}
 	return nil
 }
@@ -153,12 +157,13 @@ func projectSuffix(project string) string {
 	return " [" + project + "]"
 }
 
-// requireSyncConfig valida que el sync esté configurado (URL del hub + token). Sin ellos, el sync no
-// tiene a dónde ir: falla con un mensaje que dice exactamente qué definir.
+// requireSyncConfig valida que el sync esté configurado (URL del hub + token) y que la URL use un
+// transporte seguro (https:// en remoto, http:// solo en loopback).
 func requireSyncConfig() error {
-	if strings.TrimSpace(config.Resolve(config.SyncURL)) == "" || strings.TrimSpace(config.Resolve(config.SyncToken)) == "" {
+	rawURL := strings.TrimSpace(config.Resolve(config.SyncURL))
+	if rawURL == "" || strings.TrimSpace(config.Resolve(config.SyncToken)) == "" {
 		return errors.New("sync no configurado: define KANDEL_SYNC_URL y KANDEL_SYNC_TOKEN " +
 			"(o `kandel config set sync_url <url>` y `kandel config set sync_token <token>`)")
 	}
-	return nil
+	return config.ValidateSyncURL(rawURL)
 }

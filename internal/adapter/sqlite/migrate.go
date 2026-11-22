@@ -259,6 +259,12 @@ CREATE TABLE handoff_resumptions (
 );
 `
 
+// schemaV10 añade almacenamiento de campos JSON desconocidos recibidos vía sync desde versiones
+// más nuevas de Kandel, evitando que una edición local los destruya al propagar por LWW.
+const schemaV10 = `
+ALTER TABLE memories ADD COLUMN unknown_fields TEXT NOT NULL DEFAULT '';
+`
+
 // migration es un paso de evolución del esquema, identificado por un número de versión
 // estrictamente creciente. PRAGMA user_version registra hasta qué versión se ha migrado la base,
 // de modo que cada migración corre una sola vez a lo largo de la vida de la instalación.
@@ -286,6 +292,7 @@ var migrations = []migration{
 	{version: 7, sql: schemaV7},
 	{version: 8, sql: schemaV8},
 	{version: 9, sql: schemaV9},
+	{version: 10, sql: schemaV10},
 }
 
 // migrate aplica, en orden, las migraciones con versión mayor que la registrada en la base

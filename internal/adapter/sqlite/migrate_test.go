@@ -144,6 +144,7 @@ func TestMigrateV8PreservaLaTelemetriaExistente(t *testing.T) {
 	}
 	// Devuelve la base al esquema v7, retirando también los objetos introducidos después de v8.
 	for _, stmt := range []string{
+		`ALTER TABLE memories DROP COLUMN unknown_fields`,
 		`DROP TABLE handoff_resumptions`,
 		`DROP TABLE handoff_checkpoints`,
 		`ALTER TABLE sessions DROP COLUMN application`,

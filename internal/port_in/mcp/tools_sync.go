@@ -34,6 +34,9 @@ func handleSync(svc Services) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("sync no configurado: define KANDEL_SYNC_URL y KANDEL_SYNC_TOKEN " +
 				"(o `kandel config set sync_url <url>` y `kandel config set sync_token <token>`)"), nil
 		}
+		if err := config.ValidateSyncURL(config.Resolve(config.SyncURL)); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
 
 		push, err := svc.Sync.Push(ctx)
 		if err != nil {
@@ -45,9 +48,13 @@ func handleSync(svc Services) server.ToolHandlerFunc {
 		}
 
 		result := map[string]any{
-			"pushed":    push.Count,
-			"pulled":    pull.Applied,
-			"conflicts": pull.Conflicts,
+			"pushed":       push.Count,
+			"pulled":       pull.Applied,
+			"conflicts":    pull.Conflicts,
+			"schema_drift": pull.SchemaDrift,
+		}
+		if pull.SchemaDrift > 0 {
+			result["schema_drift_note"] = "algunas memorias traen campos de una versión más nueva de kandel; se preservan intactos, considera actualizar"
 		}
 		// Con edición concurrente detectada, adjunta la lista para que el agente la comente al usuario.
 		if pull.Conflicts > 0 {

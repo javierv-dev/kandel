@@ -851,3 +851,38 @@ func TestMultiProjectCoupledQueriesAndRename(t *testing.T) {
 		t.Errorf("shared.Project tras renombrar = %q, se esperaba yaku-frontend,yaku-servidor", gotShared.Project)
 	}
 }
+
+func TestMemoryRepoPreservesUnknownFields(t *testing.T) {
+	db := newTestDB(t)
+	seedSession(t, db, "s1")
+	repo := NewMemoryRepo(db)
+	ctx := context.Background()
+
+	m := sampleMemory()
+	m.UnknownFields = map[string]string{
+		"Trigger":  `"antes de hacer commit"`,
+		"Evidence": `"measured"`,
+		"Meta":     `{"v":2,"tags":["a","b"]}`,
+	}
+	id, err := repo.Add(ctx, m)
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	got, err := repo.Get(ctx, id)
+	if err != nil || got == nil {
+		t.Fatalf("Get: %v (%v)", got, err)
+	}
+	if len(got.UnknownFields) != 3 || got.UnknownFields["Trigger"] != `"antes de hacer commit"` || got.UnknownFields["Meta"] != `{"v":2,"tags":["a","b"]}` {
+		t.Fatalf("UnknownFields no se recuperó intacto tras Add: %+v", got.UnknownFields)
+	}
+
+	got.Title = "título actualizado"
+	updated, err := repo.Update(ctx, id, *got)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if len(updated.UnknownFields) != 3 || updated.UnknownFields["Evidence"] != `"measured"` {
+		t.Fatalf("UnknownFields no se preservó tras Update: %+v", updated.UnknownFields)
+	}
+}

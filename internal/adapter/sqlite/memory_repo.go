@@ -31,12 +31,16 @@ func NewMemoryRepo(db *DB) *MemoryRepo {
 // Add inserta una memoria nueva con los valores ya resueltos por el servicio (incluidos
 // los timestamps). Devuelve el id local autogenerado.
 func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
+	unknownRaw, err := encodeUnknownFields(o.UnknownFields)
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: serializar unknown_fields: %w", err)
+	}
 	const q = `
 		INSERT INTO memories (
 			sync_id, session_id, type, title, content, tool_name, project, scope,
 			normalized_hash, revision_count, duplicate_count,
-			created_at, updated_at, last_seen_at, resolution, conflict_checked, deleted_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			created_at, updated_at, last_seen_at, resolution, conflict_checked, deleted_at, unknown_fields
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		nullString(o.SyncID), nullString(o.SessionID), string(o.Type), o.Title, o.Content,
 		nullString(o.ToolName), nullString(o.Project), string(o.Scope),
@@ -44,6 +48,7 @@ func (r *MemoryRepo) Add(ctx context.Context, o domain.Memory) (int64, error) {
 		o.RevisionCount, o.DuplicateCount,
 		formatTime(o.CreatedAt), formatTime(o.UpdatedAt),
 		nullTime(o.LastSeenAt), string(o.Resolution), boolToInt(o.ConflictChecked), nullTime(deletedAtValue(o)),
+		unknownRaw,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("sqlite: insertar memoria: %w", err)
@@ -72,17 +77,22 @@ func (r *MemoryRepo) GetBySyncID(ctx context.Context, syncID string) (*domain.Me
 // Update reemplaza los campos editables de una memoria y devuelve su estado final. Los
 // timestamps (updated_at) los fija el servicio en la entidad recibida.
 func (r *MemoryRepo) Update(ctx context.Context, id int64, o domain.Memory) (*domain.Memory, error) {
+	unknownRaw, err := encodeUnknownFields(o.UnknownFields)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: serializar unknown_fields: %w", err)
+	}
 	const q = `
 		UPDATE memories SET
 			type = ?, title = ?, content = ?, tool_name = ?, project = ?, scope = ?,
 			normalized_hash = ?, revision_count = ?, duplicate_count = ?,
-			updated_at = ?, last_seen_at = ?, resolution = ?, conflict_checked = ?
+			updated_at = ?, last_seen_at = ?, resolution = ?, conflict_checked = ?, unknown_fields = ?
 		WHERE id = ? AND deleted_at IS NULL`
 	res, err := execFromCtx(ctx, r.db).ExecContext(ctx, q,
 		string(o.Type), o.Title, o.Content, nullString(o.ToolName), nullString(o.Project),
 		string(o.Scope), nullString(o.NormalizedHash),
 		o.RevisionCount, o.DuplicateCount,
 		formatTime(o.UpdatedAt), nullTime(o.LastSeenAt), string(o.Resolution), boolToInt(o.ConflictChecked),
+		unknownRaw,
 		id,
 	)
 	if err != nil {

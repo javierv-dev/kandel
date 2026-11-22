@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -457,6 +458,137 @@ func TestAutoPushSkipsWhenAnotherSyncRuns(t *testing.T) {
 func mustJSON(m domain.Memory) []byte {
 	b, _ := json.Marshal(m)
 	return b
+}
+
+func TestWireMemoryMatchesDomainMemoryFields(t *testing.T) {
+	domType := reflect.TypeOf(domain.Memory{})
+	wireType := reflect.TypeOf(wireMemory{})
+	if wireType.NumField() != domType.NumField()-1 {
+		t.Fatalf("wireMemory tiene %d campos y domain.Memory %d (debe cubrir todos menos UnknownFields)",
+			wireType.NumField(), domType.NumField())
+	}
+	for i := 0; i < wireType.NumField(); i++ {
+		f := wireType.Field(i)
+		if _, ok := domType.FieldByName(f.Name); !ok {
+			t.Errorf("campo %q de wireMemory no existe en domain.Memory", f.Name)
+		}
+		if !knownMemoryKeys[stringsLower(f.Name)] {
+			t.Errorf("campo %q falta en knownMemoryKeys", f.Name)
+		}
+	}
+}
+
+func stringsLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
+
+func TestPullAndPushPreserveUnknownFieldsAcrossEdit(t *testing.T) {
+	ctx := context.Background()
+	obs := newFakeObs()
+	q := newQueueSync()
+	t1 := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+
+	// Máquina A (versión futura) sube una memoria con campos nuevos desconocidos para esta versión.
+	futurePayload := []byte(`{
+		"SyncID":"mem-future",
+		"Project":"kandel",
+		"Type":"decision",
+		"Scope":"project",
+		"Title":"título de A",
+		"Content":"contenido de A",
+		"CreatedAt":"2026-11-20T10:00:00Z",
+		"UpdatedAt":"2026-11-20T10:00:00Z",
+		"Trigger":"antes de hacer commit",
+		"Evidence":"measured",
+		"FutureMeta":{"version":2,"flags":["x","y"]}
+	}`)
+	client := &fakeClient{
+		pullChanges: []ports.Change{{
+			Key:       "mem-future",
+			Op:        domain.SyncOpUpsert,
+			Payload:   futurePayload,
+			UpdatedAt: t1,
+			Project:   "kandel",
+		}},
+		pullCursor: 1,
+	}
+
+	svc := newSyncService(q, client, obs)
+	pullRes, err := svc.Pull(ctx)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if pullRes.Applied != 1 || pullRes.SchemaDrift != 1 {
+		t.Fatalf("Pull debía reportar Applied=1 y SchemaDrift=1, fue: %+v", pullRes)
+	}
+
+	stored, err := obs.GetBySyncID(ctx, "mem-future")
+	if err != nil || stored == nil {
+		t.Fatalf("GetBySyncID: %v (%v)", stored, err)
+	}
+	if len(stored.UnknownFields) != 3 {
+		t.Fatalf("esperaba 3 campos desconocidos preservados, obtuve: %+v", stored.UnknownFields)
+	}
+
+	// Máquina B (esta versión vieja) edita la memoria localmente con un timestamp más nuevo y la reenvía.
+	stored.Title = "título editado en B"
+	stored.UpdatedAt = t1.Add(time.Hour)
+	if _, err := obs.Update(ctx, stored.ID, *stored); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	qPush := newQueueSync(memMutation(1, "mem-future"))
+	pushClient := &fakeClient{}
+	if _, err := newSyncService(qPush, pushClient, obs).Push(ctx); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if len(pushClient.pushed) != 1 || len(pushClient.pushed[0]) != 1 {
+		t.Fatalf("esperaba 1 cambio en Push, fue: %+v", pushClient.pushed)
+	}
+
+	var rePushed map[string]any
+	if err := json.Unmarshal(pushClient.pushed[0][0].Payload, &rePushed); err != nil {
+		t.Fatalf("payload reenviado no es JSON válido: %v", err)
+	}
+	if rePushed["Title"] != "título editado en B" {
+		t.Errorf("Title debía reflejar la edición de B, fue %v", rePushed["Title"])
+	}
+	if rePushed["Trigger"] != "antes de hacer commit" || rePushed["Evidence"] != "measured" {
+		t.Errorf("los campos futuros se perdieron tras el viaje LWW: %+v", rePushed)
+	}
+	if _, ok := rePushed["UnknownFields"]; ok {
+		t.Errorf("no debe filtrarse una clave literal UnknownFields al JSON del hub: %+v", rePushed)
+	}
+	meta, ok := rePushed["FutureMeta"].(map[string]any)
+	if !ok || meta["version"] != float64(2) {
+		t.Errorf("FutureMeta estructurado no se preservó intacto: %v", rePushed["FutureMeta"])
+	}
+}
+
+func TestResolveConflictPreservesUnknownFields(t *testing.T) {
+	ctx := context.Background()
+	obs := newFakeObs()
+	local := time.Unix(1700000700, 0).UTC()
+	obs.Add(ctx, domain.Memory{SyncID: "j1", Type: domain.TypeJournal, Scope: domain.ScopeProject, Title: "local", Content: "c", UpdatedAt: local})
+
+	q := newQueueSync()
+	remotePayload := []byte(`{"SyncID":"j1","Type":"journal","Scope":"project","Title":"remota","Content":"c","UpdatedAt":"2026-11-20T12:00:00Z","FutureBadge":"gold"}`)
+	q.RecordConflict(ctx, domain.SyncConflict{SyncID: "j1", IncomingOp: domain.SyncOpUpsert, Incoming: remotePayload, IncomingAt: local.Add(time.Hour)})
+
+	svc := newSyncService(q, &fakeClient{}, obs)
+	if err := svc.ResolveConflict(ctx, "j1", true); err != nil {
+		t.Fatalf("ResolveConflict: %v", err)
+	}
+	got, _ := obs.GetBySyncID(ctx, "j1")
+	if got == nil || got.UnknownFields["FutureBadge"] != `"gold"` {
+		t.Errorf("ResolveConflict(takeRemote) debía preservar FutureBadge, fue: %+v", got)
+	}
 }
 
 var (
