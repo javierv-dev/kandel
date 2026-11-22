@@ -31,6 +31,7 @@ type Detection struct {
 	Project string // nombre normalizado; vacío si no se pudo determinar
 	Source  Source // de dónde salió
 	Path    string // directorio que dio el nombre (raíz git o el propio dir)
+	DirName string // nombre normalizado de la carpeta raíz del proyecto (raíz git si existe, o dir)
 }
 
 // Detect resuelve el proyecto de un directorio con prioridad, de la fuente más estable a la menos:
@@ -46,13 +47,20 @@ func Detect(dir string) Detection {
 	if dir == "" {
 		return Detection{Source: SourceNone}
 	}
-	if name := gitRemoteName(dir); name != "" {
-		return Detection{Project: Normalize(name), Source: SourceGitRemote, Path: dir}
-	}
+	rootDir := dir
+	hasGitRoot := false
 	if root, ok := gitRoot(dir); ok {
-		return Detection{Project: Normalize(filepath.Base(root)), Source: SourceGitRoot, Path: root}
+		rootDir = root
+		hasGitRoot = true
 	}
-	return Detection{Project: Normalize(filepath.Base(dir)), Source: SourceDirBasename, Path: dir}
+	dirName := Normalize(filepath.Base(rootDir))
+	if name := gitRemoteName(dir); name != "" {
+		return Detection{Project: Normalize(name), Source: SourceGitRemote, Path: rootDir, DirName: dirName}
+	}
+	if hasGitRoot {
+		return Detection{Project: dirName, Source: SourceGitRoot, Path: rootDir, DirName: dirName}
+	}
+	return Detection{Project: dirName, Source: SourceDirBasename, Path: dir, DirName: dirName}
 }
 
 // DetectCWD detecta el proyecto del directorio de trabajo actual.

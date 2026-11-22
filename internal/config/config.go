@@ -42,7 +42,7 @@ var (
 	// AgentCLI es el agente activo que juzga conflictos y siembra (uno solo). Vacío = sin agente
 	// configurado (el juez cae a Noop, ver internal/adapter/llm).
 	AgentCLI = Key{File: "agent_cli", Env: "KANDEL_AGENT_CLI", Default: "",
-		Doc: "agente activo que juzga conflictos y siembra (p. ej. claude)"}
+		Doc: "agente activo que juzga conflictos y siembra (p. ej. claude, pi)"}
 	// SeedModel es el modelo que usa el seed por defecto; vacío deja que el adaptador elija el suyo.
 	SeedModel = Key{File: "seed_model", Env: "KANDEL_SEED_MODEL", Default: "",
 		Doc: "modelo del seed (generación); vacío = default del adaptador"}
@@ -142,12 +142,17 @@ var (
 	// gestionan install/uninstall; no se edita a mano. Sirve para validar el cambio de agente activo.
 	InstalledAgents = Key{File: "installed_agents", Env: "KANDEL_INSTALLED_AGENTS", Default: "",
 		Doc: "agentes con kandel instalado (gestionado por install/uninstall; no editar a mano)"}
+	// ProjectMismatchWarn controla el aviso de discrepancia cuando el nombre de la carpeta raíz del
+	// proyecto difiere del nombre del remoto git. Puede ser "off" (oculta para todos) o una lista de
+	// proyectos/carpetas separados por comas donde el usuario pidió ocultar el aviso. Vacío = mostrar siempre.
+	ProjectMismatchWarn = Key{File: "project_mismatch_warn", Env: "KANDEL_PROJECT_MISMATCH_WARN", Default: "",
+		Doc: "aviso de discrepancia de nombre de proyecto (carpeta vs git remote); vacío = mostrar siempre, 'off' = ocultar todos, o lista de proyectos separados por comas a silenciar"}
 )
 
 // Keys es el registro completo, en orden de aparición en el archivo generado.
 var Keys = []Key{
 	AgentCLI, SeedModel, OllamaHost, EmbedModel, EmbedDimensions, EmbedNumCtx, EmbedKeepAlive, Port, SyncURL, SyncToken, SyncHubAddr, SyncHubRate, SyncAuto, SyncInterval, LogDir,
-	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, RelevanceThreshold, RelevanceLimit, ContextJournalOpen, BackfillInterval, UpdateCheck, MaintenanceInterval, InstalledAgents,
+	ConflictCutoff, ConflictTopK, ConflictFactualCutoff, ConflictTitleCutoff, NormativeThreshold, RelevanceThreshold, RelevanceLimit, ContextJournalOpen, BackfillInterval, UpdateCheck, MaintenanceInterval, InstalledAgents, ProjectMismatchWarn,
 }
 
 // configFileName es el nombre del archivo dentro del directorio de datos.
@@ -238,6 +243,32 @@ func SyncConfigured() bool {
 // timer del daemon antes de disparar nada.
 func AutoSyncEnabled() bool {
 	return truthy(Resolve(SyncAuto)) && SyncConfigured()
+}
+
+// ProjectMismatchHidden indica si el aviso de discrepancia de nombre de proyecto (entre el nombre del
+// remoto git y el nombre de la carpeta raíz) fue ocultado por el usuario, ya sea globalmente ("off",
+// "false", "0") o para ese proyecto/carpeta en particular (en lista separada por comas). Por defecto
+// devuelve false (el aviso se muestra siempre en cada inicio de sesión).
+func ProjectMismatchHidden(project, dirName string) bool {
+	raw := strings.ToLower(strings.TrimSpace(Resolve(ProjectMismatchWarn)))
+	if raw == "" || truthy(raw) {
+		return false
+	}
+	if raw == "off" || raw == "false" || raw == "0" || raw == "no" {
+		return true
+	}
+	projNorm := strings.ToLower(strings.TrimSpace(project))
+	dirNorm := strings.ToLower(strings.TrimSpace(dirName))
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item == "" {
+			continue
+		}
+		if item == projNorm || item == dirNorm || item == dirNorm+"->"+projNorm || item == projNorm+":"+dirNorm {
+			return true
+		}
+	}
+	return false
 }
 
 // KeyByFile busca una clave conocida por su nombre de archivo (p. ej. "agent_cli"). Lo usa

@@ -8,21 +8,22 @@ import (
 	"github.com/javierv-dev/kandel/internal/config"
 )
 
-// sessionStart maneja el hook SessionStart: asegura el daemon, migra el nombre del proyecto si
-// cambió, crea la sesión, dispara el pull del hub (si el auto-sync está activo) y por último imprime
-// el protocolo + el contexto del proyecto para que el agente lo inyecte.
+// sessionStart maneja el hook SessionStart: asegura el daemon, crea la sesión, dispara el pull del
+// hub (si el auto-sync está activo) y por último imprime los banners (incluyendo aviso si el nombre
+// de carpeta difiere del remoto git) + el protocolo + el contexto del proyecto.
 func (r *runner) sessionStart(p payload) error {
 	project := detectProject(p.CWD)
-	old := oldProjectName(p.CWD)
-	r.klog(fmt.Sprintf("inicio: session_id=%s project=%s cwd=%s", orQ(p.SessionID), orQ(project), orQ(p.CWD)))
+	dirName := rootDirProjectName(p.CWD)
+	r.klog(fmt.Sprintf("inicio: session_id=%s project=%s dir=%s cwd=%s", orQ(p.SessionID), orQ(project), orQ(dirName), orQ(p.CWD)))
 
-	ctxText, _ := r.prepareStartup(project, old, p)
+	ctxText, _ := r.prepareStartup(project, p)
 
-	// Inyecta los banners (desalineación / versión nueva, si aplican) + el protocolo + los metadatos
-	// internos (project/session_id) + el contexto (vacío si el daemon estaba caído). El protocolo se
-	// imprime siempre, aunque no haya backend, porque es útil al modelo.
+	// Inyecta los banners (desalineación / versión nueva / discrepancia de nombre de proyecto, si
+	// aplican) + el protocolo + los metadatos internos (project/session_id) + el contexto (vacío si el
+	// daemon estaba caído). El protocolo se imprime siempre, aunque no haya backend.
 	fmt.Fprint(r.out, r.assetMismatchBanner())
 	fmt.Fprint(r.out, r.updateBanner())
+	fmt.Fprint(r.out, r.projectMismatchBanner(project, dirName))
 	fmt.Fprint(r.out, protocolSessionStart)
 	r.injectMetadata(project, p.SessionID)
 	if ctxText != "" {
@@ -31,20 +32,13 @@ func (r *runner) sessionStart(p payload) error {
 	return nil
 }
 
-// prepareStartup corre los efectos de arranque de sesión —asegura el daemon, migra el nombre del
-// proyecto si cambió, crea/reactiva la sesión, dispara el pull del hub y precalienta el embebedor— y
-// devuelve el contexto del proyecto. daemonUp es false si el daemon no respondió (en ese
-// caso ctxText es "" y no se hizo ningún efecto). Lo comparten el arranque de Claude Code
-// (sessionStart) y el de Antigravity (agPreInvocation), que solo difieren en cómo formatean la salida.
-func (r *runner) prepareStartup(project, old string, p payload) (ctxText string, daemonUp bool) {
+// prepareStartup corre los efectos de arranque de sesión —asegura el daemon, crea/reactiva la
+// sesión, dispara el pull del hub y precalienta el embebedor— y devuelve el contexto del proyecto.
+// Ya NO renombra el proyecto automáticamente en silencio: las discrepancias entre nombre de carpeta
+// y remoto git se informan mediante projectMismatchBanner para que el usuario o el agente decidan.
+func (r *runner) prepareStartup(project string, p payload) (ctxText string, daemonUp bool) {
 	if err := r.client.ensureDaemon(r.ctx, r); err != nil {
 		return "", false
-	}
-
-	// Migra el nombre del proyecto si cambió (idempotente en el servidor).
-	if old != project && old != "" && project != "" {
-		code, err := r.client.migrateProject(r.ctx, old, project)
-		r.klogResultado("POST /projects/migrate", code, err)
 	}
 
 	// Crea la sesión (se registra el código HTTP para diagnosticar fallos).
@@ -117,6 +111,22 @@ func (r *runner) updateBannerFor(agent string) string {
 		return ""
 	}
 	return fmt.Sprintf("⚠️ Hay una versión nueva de kandel (%s) — descárgala y reinstala con `kandel install %s`.\n\n", latest, agent)
+}
+
+// projectMismatchBanner devuelve un aviso para el agente principal cuando el nombre de la carpeta
+// raíz del proyecto (dirName) no coincide con el nombre detectado por el remoto git (project). Por
+// defecto se muestra siempre en cada inicio de sesión, salvo que el usuario haya pedido ocultarlo en
+// la configuración (`kandel config set project_mismatch_warn <project>` o `off`).
+func (r *runner) projectMismatchBanner(project, dirName string) string {
+	if project == "" || dirName == "" || project == dirName {
+		return ""
+	}
+	if config.ProjectMismatchHidden(project, dirName) {
+		return ""
+	}
+	return fmt.Sprintf("⚠️ Discrepancia en el nombre del proyecto: la carpeta raíz se llama %q pero el remoto git resuelve a %q (se usará %q). "+
+		"Coméntaselo al usuario. Si el usuario pide ocultar este aviso, ejecuta `kandel config set project_mismatch_warn %s` (o `off` para ocultarlo en todos los proyectos).\n\n",
+		dirName, project, project, project)
 }
 
 // postCompaction maneja el hook tras una compactación: asegura el daemon y la sesión, e inyecta un

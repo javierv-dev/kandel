@@ -71,10 +71,11 @@ func (r *runner) agPreInvocation(in agInput) error {
 		return writeInjectSteps(r.out, "")
 	}
 
-	old := oldProjectName(in.cwd())
-	ctxText, _ := r.prepareStartup(project, old, payload{SessionID: sessionID, CWD: in.cwd()})
+	dirName := rootDirProjectName(in.cwd())
+	ctxText, _ := r.prepareStartup(project, payload{SessionID: sessionID, CWD: in.cwd()})
 
 	var b strings.Builder
+	b.WriteString(r.projectMismatchBanner(project, dirName))
 	b.WriteString(agStartHeader)
 	if meta := (agentMetadata{project: project, sessionID: sessionID}).render(); meta != "" {
 		b.WriteString("\n\n")

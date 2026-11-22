@@ -47,6 +47,20 @@ func TestDetectGitRemote(t *testing.T) {
 	if got.Project != "my-cool-repo" {
 		t.Errorf("project = %q, se esperaba my-cool-repo", got.Project)
 	}
+	wantDir := Normalize(filepath.Base(root))
+	if got.DirName != wantDir {
+		t.Errorf("dirName = %q, se esperaba %q", got.DirName, wantDir)
+	}
+
+	// Desde una subcarpeta dentro del repo, DirName sigue siendo la carpeta raíz con .git (y no la subcarpeta).
+	sub := filepath.Join(root, "internal", "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gotSub := Detect(sub)
+	if gotSub.Project != "my-cool-repo" || gotSub.DirName != wantDir {
+		t.Errorf("en subcarpeta: project=%q dirName=%q, se esperaba my-cool-repo y %q", gotSub.Project, gotSub.DirName, wantDir)
+	}
 }
 
 func TestDetectDirBasename(t *testing.T) {

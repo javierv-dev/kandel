@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/javierv-dev/kandel/internal/config"
 	"github.com/javierv-dev/kandel/internal/project"
 )
 
@@ -632,5 +635,87 @@ func TestPiSessionStartPromptCompactionAndStop(t *testing.T) {
 	reqStop := d.find(t, "POST", "/sessions/pi:sess-1/end")
 	if reqStop.body["transcript_path"] != "/tmp/pi-sess.jsonl" {
 		t.Errorf("piStop no envió transcript_path: %+v", reqStop.body)
+	}
+}
+
+func TestSessionStartProjectMismatchBannerAndSuppression(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git no disponible")
+	}
+	d := newStubDaemon(t)
+	dataDir := t.TempDir()
+	t.Setenv("KANDEL_DATA_DIR", dataDir)
+	t.Setenv(config.ProjectMismatchWarn.Env, "")
+
+	// Creamos un repositorio cuya carpeta se llama "carpeta-local" pero cuyo git remote es "nombre-remoto".
+	parent := t.TempDir()
+	repoDir := filepath.Join(parent, "carpeta-local")
+	if err := os.MkdirAll(filepath.Join(repoDir, "subcarpeta"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit := func(args ...string) {
+		t.Helper()
+		if err := exec.Command("git", append([]string{"-C", repoDir}, args...)...).Run(); err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+	}
+	runGit("init")
+	runGit("remote", "add", "origin", "https://github.com/acme/nombre-remoto.git")
+
+	// 1. Por defecto, al arrancar en el repo (incluso desde una subcarpeta), NO llama a POST /projects/migrate
+	// y SÍ muestra el aviso de discrepancia comparando la carpeta raíz ("carpeta-local") contra el remoto ("nombre-remoto").
+	r1, out1 := newTestRunner(t, "session-start", d)
+	if err := r1.sessionStart(payload{SessionID: "sess-mis-1", CWD: filepath.Join(repoDir, "subcarpeta")}); err != nil {
+		t.Fatalf("sessionStart: %v", err)
+	}
+	if n := d.count("POST", "/projects/migrate"); n != 0 {
+		t.Errorf("no debe llamar a POST /projects/migrate automáticamente, hubo %d llamadas", n)
+	}
+	s1 := out1.String()
+	if !strings.Contains(s1, "Discrepancia en el nombre del proyecto") ||
+		!strings.Contains(s1, `"carpeta-local"`) ||
+		!strings.Contains(s1, `"nombre-remoto"`) {
+		t.Errorf("faltó el aviso de discrepancia esperado:\n%s", s1)
+	}
+
+	// 2. En una nueva conversación vuelve a mostrarse siempre por defecto.
+	r2, out2 := newTestRunner(t, "pi-session-start", d)
+	if err := r2.piSessionStart(payload{SessionID: "pi:sess-mis-2", CWD: repoDir}); err != nil {
+		t.Fatalf("piSessionStart: %v", err)
+	}
+	if !strings.Contains(out2.String(), "Discrepancia en el nombre del proyecto") {
+		t.Errorf("el aviso debe mostrarse en cada nueva sesión por defecto:\n%s", out2.String())
+	}
+
+	// 3. Cuando el usuario pide ocultar el aviso para ese proyecto, deja de mostrarse.
+	if err := config.Save(dataDir, map[string]string{config.ProjectMismatchWarn.File: "nombre-remoto"}); err != nil {
+		t.Fatal(err)
+	}
+	r3, out3 := newTestRunner(t, "session-start", d)
+	if err := r3.sessionStart(payload{SessionID: "sess-mis-3", CWD: repoDir}); err != nil {
+		t.Fatalf("sessionStart tras ocultar: %v", err)
+	}
+	if strings.Contains(out3.String(), "Discrepancia en el nombre del proyecto") {
+		t.Errorf("el aviso debía ocultarse tras configurar project_mismatch_warn:\n%s", out3.String())
+	}
+
+	// 4. Cuando la carpeta raíz se llama igual que el remoto git, NO muestra aviso aunque se abra desde una subcarpeta.
+	sameRepo := filepath.Join(parent, "nombre-remoto")
+	if err := os.MkdirAll(filepath.Join(sameRepo, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "-C", sameRepo, "init").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "-C", sameRepo, "remote", "add", "origin", "https://github.com/acme/nombre-remoto.git").Run(); err != nil {
+		t.Fatal(err)
+	}
+	_ = config.Save(dataDir, map[string]string{config.ProjectMismatchWarn.File: ""})
+	r4, out4 := newTestRunner(t, "session-start", d)
+	if err := r4.sessionStart(payload{SessionID: "sess-same", CWD: filepath.Join(sameRepo, "internal")}); err != nil {
+		t.Fatalf("sessionStart en subcarpeta: %v", err)
+	}
+	if strings.Contains(out4.String(), "Discrepancia en el nombre del proyecto") {
+		t.Errorf("no debe haber aviso cuando la carpeta raíz coincide con el remoto git:\n%s", out4.String())
 	}
 }

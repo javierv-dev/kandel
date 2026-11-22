@@ -227,3 +227,41 @@ func TestEnsureFileCreatesOnceAndPreserves(t *testing.T) {
 		t.Errorf("EnsureFile pisó el valor existente: agent_cli = %q", got)
 	}
 }
+
+func TestProjectMismatchHidden(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("KANDEL_DATA_DIR", dir)
+	t.Setenv(ProjectMismatchWarn.Env, "")
+
+	// Por defecto (vacío): nunca oculta (muestra siempre).
+	if ProjectMismatchHidden("kandel", "kandel-copia") {
+		t.Error("por defecto el aviso de discrepancia no debe estar oculto")
+	}
+
+	// Silenciado para un proyecto específico en lista separada por comas.
+	if err := Save(dir, map[string]string{ProjectMismatchWarn.File: "otro-repo, kandel"}); err != nil {
+		t.Fatal(err)
+	}
+	if !ProjectMismatchHidden("kandel", "kandel-copia") {
+		t.Error("debe ocultar cuando el proyecto figura en project_mismatch_warn")
+	}
+	if ProjectMismatchHidden("gestorgastos", "gestor-local") {
+		t.Error("no debe ocultar un proyecto que no está en la lista")
+	}
+
+	// Silenciado por nombre de carpeta local.
+	if err := Save(dir, map[string]string{ProjectMismatchWarn.File: "gestor-local"}); err != nil {
+		t.Fatal(err)
+	}
+	if !ProjectMismatchHidden("gestorgastos", "gestor-local") {
+		t.Error("debe ocultar cuando el nombre de carpeta figura en project_mismatch_warn")
+	}
+
+	// Silenciado global con "off".
+	if err := Save(dir, map[string]string{ProjectMismatchWarn.File: "off"}); err != nil {
+		t.Fatal(err)
+	}
+	if !ProjectMismatchHidden("cualquiera", "otra-carpeta") {
+		t.Error("project_mismatch_warn=off debe ocultar para todos los proyectos")
+	}
+}

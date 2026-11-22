@@ -1,7 +1,6 @@
 package hook
 
 import (
-	"path/filepath"
 	"strings"
 
 	"github.com/javierv-dev/kandel/internal/project"
@@ -22,11 +21,13 @@ func detectProject(cwd string) string {
 	return project.Detect(cwd).Project
 }
 
-// oldProjectName es el nombre "anterior" del proyecto (basename del cwd) que se usa para detectar si
-// el proyecto cambió de nombre y disparar la migración. Devuelve "" si no hay cwd.
-func oldProjectName(cwd string) string {
+// rootDirProjectName devuelve el nombre normalizado de la carpeta raíz del proyecto (la raíz con .git
+// si existe, o el propio cwd si no es un repositorio git). A diferencia del antiguo oldProjectName
+// (que tomaba filepath.Base(cwd) sin subir a la raíz git), iniciar sesión desde una subcarpeta como
+// "repo/internal" devuelve el nombre de la carpeta raíz "repo" y no "internal". Devuelve "" si cwd está vacío.
+func rootDirProjectName(cwd string) string {
 	if strings.TrimSpace(cwd) == "" {
 		return ""
 	}
-	return project.Normalize(filepath.Base(cwd))
+	return project.Detect(cwd).DirName
 }

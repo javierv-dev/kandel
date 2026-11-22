@@ -38,17 +38,19 @@ elegida con mem_handoff_resume. Contrasta siempre el reporte con Git y las prueb
 - Las memorias relevantes a cada petición se inyectan SOLAS por similitud con lo que el usuario pide;
   no llames a mem_context para eso. mem_search es para ir más allá de lo inyectado.`
 
-// piSessionStart maneja el arranque de sesión en Pi Agent: asegura el daemon, migra el proyecto si
-// cambió, crea la sesión pi:<id>, lanza sync/pull + warmup e imprime el protocolo y el contexto.
+// piSessionStart maneja el arranque de sesión en Pi Agent: asegura el daemon, crea la sesión
+// pi:<id>, lanza sync/pull + warmup e imprime los banners (incluida discrepancia de nombre de
+// proyecto), el protocolo y el contexto.
 func (r *runner) piSessionStart(p payload) error {
 	project := detectProject(p.CWD)
-	old := oldProjectName(p.CWD)
-	r.klog(fmt.Sprintf("pi-inicio: session_id=%s project=%s cwd=%s", orQ(p.SessionID), orQ(project), orQ(p.CWD)))
+	dirName := rootDirProjectName(p.CWD)
+	r.klog(fmt.Sprintf("pi-inicio: session_id=%s project=%s dir=%s cwd=%s", orQ(p.SessionID), orQ(project), orQ(dirName), orQ(p.CWD)))
 
-	ctxText, _ := r.prepareStartup(project, old, p)
+	ctxText, _ := r.prepareStartup(project, p)
 
 	fmt.Fprint(r.out, r.assetMismatchBannerFor("pi"))
 	fmt.Fprint(r.out, r.updateBannerFor("pi"))
+	fmt.Fprint(r.out, r.projectMismatchBanner(project, dirName))
 	fmt.Fprint(r.out, protocolPiSessionStart)
 	r.injectMetadata(project, p.SessionID)
 	if ctxText != "" {
