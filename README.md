@@ -1,6 +1,6 @@
 # kandel
 
-**Memoria persistente para agentes de código.** Un binario, una base local, cero servicios de por medio.
+**Memoria persistente para agentes de código.** Un binario y una base de datos local.
 
 Los agentes de código empiezan cada sesión en blanco. Vuelves a explicar por qué esa librería y no
 otra, por qué esa columna es `NOT NULL`, qué se intentó y falló hace tres semanas. kandel guarda esas
@@ -23,15 +23,15 @@ herramientas de memoria, y hooks en los momentos clave de la sesión.
 
 1. **Guardar.** El protocolo obliga al agente a llamar a `mem_save` en cuanto se toma una decisión, se
    arregla un bug, se fija una convención o se descubre algo no obvio. No espera a que se lo pidan.
-2. **Vectorizar.** Cada memoria se embebe con [Ollama](https://ollama.com) en local
-   (`qwen3-embedding:0.6b` por defecto). Nada sale de tu máquina.
+2. **Vectorizar.** Por defecto, [Ollama](https://ollama.com) genera los embeddings en tu máquina
+   con `qwen3-embedding:0.6b`.
 3. **Recordar.** En cada mensaje tuyo, un hook busca por significado en la memoria e inyecta lo
    relevante en el contexto del agente. El agente también puede buscar a demanda con `mem_search`.
 4. **Sobrevivir.** Todo vive en SQLite, en tu carpeta de usuario. Sobrevive a cierres de sesión,
    compactaciones de contexto y reinicios.
 
-Todo el almacenamiento y la búsqueda son locales. La sincronización entre máquinas es opcional y va
-contra un hub que despliegas tú.
+El almacenamiento principal y la búsqueda son locales. Si activas la sincronización, Kandel envía
+las memorias sincronizadas a un hub que despliegas tú.
 
 ---
 
@@ -56,6 +56,8 @@ Agentes soportados: **claude-code**, **antigravity**, **pi** y **opencode**. Gu�
 
 ¿Repo que ya lleva meses en marcha? `kandel seed` recorre el historial y el código, propone las
 decisiones de alto valor que encuentra y las guarda tras tu revisión.
+Para proponer candidatos, `seed` entrega documentación del proyecto al agente configurado; ese
+contenido puede salir de tu máquina si el agente usa un proveedor remoto.
 
 ---
 
@@ -113,8 +115,8 @@ kandel stop       # parar el daemon local (necesario antes de actualizar el bina
 
 ## Sincronizar varias máquinas
 
-Opcional. El hub es un proceso aparte que solo guarda el change-feed y arbitra conflictos por
-*last-write-wins*: no ejecuta lógica de dominio ni ve tus memorias en claro más allá de guardarlas.
+El hub opcional recibe y guarda las memorias sincronizadas y resuelve conflictos por
+*last-write-wins*. HTTPS protege los datos en tránsito; no cifra las memorias de extremo a extremo.
 Cabe en una VM del *Always Free* de Google Cloud.
 
 El acceso se controla con un `sync_token` de alta entropía (`kandel config gen-token`) que es a la vez
