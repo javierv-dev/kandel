@@ -1,6 +1,8 @@
 # Contribuir a Kandel
 
-Usa [Issues](https://github.com/javierv-dev/kandel/issues) para preguntas, errores y propuestas. Para un error, incluye la versión de Kandel (`kandel version`), el sistema operativo, el agente, los pasos para reproducirlo y el resultado esperado. No adjuntes bases de datos, conversaciones, tokens ni logs sin sanear. Si el problema es una vulnerabilidad, no lo publiques en un issue; usa el [canal privado de GitHub](https://github.com/javierv-dev/kandel/security/advisories/new) cuando esté habilitado.
+Usa [Issues](https://github.com/javierv-dev/kandel/issues) para preguntas, errores y propuestas. Para un error, incluye la versión de Kandel (`kandel version`), el sistema operativo, el agente, los pasos para reproducirlo y el resultado esperado. No adjuntes bases de datos, conversaciones, tokens ni logs sin sanear.
+
+Para vulnerabilidades, sigue la [política de seguridad](SECURITY.md); no abras un issue público.
 
 ## Preparar y comprobar el cambio
 
