@@ -149,6 +149,15 @@ Las reglas de versionado, migraciones y releases están en [docs/versionado.md](
 
 ---
 
+## Contribuir
+
+Para preguntas, errores y propuestas, usa [GitHub Issues](https://github.com/javierv-dev/kandel/issues).
+Antes de enviar un pull request, consulta la [guía de contribución](.github/CONTRIBUTING.md).
+
+Kandel se distribuye bajo la [licencia MIT](LICENSE).
+
+---
+
 ## Documentación
 
 - [Instalación y actualización](docs/instalacion.md)
